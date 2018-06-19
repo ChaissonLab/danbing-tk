@@ -178,7 +178,7 @@ int main(int argc, const char * argv[]) {
 	// -----
 	ofstream fout;
 	fout.open("PanGenomeGenotyping." + to_string(k) + ".kmers", ios::out);
-	fout << "@" + to_string(nread) << '\n';
+	fout << to_string(nread) << '\n';
 	for (auto& s : flist) {
 		fout << s << '\n';
 	}

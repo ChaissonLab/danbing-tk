@@ -77,12 +77,12 @@ void CountWords(void *data) {
             getline(*in, qualtitle);
             getline(*in, qual);
             
+			size_t start = 0;
 			size_t end = seq.size();
-			while (qual[end-1] == '#'){
-				end--;
-			}
+			while (qual[start] == '#'){ start++; }
+			while (qual[end - 1] == '#'){ end--; }
 			
-			seqs.push_back(seq.substr(0, end));
+			seqs.push_back(seq.substr(start, end));
             totalSize += seq.size();
 
 			++readNumber;
@@ -110,7 +110,6 @@ void CountWords(void *data) {
 				}
             }
 		}
-
 		if ((*in).good() == false or (qual == "")) {
 			cout << "Finished at read index " << readNumber << endl;
 			return;
@@ -144,16 +143,16 @@ int main(int argc, char* argv[]) {
 
     assert(queryFile);
     // read kmer file header
-    string line;
-    getline(queryFile, line);
-    cout << line << '\n';
-	size_t nloci = stoi(line.substr(1, line.size()));
-    cout << "included haploids:\n";
+    clock_t ftime = clock();
+	string line;
+	getline(queryFile, line);
+	size_t nloci = stoi(line);
+	cout << "included haplotypes:\n";
     while (queryFile.peek() != '>') {
         getline(queryFile, line);
         cout << line << '\n';
     }
-    
+ 
     // read kmer info
     size_t ind = 0;
     kmer_set kmers;
@@ -182,6 +181,7 @@ int main(int argc, char* argv[]) {
             getline(queryFile, line);
         }
     }
+	cout << "read .kmer file in " << (float)(clock() - ftime)/CLOCKS_PER_SEC << " sec." << endl;
 
 
     // create data for each process

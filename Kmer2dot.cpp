@@ -1,6 +1,6 @@
 //
-//  main.cpp
-//  vntrdbg
+//  Kmer2dot.cpp
+//  convert .kmers file to .dot file
 //
 //  Created by Tsung-Yu Lu on 6/5/18.
 //  Copyright © 2018 Tsung-Yu Lu. All rights reserved.
@@ -22,8 +22,8 @@
 int main(int argc, char * argv[]) {
     // insert code here...    
     if (argc < 2){
-		cerr << "usage: kmer2dot <.kmer file>" << endl;
-		cerr << "e.g.:  kmer2dot ERR899717_1.fastq.kmer" << endl;
+		cerr << "usage: kmer2dot <.kmer file> [max number of graph]" << endl;
+		cerr << "e.g.:  kmer2dot ERR899717_1.fastq.21.kmers 5" << endl;
 		cerr << "		output: ERR899717_1.loci.[1].dot" << endl;
 		exit(0);
 	}
@@ -33,6 +33,8 @@ int main(int argc, char * argv[]) {
 	strtok(argv[1], ".");
 	strtok(NULL, ".");
 	size_t k = stoi(strtok(NULL, "."));
+	size_t maxNgraph;
+	if (argc >= 3) { maxNgraph = stoi(argv[2]); }
 	
 	// get file header
 	assert(inf);
@@ -74,7 +76,7 @@ int main(int argc, char * argv[]) {
 	// build DBG
 	cout << "starting building DBG..." << endl;
 	string outfpref = infname.substr(0, infname.find('.'));
-    for (size_t i = 0; i < kmerDB.size(); i++){
+    for (size_t i = 0; i < kmerDB.size() and i < maxNgraph; i++){
         adj_dict adj;
 		size_t max;
 		tie(adj, max)= buildAdjDict(kmerDB[i], k);
