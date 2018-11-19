@@ -5,6 +5,7 @@
 //  Created by Tsung-Yu Lu on 6/5/18.
 //  Copyright © 2018 Tsung-Yu Lu. All rights reserved.
 //
+#include "nuQueryFasta.h"
 
 #include <iostream>
 #include <string>
@@ -14,229 +15,269 @@
 #include <cmath>
 #include <vector>
 #include <cassert>
+#include <algorithm>
 
 using namespace std;
 
-typedef unordered_map<size_t, size_t> kmer_dict;
-typedef unordered_map<string, unordered_map<string, size_t>> adj_dict;
-
-unordered_map<char, size_t> base( {{'A', 0}, {'C', 1}, {'G', 2}, {'T', 3}});
-char baseinv[] = {'A', 'C', 'G', 'T'};
-
-size_t encodeSeq(string seq){
-    size_t numericSeq = 0;
-    for (size_t i = 0; i < seq.length(); i++){
-        numericSeq = numericSeq * 4 + base[seq[i]];
-    }
-    return numericSeq;
-}
-
-string decodeNumericSeq(size_t num, size_t k){
-    string seq = "";
-    for (size_t i = 0; i < k; i++){
-        seq = baseinv[num % 4] + seq;
-        num >>= 2;
-    }
-    return seq;
-}
-
-tuple<size_t, size_t> getNextKmer(size_t beg, string& read, size_t k){
-    size_t rlen = read.length();
-    if (beg + k > rlen){
-        return make_tuple(rlen, 0);
-    }
-    size_t validlen = 0;
-    while (validlen != k){
-        if (beg + k > rlen){
-            return make_tuple(rlen, 0);
-        }
-        if (base.count(read[beg + validlen]) == 0){
-            beg = beg + validlen + 1;
-            validlen = 0;
-            //cout << "beg: " << beg << 't';
-        } else {
-            validlen += 1;
-            
-        }
-    }
-    //cout << read.substr(beg, k) << '\n';
-    return make_tuple(beg, encodeSeq(read.substr(beg, k)));
-}
-
-void buildNuKmerDatabase(kmer_dict& kmers, string& read, size_t k, size_t flanksize, string& fname) {
-    size_t rlen = read.length(), beg, nbeg, kmer;
-    tie(beg, kmer) = getNextKmer(flanksize, read, k);
-    if (beg == rlen){
-        return;
-    }
-    for (size_t i = beg; i < rlen - k - flanksize + 1; i++){
-        if (kmers.count(kmer) == 1){
-            kmers[kmer] += 1;
-        } else {
-            kmers.insert({kmer, 1});
-        }
-        //cout << i << '\t' << decodeNumericSeq(kmer, k) << '\t' << kmers[kmer] << '\t' << kmer << '\t';
-        if (base.count(read[i + k]) == 0){
-            tie(nbeg, kmer) = getNextKmer(i + k + 1, read, k);
-            //cout << "jump: " << nbeg << '\t' << decodeNumericSeq(kmer, k) << '\n';
-            if (nbeg == rlen) { return; }
-            i = nbeg - 1;
-        } else {
-            kmer = ( (kmer % (1UL << 2*(k-1))) << 2 ) + base[read[i + k]];
-        }
-    }
-}
-
-tuple<adj_dict, size_t> buildAdjDict(kmer_dict& kmers, size_t k){
-    adj_dict adj;
-    string s, t;
-    size_t max = 0, m;
-    for (auto& p : kmers){
-        s = decodeNumericSeq(p.first >> 2, k-1);
-        t = decodeNumericSeq(p.first % (1UL << 2*(k-1)), k-1);
-        m = kmers[p.first];
-        adj[s][t] += m;
-        if (m > max){
-            max = m;
-        }
-    }
-    return make_tuple(adj, max);
-}
-
-
 int main(int argc, const char * argv[]) {
-    // insert code here...    
     if (argc < 2){
-		cerr << "usage: main k [input] [bool generate_graph]" << '\n';
-		cerr << "e.g.:  main 21 regions.h0.fasta 0" << '\n';
-		exit(0);
-	}
-	vector<string> args(argv, argv+argc);
-    
-	size_t k = stoi(args[1]);
-	string fname, read, line;
-    size_t flanksize = 2000 - k;
+        cerr << "usage: vntr2kmers <k> <trf_threshold> <canonical_mode> <generate_graph> <flank_size> <haplotypes>\n";
+        cerr << "  trf_threshold       e.g. set this parameter to 2000 for PanGenomeGenotyping.lcs.trf_inv2000.info\n";
+        cerr << "                      specify \"-\" if not using trf info\n";
+        cerr << "  canonical_mode      only count canonical kmers?\n";
+        cerr << "                      specify 'nonca' (no) or 'ca' (yes)\n";
+        cerr << "  generate_graph      specify 'nog' (no) or 'g' (yes)\n";
+        cerr << "  flank_size          length of flanking region around VNTR loci\n";
+        cerr << "  haplotypes          specify the haplotypes intended to be included. e.g. CHM1 HG00514.h0\n";
+        cerr << "  e.g.:  vntr2kmers 21 - ca nog 1950 AK1\n";
+        cerr << "  e.g.:  vntr2kmers 21 2000 ca g 0 CHM1\n";
+        cerr << "  ** The program assumes 2000-k bp flanking regions around each VNTR locus\n\n";
+        exit(0);
+    }
+    vector<string> args(argv, argv+argc);
 
-	vector<string> flist;
-    string dir = "/home/cmb-16/mjc/projects/PanGenomeGenotyping/";
-	if (args[2] == "test"){
-		dir = "";
-		flist = {"regions.h0.fasta","regions.h0.fasta"};
-	} 
-	else if (args[2] == "run") {
-		flist = {
-		"HG00514-h0.combined-hap.fasta",
-        "HG00514-h1.combined-hap.fasta",
-        "HG00733-h0.combined-hap.fasta",
-        "HG00733-h1.combined-hap.fasta",
-        "NA19240-h0.combined-hap.fasta",
-        "NA19240-h1.combined-hap.fasta"};
-	} else {
-		cerr << "check usage" << '\n';
-		exit(1);
-	}
+    size_t k = stoi(args[1]);
+    string fname, read, line;
+    bool canonical_mode = 0;
+    if (args[3] == "ca") { canonical_mode = 1; }
+    size_t flanksize = stoi(args[5]);
+    vector<string> haps = {
+    "CHM1",
+    "CHM13",
+    "AK1.h0",
+    "AK1.h1",
+    "HG00514.h0",
+    "HG00514.h1",
+    "HG00733.h0",
+    "HG00733.h1",
+    "NA12878.h0",
+    "NA12878.h1",
+    "NA19240.h0",
+    "NA19240.h1",
+    "NA24385.h0",
+    "NA24385.h1"};
+    size_t nhap = haps.size();
+    vector<string> haplist(args.begin() + 6, args.end());
+    vector<bool> clist;
+    if (args[6] == "all") {
+        clist.assign(nhap, 1);
+    }
+    else {
+        clist.assign(nhap, 0);
+        for (auto& s : haplist) {
+            clist[distance(haps.begin(), find(haps.begin(), haps.end(), s))] = 1;
+        }
+        size_t sum = 0;
+        for (auto v : clist) {
+            sum += v;
+        }
+        if (sum == 0) {
+            cerr << "cannot find specified haplotype!" << endl << endl;
+            return 1;
+        }
+    }
 
     // count the number of loci in a file
-    ifstream fin(dir + flist[0], ios::in);
-	assert(fin.is_open());
-	size_t nread = 0;
-	while (getline(fin, line)) {
-		if (line[0] == '>'){
-			nread++;
-		}
-	}
-	fin.close();
-    
+    size_t nread = 0;
+    cout << "counting total number of loci\n";
+    while (true) {
+        ifstream fin(haplist[0]+".combined-hap.fasta.masked.fix", ios::in);
+        assert(fin.is_open());
+        while (getline(fin, line)) {
+            if (line[0] == '>'){
+                nread++;
+            }
+        }
+        fin.close();
+        break;
+    }
+
+    vector<vector<size_t>> posDB;
+    if (args[2] != "-") {
+        // get the pos info of each locusi
+        cout << "getting locus position info\n";
+        posDB.resize(nread, vector<size_t>(14, 0));
+        ifstream posfin("PanGenomeGenotyping.lcs.trf_inv2000.info");
+        assert(posfin.is_open());
+        while (true) {
+            size_t i = 0;
+            size_t L1, L2, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12;
+            while (posfin >> L1 >> L2 >> v1 >> v2 >> v3 >> v4 >> v5 >> v6 >> v7 >> v8 >> v9 >> v10 >> v11 >> v12){
+                posDB[i][0] = L1;
+                posDB[i][1] = L2;
+                posDB[i][2] = v1;
+                posDB[i][3] = v2;
+                posDB[i][4] = v3;
+                posDB[i][5] = v4;
+                posDB[i][6] = v5;
+                posDB[i][7] = v6;
+                posDB[i][8] = v7;
+                posDB[i][9] = v8;
+                posDB[i][10] = v9;
+                posDB[i][11] = v10;
+                posDB[i][12] = v11;
+                posDB[i][13] = v12;
+                i++;
+            }
+            break;
+        }
+        posfin.close();
+    }
+
+/*
+    // set pos info of empty loci to -1
+    for (size_t i = 0; i < nread; i++) {
+        bool nonempty = 0;
+        for (size_t n = 0; n < flist.size(); n++) {
+            if (posDB[n][i][0] != 0) { nonempty = 1; break; }
+        }
+        if (nonempty == 0) {
+            for (size_t n = 0; n < flist.size(); n++) {
+                posDB[n][i][0] = -1;
+                posDB[n][i][1] = -1;
+            }
+        }
+    }
+*/
+
     // -----
     // open each file and create a kmer database for each loci
     // combine the kmer databases of the same loci across different files
     // -----
-    vector<kmer_dict> kmersdatabase(nread);
-    for (string& fname : flist){
-        ifstream fin(dir + fname, ios::in);
+    vector<kmerCount_dict> kmersdatabase(nread);
+    for (size_t n = 0; n < nhap; n++) {
+        string &fname = haps[n];
+        ifstream fin(fname+".combined-hap.fasta.masked.fix");
         size_t i = 0;
         assert(fin.is_open());
 
-        while (getline(fin, line)){
-            if (line[0] != '>'){ read += line; }
-            if (fin.peek() == '>' or fin.peek() == EOF){
-                buildNuKmerDatabase(kmersdatabase[i], read, k, flanksize, fname);
-                /*for (auto& p : kmers){
-                 cout << decodeNumericSeq(p.first, k) << '\t' << p.second << '\n';
-                 }*/
-                //cout << read << '\n';
-                //cout << "loci " << i << " : " << kmersdatabase.size() << '\n';
-                read = "";
-                i++;
+        if (clist[n] == 1) {
+	    cout << "building and counting " << fname << " kmers\n";
+            while (getline(fin, line)) {
+                if (line[0] != '>') {
+                    if (args[2] != "-") {
+                        if (posDB[i][0] > 2*k and posDB[i][1] > 2*k and posDB[i][2+2*n] and posDB[i][3+2*n]) {
+                            read += line;
+                        }
+                    }
+                    else {
+                        read += line;
+                    }
+                }
+                if (fin.peek() == '>' or fin.peek() == EOF) {
+                    if (read != "") {
+                        if (args[2] != "-") {
+                            size_t L5 = posDB[i][0];
+                            size_t s5 = posDB[i][2 + n*2];
+                            size_t s3 = posDB[i][3 + n*2];
+                            read = read.substr(s5 + L5 - 2*k, s3 - s5 - L5 + 4*k);
+                            buildNuKmers(kmersdatabase[i], read, k, 0);
+                        }
+                        else {
+                            buildNuKmers(kmersdatabase[i], read, k, flanksize);
+                        }
+                    }
+                    read = "";
+                    i++;
+                }
+            }
+            fin.close();
+        } else {
+	    cout << "building " << fname << " kmers\n";
+            while (getline(fin, line)) {
+                if (line[0] != '>') {
+                    if (args[2] != "-") {
+                        if (posDB[i][0] > 2*k and posDB[i][1] > 2*k and posDB[i][2+2*n] and posDB[i][3+2*n]) {
+                            read += line;
+                        }
+                    }
+                    else {
+                        read += line;
+                    }
+                }
+                if (fin.peek() == '>' or fin.peek() == EOF) {
+                    if (read != "") {
+                        if (args[2] != "-") {
+                            size_t L5 = posDB[i][0];
+                            size_t s5 = posDB[i][2 + n*2];
+                            size_t s3 = posDB[i][3 + n*2];
+                            read = read.substr(s5 + L5 - 2*k, s3 - s5 - L5 + 4*k);
+                            buildNuKmers(kmersdatabase[i], read, k, 0, 0);
+                        }
+                        else {
+                            buildNuKmers(kmersdatabase[i], read, k, flanksize, 0);
+                        }
+                    }
+                    read = "";
+                    i++;
+                }
             }
         }
-        fin.close();
     }
 
-	// -----
-	// write a kmers file for all kmer databases
-	// -----
-	ofstream fout;
-	fout.open("PanGenomeGenotyping." + to_string(k) + ".kmers", ios::out);
-	fout << to_string(nread) << '\n';
-	for (auto& s : flist) {
-		fout << s << '\n';
-	}
+
+    // -----
+    // write a kmers file for all kmer databases
+    // -----
+    ofstream fout;
+    if (args[6] == "all") {
+    	fout.open("PanGenomeGenotyping." + args[1] + "." + args[5] + ".kmers");
+    } else {
+        fout.open(args[6] + "." + args[1] + "." + args[5] + ".kmers");
+    }
     for (size_t i = 0; i < kmersdatabase.size(); i++){
-        cout << kmersdatabase[i].size() << '\n';
-    	fout << ">loci " + to_string(i) << '\n';
-		for (auto& p : kmersdatabase[i]) {
-			fout << p.first << '\t' << p.second << '\n';
-		}
-	}
-   
+        cout << "# of unique kmers: " << kmersdatabase[i].size() << '\n';
+        fout << ">loci " + to_string(i) << '\n';
+        for (auto& p : kmersdatabase[i]) {
+            fout << p.first << '\t' << p.second << '\n';
+        }
+    }
+
 
     // -----
     // write a dot file for each dbg according to each kmer database
     // ----- 
-    if (args[3] == "1") {
-		adj_dict adj;
-    	size_t max;
-    	for (size_t i = 0; i < kmersdatabase.size(); i++){
-        	tie(adj, max)= buildAdjDict(kmersdatabase[i], k);
-        	cout << "max: " << max << '\n';
-        	ofstream fout;
-        	fout.open("loci." + to_string(i) + ".dot", ios::out);
-        	assert(fout.is_open());
-        	fout << "strict digraph \"\" {" << '\n';
-        	if (max > 7){
-            	for (auto& p : adj){
-                	for (auto& q : p.second){
-                    	fout << p.first << " -> " << q.first << " [label = \"   " << q.second << "\", ";
-                    	fout << "penwidth = " << log2((q.second - 1) / ((float)max - 1) + 1) * 6 + 1 << "];" << '\n';
-                	}
+    if (args[4] == "g") { // possibly deprecated
+        size_t maxNgraph = 5, max;
+        string outfpref = "ref.";
+        if (canonical_mode) {
+            for (size_t i = 0; i < kmersdatabase.size() and i < maxNgraph; i++){
+                DBG dbg(kmersdatabase[i].size());
+                for (auto &p : kmersdatabase[i]) {
+                    dbg.addkmer(decodeNumericSeq(p.first, k), p.second);
+                }
+                cout << "# of subgraphs: " << dbg.nset << endl;
+                cout << "max: " << dbg.maxcount << endl;
+                for (size_t i = 0; i < dbg.nodes.size(); i++) {
+                    if (dbg.nodes[i].size() > 0) {
+                        cout << "----------\n";
+                        cout << "subgraph " << i << endl;
+                        for (auto &s : dbg.nodes[i]) {
+                            for (auto &p : dbg.adj[s]) {
+                                cout << s << '\t' << p.first << '\t' << p.second << endl;
+                            }
+                        }
+                    }
+                }
+                if (args[6] == "all") {
+                    writeDot("ref.", i, dbg.adj, dbg.maxcount);
             	}
-        	} else {
-            	for (auto& p : adj){
-                	for (auto& q : p.second){
-                    	fout << p.first << " -> " << q.first << " [label = \"   " << q.second << "\", ";
-                    	fout << "penwidth = " << q.second << "];" << '\n';
-                	}
-            	}
-        	}
-        	fout << "}";
-        	fout.close();
-    	}
-	}
-   
+                else {
+                    writeDot("ref_" + args[6] + ".", i, dbg.adj, dbg.maxcount);
+                }
+            }
+        }
+        else {
+            for (size_t i = 0; i < kmersdatabase.size() and i < maxNgraph; i++){
+                adj_dict adj;
+                tie(adj, max)= buildAdjDict(kmersdatabase[i], k);
+                cout << "max: " << max << endl;
+                writeDot("ref.", i, adj, max);
+            }
+        }
+    }
 
- 
-    /*for (auto& p : adj){
-     cout << p.first << ": {";
-     for (auto& q : p.second){
-     cout << q.first << ": " << q.second << '\t';
-     }
-     cout << "}" << '\n';
-     }*/
-
-
-
-
-    
     return 0;
 }
+
+

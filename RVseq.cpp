@@ -1,4 +1,4 @@
-#include "QueryFasta.h"
+#include "nuQueryFasta.h"
 
 #include <iostream>
 

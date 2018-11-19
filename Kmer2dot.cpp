@@ -1,12 +1,4 @@
-//
-//  Kmer2dot.cpp
-//  convert .kmers file to .dot file
-//
-//  Created by Tsung-Yu Lu on 6/5/18.
-//  Copyright © 2018 Tsung-Yu Lu. All rights reserved.
-//
-
-#include "QueryFasta.h"
+#include "nuQueryFasta.h"
 
 #include <iostream>
 #include <string>
@@ -14,101 +6,168 @@
 #include <fstream>
 #include <unordered_map>
 #include <tuple>
-#include <cmath>
 #include <vector>
 #include <cassert>
+#include <iomanip>
 
 
 int main(int argc, char * argv[]) {
     // insert code here...    
     if (argc < 2){
-		cerr << "usage: kmer2dot <.kmer file> [max number of graph]" << endl;
-		cerr << "e.g.:  kmer2dot ERR899717_1.fastq.21.kmers 5" << endl;
-		cerr << "		output: ERR899717_1.loci.[1].dot" << endl;
-		exit(0);
-	}
-
-	ifstream inf(argv[1]);
-	string infname = argv[1];
-	strtok(argv[1], ".");
-	strtok(NULL, ".");
-	size_t k = stoi(strtok(NULL, "."));
-	size_t maxNgraph;
-	if (argc >= 3) { maxNgraph = stoi(argv[2]); }
-	
-	// get file header
-	assert(inf);
-	string line;
-	getline(inf, line);
-	size_t nloci = stoul(line.substr(1, line.size() - 1));
-	while(inf.peek() != '>'){
-		getline(inf, line);
-	}
-
-	// read kmers
-	size_t ind = 0;
-	vector<kmerCount_dict> kmerDB(nloci);
-	kmerCount_dict kmers;
-	getline(inf, line);
-    cout <<"starting reading kmers..."<<endl;
-	while (true){
-        if (inf.peek() == EOF or inf.peek() == '>'){
-			if (kmers.size() != 0){
-                kmerDB[ind] = kmers;
-                kmers.clear();
-            }
-            ind++;
-            if (inf.peek() == EOF){
-                inf.close();
-                break;
-            } else {
-                getline(inf, line);
-            }
-        } else {
-            getline(inf, line, '\t');
-            size_t kmer = stoul(line);
-            getline(inf, line);
-			size_t count = stoul(line);
-            kmers[kmer] = count;
-        }
+	cerr << "usage: kmer2dot <k> <mode> <output_pref> <.kmer file> <max number of graphs | list of subgraphs>" << endl;
+	cerr << "e.g.:  kmer2dot 21 max ERR899717_1 ERR899717_1.fastq.21.kmers 5" << endl;
+	cerr << "e.g.:  kmer2dot 21 list ERR899717_1 ERR899717_1.fastq.21.kmers 0 2 3 5 10" << endl;
+        cerr << "e.g.:  kmer2dot 21 diff ERR899717_1.test ERR899717_1.fastq.21.kmers testIL.kmers\n";
+        cerr << "                This compares multiple .kmers and write one .dot file.\n";
+        cerr << "                The first file is treated as reference" << endl;
+	cerr << "output: ERR899717_1.loci.[1].dot" << endl << endl;
+        exit(0);
     }
-	
-	// build DBG
-	cout << "starting building DBG..." << endl;
-	string outfpref = infname.substr(0, infname.find('.'));
-    for (size_t i = 0; i < kmerDB.size() and i < maxNgraph; i++){
-        adj_dict adj;
-		size_t max;
-		tie(adj, max)= buildAdjDict(kmerDB[i], k);
-        //cout << "max: " << max << '\n';
-        
-		ofstream fout;
-        fout.open(outfpref + ".loci." + to_string(i) + ".dot");
-        assert(fout.is_open());
-		fout << "strict digraph \"\" {" << '\n';
-        if (max > 7){
-            for (auto& p : adj){
-                for (auto& q : p.second){
-                    fout << p.first << " -> " << q.first << " [label = \"   " << q.second << "\", ";
-                    if (q.second != 0){
-						fout << "penwidth = " << log2((q.second - 1) / ((float)max - 1) + 1) * 6 + 1 << "];" << '\n';
-					} else {
-						fout << "penwidth = " << q.second << "];" << '\n';
-					}
-                }
+
+
+    vector<string> args(argv, argv+argc);
+    size_t k = stoi(args[1]);
+
+    if (args[2] != "diff") { // for "max" and "list" mode
+
+
+        size_t maxNgraph;
+        vector<size_t> lociList;
+        if (args[2] == "max") { 
+            maxNgraph = stoi(args[5]);
+        } else if (args[2] == "list") {
+            maxNgraph = argc - 5;
+            lociList.resize(maxNgraph);
+            for (size_t i = 0; i < maxNgraph; i++) {
+                lociList[i] = stoi(args[i+5]);
+                cout << "loci: " << lociList[i] << endl;
             }
-        } else {
-            for (auto& p : adj){
-                for (auto& q : p.second){
-                    fout << p.first << " -> " << q.first << " [label = \"   " << q.second << "\", ";
-                    fout << "penwidth = " << q.second << "];" << '\n';
+        }
+        ifstream inf(args[4]); 
+        assert(inf);
+        string infname = args[4];
+        string line;
+        size_t nloci = 0;
+        while (getline(inf, line)) {
+            if (line[0] == '>'){
+                nloci++;
+            }
+        }
+        inf.clear();
+        inf.seekg(0, inf.beg);
+
+        // read kmers
+        size_t ind = 0;
+        vector<kmerCount_dict> kmerDB(nloci);
+        readKmersFile(kmerDB, inf);
+
+        // build DBG
+        cout << "starting building DBG..." << endl;
+        string outfpref = infname.substr(0, infname.find('.') + 1);
+        if (args[2] == "max") {
+            for (size_t i = 0; i < kmerDB.size() and i < maxNgraph; i++){
+                DBG dbg(kmerDB[i].size());
+                for (auto &p : kmerDB[i]) {
+                    dbg.addkmer(decodeNumericSeq(p.first, k), p.second);
+                }
+                cout << "# of subgraphs: " << dbg.nset << endl;
+                cout << "max: " << dbg.maxcount << endl;
+                writeDot(outfpref, i, dbg.adj, dbg.maxcount);
+            }
+        } else if (args[2] == "list") {
+            for (size_t i = 0; i < kmerDB.size() and i < maxNgraph; i++){
+                DBG dbg(kmerDB[lociList[i]].size());
+                for (auto &p : kmerDB[lociList[i]]) {
+                    dbg.addkmer(decodeNumericSeq(p.first, k), p.second);
+                }
+                cout << "# of subgraphs: " << dbg.nset << endl;
+                cout << "max: " << dbg.maxcount << endl;
+                writeDot(outfpref, lociList[i], dbg.adj, dbg.maxcount);
+            }
+        }
+
+
+    } else { // for "diff" mode
+
+
+        size_t nfile = argc - 4;
+        vector<string> fnames(nfile);
+        cout << "files to be compared:\t";
+        for (size_t i=0; i < nfile; i++) {
+            fnames[i] = args[i+4];
+            cout << args[i+4] << '\t';
+        }
+        cout << endl;
+
+        // read each file into kmerDB
+        vector<kmerCount_dict> kmerDB(nfile);
+        for (size_t i = 0; i < nfile; i++) {
+            ifstream inf(args[i+4]);
+            readKmersFile(kmerDB, inf, i, 1);
+            inf.close();
+        }
+
+        // compare kmers in kmerDB.
+        vector<vector<size_t>> nintersect(nfile, vector<size_t>(nfile, 0));
+        for (size_t i = 0; i < nfile; i++) {
+            for (size_t j = i; j < nfile; j++) {
+                if (j == i) { 
+                    nintersect[i][i] = kmerDB[i].size(); 
+                }
+                else {
+                    for (auto &p : kmerDB[i]) {
+                        if (kmerDB[j].count(p.first) == 1) {
+                            nintersect[i][j] += 1;
+                        }
+                    }
+                }
+            } 
+        }
+        cout << "intersection table:\n";
+        for (size_t i = 0; i < nfile; i ++) {
+            for (size_t j = 0; j < nfile; j++) {
+                cout << setw(8) << nintersect[i][j];
+            }
+            cout << '\n';
+        }
+
+        // merge kmers in kmerDB and assign labels
+        // A kmer has label 0 if it is present in the reference (1st kmer file)
+        // A kmer has label i if it is present in i kmer files but not in the reference
+        kmerAttr_dict kmerAttr;
+        for (size_t i = 0; i < kmerDB.size(); i++) {
+            for (auto &p : kmerDB[i]) {
+                if (kmerAttr.count(p.first) == 0) {
+                    if (i == 0) {
+                        kmerAttr[p.first] = vector<size_t>{p.second, 0};
+                    } else {
+                        kmerAttr[p.first] = vector<size_t>{p.second, 1};
+                    }
+                } else {
+                    kmerAttr[p.first][0] = max(kmerAttr[p.first][0], p.second);   // [?] whether this implementation is reasonable still needs to be evaluated
+                    if (kmerAttr[p.first][1] != 0 and kmerAttr[p.first][1] < 5) {
+                        kmerAttr[p.first][1] += 1;
+                    }
                 }
             }
         }
-        fout << "}";
+        ofstream fout(args[3]+".diff.kmers");
+        assert(fout);
+        fout << ">merged locus\n";
+        for (auto &p : kmerAttr) {
+            fout << p.first << '\t' << p.second[0] << '\t' << p.second[1] << '\n';
+        }
+
+        // write .dot files seperately for each kmers
+        DBG dbg(kmerAttr.size());
+        for (auto &p : kmerAttr) {
+            dbg.addkmer(decodeNumericSeq(p.first, k), p.second);
+        }
+        cout << "# of subgraphs: " << dbg.nset << endl;
+        cout << "max: " << dbg.maxcount << endl;
+        writeDot(args[3], 0, dbg.adj_attr, dbg.maxcount);
         fout.close();
     }
-
     
     return 0;
 }
