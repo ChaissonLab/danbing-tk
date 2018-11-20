@@ -1,0 +1,6 @@
+{ 
+  "hap_table" : "haplotypes.csv",
+  "flank" : 1950,
+  "ref": "/home/cmb-16/mjc/shared/references/hg38/indexes/blasr/hg38.fa",
+  "nloci": 27093
+}
