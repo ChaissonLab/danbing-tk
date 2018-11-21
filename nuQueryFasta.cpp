@@ -48,6 +48,7 @@ tuple<size_t, size_t> countHit(kmerCount_dict &kmers, kmerIndex_dict &kmerDBi, s
 class Counts {
 public:
     ifstream *in;
+    bool ftype;
     kmerIndex_dict *kmerDBi;
     size_t *readIndex;
     size_t threadIndex, k, nloci, threshold;
@@ -69,6 +70,7 @@ void CountWords(void *data) {
     kmerIndex_dict &kmerDBi = *((Counts*)data)->kmerDBi;
     size_t &readNumber = *((Counts*)data)->readIndex;
     ifstream *in = ((Counts*)data)->in;
+    bool ftype = ((Counts*)data)->ftype;
     size_t k = ((Counts*)data)->k;
     vector<kmerCount_dict> &queryResults = ((Counts*)data)->queryResults;
     size_t threadIndex = ((Counts*)data)->threadIndex;
@@ -76,54 +78,115 @@ void CountWords(void *data) {
     size_t threshold = ((Counts*)data)->threshold;
 
     while (true) {
-
+        //
+        // begin thread locking
+        //
         sem_wait(semreader);
-        string title, seq, qualtitle, qual;
 
-        size_t totalSize = 0;
+        assert((*in).good() == true);
+        string title, title1, seq, seq1, qualtitle, qualtitle1, qual, qual1;
+        size_t readn = 0;
         vector<string> seqs;
 
-        while (totalSize < 50000000 and (*in)) {
+        if (ftype) {
+            while (readn <= 150000 and (*in)) {
+                getline(*in, title);
+                getline(*in, seq);
+                getline(*in, qualtitle);
+                getline(*in, qual);
+                getline(*in, title1);
+                getline(*in, seq1);
+                getline(*in, qualtitle1);
+                getline(*in, qual1);
 
-            getline(*in, title);
-            getline(*in, seq);
-            getline(*in, qualtitle);
-            getline(*in, qual);
+                size_t start = 0;
+                size_t len = seq.size();
+                while (qual[start] == '#'){ start++; len--; }
+                while (qual[start + len - 1] == '#'){ len--; }
 
-            size_t start = 0;
-            size_t len = seq.size();
-            while (qual[start] == '#'){ start++; len--; }
-            while (qual[start + len - 1] == '#'){ len--; }
+                size_t start1 = 0;
+                size_t len1 = seq1.size();
+                while (qual1[start1] == '#'){ start1++; len1--; }
+                while (qual1[start1 + len1 - 1] == '#'){ len1--; }
 
-            seqs.push_back(seq.substr(start, len));
-            totalSize += seq.size();
-
-            ++readNumber;
+                seqs.push_back(seq.substr(start, len));
+                seqs.push_back(seq1.substr(start1, len1));
+                readn++;
+                readNumber++;
+            }
         }
-        cerr << "Buffered reading " << totalSize << "\t" << readNumber << endl;
+        else {
+            while (readn <= 300000 and (*in)) {
+                getline(*in, title);
+                getline(*in, seq);
+                getline(*in, qualtitle);
+                getline(*in, qual);
+
+                size_t start = 0;
+                size_t len = seq.size();
+                while (qual[start] == '#'){ start++; len--; }
+                while (qual[start + len - 1] == '#'){ len--; }
+
+                seqs.push_back(seq.substr(start, len));
+                readn++;
+                readNumber++;
+            }
+        }
+        cerr << "Buffered reading " << readn << "\t" << readNumber << endl;
 
         //
         // All done reading, release the thread lock.
         //
         sem_post(semreader);
 
-        clock_t time2 = clock();	
-        for (size_t seqi = 0; seqi < seqs.size(); ++seqi) { // nseq
+        clock_t time2 = clock();
+        if (ftype) {
+            for (size_t seqi = 0; seqi < seqs.size()/2; ++seqi) {
 
-            string seq = seqs[seqi];
-            if (seq.size() < k) { continue; }
+                string seq = seqs[2*seqi];
+                string seq1 = seqs[2*seqi+1];
+                if (seq.size() < k or seq1.size() < k) { continue; }
 
-            kmerCount_dict kmers;
-            buildNuKmers(kmers, seq, k, 0);
-            size_t ind, maxhit;
-            tie(maxhit, ind) = countHit(kmers, kmerDBi, nloci);
+                kmerCount_dict kmers, kmers1; 
+                buildNuKmers(kmers, seq, k, 0);
+                buildNuKmers(kmers1, seq1, k, 0);
+                size_t ind, ind1, maxhit, maxhit1;
+                tie(maxhit, ind) = countHit(kmers, kmerDBi, nloci);
+                tie(maxhit1, ind1) = countHit(kmers1, kmerDBi, nloci);
 
-            if (maxhit < threshold) { continue; }
-            else {
-                kmerCount_dict &query = queryResults[ind];
-                for (auto &p : kmers) {
-                    if (query.count(p.first) == 1) {
-                        query[p.first] += p.second;
+                if (ind == ind1 and maxhit > threshold and maxhit1 > threshold) {
+                    kmerCount_dict &query = queryResults[ind];
+                    for (auto &p : kmers) {
+                        if (query.count(p.first) == 1) {
+                            query[p.first] += p.second;
+                        }
+                    }
+                    for (auto &p : kmers1) {
+                        if (query.count(p.first) == 1) {
+                            query[p.first] += p.second;
+                        }
+                    }
+                }
+            }
+        }
+        else {
+            for (size_t seqi = 0; seqi < seqs.size(); ++seqi) {
+
+                string seq = seqs[seqi];
+                if (seq.size() < k) { continue; }
+
+                kmerCount_dict kmers;
+                buildNuKmers(kmers, seq, k, 0);
+                size_t ind, maxhit;
+                tie(maxhit, ind) = countHit(kmers, kmerDBi, nloci);
+
+                if (maxhit < threshold) { continue; }
+                else {
+                    kmerCount_dict &query = queryResults[ind];
+                    for (auto &p : kmers) {
+                        if (query.count(p.first) == 1) {
+                            query[p.first] += p.second;
+                        }
                     }
                 }
             }
@@ -140,28 +203,52 @@ int main(int argc, char* argv[]) {
 
     if (argc < 4) {
         cout << endl;
-        cout << "Usage: queryFastq <file.queries> <file.fastq> <outputFile> [nproc] [threshold]" << endl;
-        cout << "  e.g. zcat ERR899717_1.fastq.gz | ./queryFastq PanGenomeGenotyping.21.kmers /dev/stdin ERR899717_1.fastq.21.kmers 8 5" << endl;
+        cout << "Usage: nuQueryFasta -k <kmerSize> -q <file.queries> <-fs <file.fastq> | -fi <interleaved.fastq>> -o <outputFile> -p <nproc> -th <threshold>" << endl;
+        cout << "  e.g. zcat ERR899717_1.fastq.gz | nuQueryFasta -k 21 -q PanGenomeGenotyping.21.kmers /dev/stdin ERR899717_1.fastq.21.kmers 8 5" << endl;
+        cout << "  e.g. paste <(zcat ERR899717_1.fastq.gz | paste - - - -) <(zcat ERR899717_2.fastq.gz | paste - - - -) | tr '\\t' '\\n' | \\ \n";
+        cout << "       nuQueryFasta -k 21 -q <*.kmers> -fi /dev/stdin -o <*.kmers> -p 8 -th 20" << endl;
         cout << "Options:" << endl;
-        cout << "  nproc        Use n threads." << endl;
-        cout << "  threshold    Discard reads with maxhit below this threshold" << endl << endl;
+        cout << "  -q     *.kmer file to be queried" << endl;
+        cout << "  -fs    single end fastq file" << endl;
+        cout << "  -fi    interleaved pair-end fastq file" << endl;
+        cout << "  -p     Use n threads." << endl;
+        cout << "  -th    Discard reads with maxhit below this threshold" << endl << endl;
         exit(0);
     }
    
- 
-    ifstream queryFile(argv[1]);
-    ifstream fastqFile(argv[2]);
-    FILE *outFile = fopen(argv[3], "w");
-    size_t nproc = atoi(argv[4]);
-    size_t threshold = atoi(argv[5]);
-    char * qf = argv[1];
-    strtok(qf, ".");
-    size_t k = stoi(strtok(NULL, "."));
+    vector<string> args(argv, argv+argc);
+    vector<string>::iterator it_k = find(args.begin(), args.begin()+argc, "-k") + 1;
+    vector<string>::iterator it_q = find(args.begin(), args.begin()+argc, "-q") + 1;
+    size_t ind_fs = distance(args.begin(), find(args.begin(), args.begin()+argc, "-fs"));
+    size_t ind_fi = distance(args.begin(), find(args.begin(), args.begin()+argc, "-fi"));
+    vector<string>::iterator it_o = find(args.begin(), args.begin()+argc, "-o") + 1;
+    vector<string>::iterator it_p = find(args.begin(), args.begin()+argc, "-p") + 1;
+    vector<string>::iterator it_th = find(args.begin(), args.begin()+argc, "-th") + 1;
+
+    size_t k = stoi(*it_k);
+    bool ftype;
+    size_t ind_f = min(ind_fs, ind_fi) + 1;
+    if (ind_f == ind_fs) { ftype = 0; }
+    else { ftype = 1; }
+
+    ifstream queryFile(*it_q);
+    ifstream fastqFile(args[ind_f]);
+    ofstream outFile(*it_o);
+    assert(queryFile);
+    assert(fastqFile);
+
+    size_t nproc = stoi(*it_p);
+    size_t threshold = stoi(*it_th);
+
+    cout << "k: " << k << endl;
+    cout << "ftype: " << ftype << endl;
+    cout << "query: " << *it_q << endl;
+    cout << "fastq: " << args[ind_f] << endl;
     
     // count the number of loci in a file
     cout << "total number of loci: ";
     clock_t time1 = clock();
-    assert(queryFile.is_open());
+    assert(queryFile);
     size_t nloci = 0;
     string line;
     while (getline(queryFile, line)) {
@@ -218,6 +305,7 @@ int main(int argc, char* argv[]) {
             counts.queryResults[j] = kmerDB[j];
         }
         counts.in = &fastqFile;
+        counts.ftype = ftype;
         counts.kmerDBi = &kmerDBi;
         counts.readIndex = &readNumber;
         counts.threadIndex = i;
@@ -289,15 +377,16 @@ int main(int argc, char* argv[]) {
 
     cout << "writing outputs..." << endl;
     for (size_t locus = 0; locus < combinedQueryResults.size(); locus++){
-        fprintf(outFile, ">locus %zu\n", locus);
+        outFile << ">locus " << locus << '\n';
+        //fprintf(outFile, ">locus %zu\n", locus);
         for (auto &p : combinedQueryResults[locus]){
-            fprintf(outFile, "%zu\t%zu\n", p.first, p.second);
-            //combinedQueryResults[locus][p.first] += p.second; // BUG ????
+            outFile << p.first << '\t' << p.second << '\n';
+            //fprintf(outFile, "%zu\t%zu\n", p.first, p.second);
         }
     }
 
     
-    fclose(outFile);
+    outFile.close();
     return 0;
 }
 
