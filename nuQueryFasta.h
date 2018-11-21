@@ -352,35 +352,22 @@ tuple<adj_dict, size_t> buildAdjDict(kmerCount_dict& kmers, size_t k) {
     return make_tuple(adj, max);
 }
 
-void writeDot(string outfpref, size_t i, adj_dict &adj, size_t max) {
+void writeDot(string outfpref, size_t i, adj_dict &adj) {
     ofstream fout;
     fout.open(outfpref + "loci." + to_string(i) + ".dot");
     assert(fout.is_open());
     fout << "strict digraph \"\" {" << '\n';
-     if (max > 7){
-        for (auto& p : adj){
-            for (auto& q : p.second){
-                fout << p.first << " -> " << q.first << " [Weight = \"   " << q.second << "\", ";
-                if (q.second != 0){
-                    fout << "penwidth = " << log2(q.second/(float)max + 1) * 6 + 1 << "];" << '\n';
-                } else {
-                    fout << "penwidth = " << q.second << "];" << '\n';
-                }
-            }
-        }
-    } else {
-        for (auto& p : adj){
-            for (auto& q : p.second){
-                fout << p.first << " -> " << q.first << " [Weight = \"   " << q.second << "\", ";
-                fout << "penwidth = " << q.second << "];" << '\n';
-            }
+    for (auto& p : adj){
+        for (auto& q : p.second){
+            fout << p.first << " -> " << q.first << " [Weight = \"   " << q.second << "\", ";
+            fout << "penwidth = " << q.second << "];" << '\n';
         }
     }
     fout << "}";
     fout.close();
 }
 
-void writeDot(string outfpref, size_t i, adj_dict_attr &adj_attr, size_t max) { // function polymorphism: adj with attributes information
+void writeDot(string outfpref, size_t i, adj_dict_attr &adj_attr) { // function polymorphism: adj with attributes information
     // can only compare 2 graphs at this moment
     ofstream fout;
     fout.open(outfpref + ".diff.dot");
@@ -388,7 +375,7 @@ void writeDot(string outfpref, size_t i, adj_dict_attr &adj_attr, size_t max) { 
     fout << "strict digraph \"\" {" << '\n';
     for (auto& p : adj_attr){
         for (auto& q : p.second){
-            fout << p.first << " -> " << q.first << " [Weight = " << log2(q.second[0]/ (float)max + 1) * 9 + 1;
+            fout << p.first << " -> " << q.first << " [Weight = " << q.second[0];
             fout << ", Label = " << to_string(q.second[1]) << "];" << '\n';
         }
     }

@@ -72,7 +72,7 @@ int main(int argc, char * argv[]) {
                 }
                 cout << "# of subgraphs: " << dbg.nset << endl;
                 cout << "max: " << dbg.maxcount << endl;
-                writeDot(outfpref, i, dbg.adj, dbg.maxcount);
+                writeDot(outfpref, i, dbg.adj);
             }
         } else if (args[2] == "list") {
             for (size_t i = 0; i < kmerDB.size() and i < maxNgraph; i++){
@@ -82,7 +82,7 @@ int main(int argc, char * argv[]) {
                 }
                 cout << "# of subgraphs: " << dbg.nset << endl;
                 cout << "max: " << dbg.maxcount << endl;
-                writeDot(outfpref, lociList[i], dbg.adj, dbg.maxcount);
+                writeDot(outfpref, lociList[i], dbg.adj);
             }
         }
 
@@ -165,7 +165,7 @@ int main(int argc, char * argv[]) {
         }
         cout << "# of subgraphs: " << dbg.nset << endl;
         cout << "max: " << dbg.maxcount << endl;
-        writeDot(args[3], 0, dbg.adj_attr, dbg.maxcount);
+        writeDot(args[3], 0, dbg.adj_attr);
         fout.close();
     }
     

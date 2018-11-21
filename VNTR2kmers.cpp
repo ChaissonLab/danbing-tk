@@ -260,10 +260,10 @@ int main(int argc, const char * argv[]) {
                     }
                 }
                 if (args[6] == "all") {
-                    writeDot("ref.", i, dbg.adj, dbg.maxcount);
+                    writeDot("ref.", i, dbg.adj);
             	}
                 else {
-                    writeDot("ref_" + args[6] + ".", i, dbg.adj, dbg.maxcount);
+                    writeDot("ref_" + args[6] + ".", i, dbg.adj);
                 }
             }
         }
@@ -272,7 +272,7 @@ int main(int argc, const char * argv[]) {
                 adj_dict adj;
                 tie(adj, max)= buildAdjDict(kmersdatabase[i], k);
                 cout << "max: " << max << endl;
-                writeDot("ref.", i, adj, max);
+                writeDot("ref.", i, adj);
             }
         }
     }
