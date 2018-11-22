@@ -31,6 +31,7 @@ rule all:
         comp = expand("{k}.cmp.len", k=haps.keys()),
         diff = expand("{k}.cmp.len.diff", k=haps.keys()),
         sort = expand("{k}.cmp.len.diff.sort", k=haps.keys()),
+        sortFix = expand("{k}.cmp.len.diff.sort.fix", k=haps.keys()),
         rep = expand("{k}.report", k=haps.keys())
 
 rule PredictByCoverage:
@@ -90,6 +91,7 @@ rule MakeReport:
         comp = "{hap}.cmp.len",
         diff = "{hap}.cmp.len.diff",
         sort = "{hap}.cmp.len.diff.sort",
+        sortFix = "{hap}.cmp.len.diff.sort.fix",
         rep = "{hap}.report"
     shell:"""
 paste {input.reg} {input.cov} {input.true} | tr " " "\t" > {output.comp}
@@ -100,6 +102,7 @@ awk ' function abs(v) {{return v > 0 ? v : -v}} \
     }}' {output.comp} > {output.diff}
 sort -nrk1,1 {output.diff} | tr " " "\t" > {output.sort}
 awk '$7 > 100 && $5/$4 < 0.1' {output.sort} | tee {output.rep}
+awk '{{if (NF == 6) {{print $1, $2, "0", $3, $4, $5, $6}} else {{print $0}} }}' {output.sort} | tr ' ' '\t' > {output.sortFix}
 """
 
 
