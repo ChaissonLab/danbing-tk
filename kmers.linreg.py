@@ -39,7 +39,7 @@ def RejectOutlier(x, y, t = 10):
         m = np.mean(res)
         s = np.std(res)
         logic = (np.abs(res - m) < t * s)[:,0]
-        if not all(logic):
+        if not all(logic) and np.sum(logic) != 0:
             return RejectOutlier(x0[logic], y[logic], t)
         else:
             return x0, y

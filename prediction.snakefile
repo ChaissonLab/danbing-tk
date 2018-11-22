@@ -26,6 +26,7 @@ rule all:
     input:
         true = expand("{k}.true.len", k=haps.keys()),
         cov = expand("{k}.cov.len", k=haps.keys()),
+        rawReg = expand([IL[0] + "." + hap + ".0." + str(config["nloci"]) + ".pred" for hap, IL in haps.items()]),
         reg = expand("{k}.reg.len", k=haps.keys()),
         comp = expand("{k}.cmp.len", k=haps.keys()),
         diff = expand("{k}.cmp.len.diff", k=haps.keys()),
