@@ -29,17 +29,21 @@ def GetRSquare(p, x, y):
     sstot = np.sum((y - ybar)**2)
     return ssres/sstot
 
-def RejectOutlier(x, y, t = 3):
-    x0 = x[np.ix_(np.not_equal(x, 0).ravel(), [0])]
-    y = y[np.ix_(np.not_equal(x, 0).ravel(), [0])]
-    if t != -1:
+def RejectOutlier(x, y, t = 30):
+    logic = (x != 0)[:,0]
+    x0 = x[logic]
+    y = y[logic]
+    if t != -1: # reject outliers and remove zeros
         reg = LinearRegression(fit_intercept=False).fit(x0, y)
         res = y - reg.predict(x0)
         m = np.mean(res)
         s = np.std(res)
-        logic = np.ix_(np.less(abs(res - m), t * s).ravel(), [0])
-        return x0[logic], y[logic]
-    else:
+        logic = (np.abs(res - m) < t * s)[:,0]
+        if len(logic) != len(x0):
+            return RejectOutlier(x0[logic], y[logic], t)
+        else:
+            return x0, y
+    else: # only remove zeros
         return x0, y
 
 print("reading regions.bed")
@@ -89,8 +93,8 @@ with open(args.pacbio, 'r') as f:
 results = np.zeros((nloci, 4))
 for k, v in data.items():
     # fit data
-    x1 = np.array(v[:,0]).reshape(-1,1)
-    y = np.array(v[:,1]).reshape(-1,1)
+    x1 = v[:,0:1]
+    y = v[:,1:2]
     x1, y = RejectOutlier(x1, y)     # mild data cleaning, esp. for simple repeat
     if len(x1) == 0:
         continue
@@ -102,7 +106,7 @@ for k, v in data.items():
  
     if args.plot == "all":
         # plot regression
-        xp = np.array([np.linspace(0, x1.max(), 2)]).reshape(-1,1)
+        xp = np.arange(0, x1.max(), 2).reshape(-1,1)
         plt.plot(x1, y, '.', color='C0')
         plt.plot(xp, reg.predict(xp), '-', color='C0')
         text = "y = "+f'{a:.2f}'+"x"+f'{b:+.2f}'+"\n"+"$R^2$ = "+f'{rsquare:.4f}'
@@ -127,8 +131,8 @@ with open(fastq+"."+hap+"."+args.start+"."+args.end+".pred", 'wb') as f:
 
 print("plotting summary report")
 # plot performance
-truth = np.array(results[:,0]).reshape(-1,1)
-pred = np.array(results[:,1]).reshape(-1,1)
+truth = results[:,0:1]
+pred = results[:,1:2]
 truth1, pred1 = RejectOutlier(truth, pred, -1)
 #truth1 = np.log(truth1)
 #pred1 = np.log(pred1)
@@ -136,7 +140,7 @@ if any(truth1) and any(pred1):
     reg = LinearRegression(fit_intercept=False).fit(truth1, pred1)
 
     a, b = reg.coef_[0,0], reg.intercept_
-    tp = np.array([np.linspace(0, truth1.max(), 2)]).reshape(-1,1)
+    tp = np.arange(0, truth1.max(), 2).reshape(-1,1)
     rsquare = reg.score(truth1, pred1)
     rejected = np.setdiff1d(truth, truth1)
     rejdata = np.column_stack((truth[np.isin(truth, rejected)], pred[np.isin(truth, rejected)]))
