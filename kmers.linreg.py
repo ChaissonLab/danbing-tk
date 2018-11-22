@@ -29,7 +29,7 @@ def GetRSquare(p, x, y):
     sstot = np.sum((y - ybar)**2)
     return ssres/sstot
 
-def RejectOutlier(x, y, t = 30):
+def RejectOutlier(x, y, t = 10):
     logic = (x != 0)[:,0]
     x0 = x[logic]
     y = y[logic]
@@ -39,7 +39,7 @@ def RejectOutlier(x, y, t = 30):
         m = np.mean(res)
         s = np.std(res)
         logic = (np.abs(res - m) < t * s)[:,0]
-        if len(logic) != len(x0):
+        if not all(logic):
             return RejectOutlier(x0[logic], y[logic], t)
         else:
             return x0, y
