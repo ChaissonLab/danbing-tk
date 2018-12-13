@@ -45,6 +45,7 @@ int main(int argc, const char * argv[]) {
 
     size_t k = stoi(*(find(args.begin(), args.end(), "-k") + 1));
     size_t flanksize = stoi(*(find(args.begin(), args.end(), "-fs") + 1));
+    size_t trueFlankSize = 2000;
 
     bool masked = 1;
     if (it_nom != args.end()) { masked = 0; }
@@ -88,10 +89,10 @@ int main(int argc, const char * argv[]) {
             return 1;
         }
 
-        if (haplist.size() == 1) {
+        if (haplist.size() == 1) { // e.g. CHM1
             outfname = haplist[0];
         }
-        else if (haplist.size() == 2) {
+        else if (haplist.size() == 2) { // e.g. HG00514.h0 HG00514.h1
             assert(haplist[0].substr(0,haplist[0].length()-1) == haplist[1].substr(0,haplist[1].length()-1));
             assert(haplist[0].substr(haplist[0].length()-1,1) == "0" or haplist[1].substr(haplist[1].length()-1,1) == "0");
             assert(haplist[0].substr(haplist[0].length()-1,1) == "1" or haplist[1].substr(haplist[1].length()-1,1) == "1");
@@ -121,7 +122,8 @@ int main(int argc, const char * argv[]) {
     // open each file and create a kmer database for each loci
     // combine the kmer databases of the same loci across different files
     // -----
-    vector<kmerCount_dict> kmersdatabase(nread);
+    vector<kmerCount_dict> kmersDB(nread);
+    vector<kmerCount_dict> nonTRkmersDB(nread);
     for (size_t n = 0; n < nhap; n++) {
         string &fname = haps[n];
         string read, line;
@@ -139,7 +141,9 @@ int main(int argc, const char * argv[]) {
                 }
                 if (fin.peek() == '>' or fin.peek() == EOF) {
                     if (read != "") {
-                        buildNuKmers(kmersdatabase[i], read, k, flanksize);
+                        buildNuKmers(kmersDB[i], read, k, trueFlankSize, trueFlankSize);
+                        buildNuKmers(nonTRkmersDB[i], read, k, flanksize, read.size()-trueFlankSize);
+                        buildNuKmers(nonTRkmersDB[i], read, k, read.size()-trueFlankSize, flanksize);
                     }
                     read = "";
                     i++;
@@ -154,7 +158,9 @@ int main(int argc, const char * argv[]) {
                 }
                 if (fin.peek() == '>' or fin.peek() == EOF) {
                     if (read != "") {
-                        buildNuKmers(kmersdatabase[i], read, k, flanksize, 0);
+                        buildNuKmers(kmersDB[i], read, k, trueFlankSize, trueFlankSize, 0);
+                        buildNuKmers(nonTRkmersDB[i], read, k, flanksize, read.size()-trueFlankSize, 0);
+                        buildNuKmers(nonTRkmersDB[i], read, k, read.size()-trueFlankSize, flanksize, 0);
                     }
                     read = "";
                     i++;
@@ -167,17 +173,28 @@ int main(int argc, const char * argv[]) {
     // -----
     // write a kmers file for all kmer databases
     // -----
-    ofstream fout;
+    ofstream fout_tr;
+    ofstream fout_ntr;
+
     if (it_all != args.end()) {
-    	fout.open("PanGenome." + to_string(k) + "." + to_string(flanksize) + ".kmers");
+    	fout_tr.open("PanGenome." + to_string(k) + "." + to_string(flanksize) + ".tr.kmers");
+        fout_ntr.open("PanGenome." + to_string(k) + "." + to_string(flanksize) + ".ntr.kmers");
     } else {
-        fout.open(outfname + "." + to_string(k) + "." + to_string(flanksize) + ".kmers");
+        fout_tr.open(outfname + "." + to_string(k) + "." + to_string(flanksize) + ".tr.kmers");
+        fout_ntr.open(outfname + "." + to_string(k) + "." + to_string(flanksize) + ".ntr.kmers");
     }
-    for (size_t i = 0; i < kmersdatabase.size(); i++){
-        cout << "# of unique kmers: " << kmersdatabase[i].size() << '\n';
-        fout << ">loci " + to_string(i) << '\n';
-        for (auto& p : kmersdatabase[i]) {
-            fout << p.first << '\t' << p.second << '\n';
+
+    for (size_t i = 0; i < kmersDB.size(); i++){
+        cout << "# of unique kmers: " << kmersDB[i].size() << '\t' << nonTRkmersDB[i].size() << '\n';
+
+        fout_tr << ">loci " + to_string(i) << '\n';
+        for (auto& p : kmersDB[i]) {
+            fout_tr << p.first << '\t' << p.second << '\n';
+        }
+
+        fout_ntr << ">loci " + to_string(i) << '\n';
+        for (auto& p : nonTRkmersDB[i]) {
+            fout_ntr << p.first << '\t' << p.second << '\n';
         }
     }
 
@@ -189,9 +206,9 @@ int main(int argc, const char * argv[]) {
         size_t maxNgraph = 5, max;
         string outfpref = "ref.";
         if (canonical_mode) {
-            for (size_t i = 0; i < kmersdatabase.size() and i < maxNgraph; i++){
-                DBG dbg(kmersdatabase[i].size());
-                for (auto &p : kmersdatabase[i]) {
+            for (size_t i = 0; i < kmersDB.size() and i < maxNgraph; i++){
+                DBG dbg(kmersDB[i].size());
+                for (auto &p : kmersDB[i]) {
                     dbg.addkmer(decodeNumericSeq(p.first, k), p.second);
                 }
                 cout << "# of subgraphs: " << dbg.nset << endl;
@@ -216,9 +233,9 @@ int main(int argc, const char * argv[]) {
             }
         }
         else {
-            for (size_t i = 0; i < kmersdatabase.size() and i < maxNgraph; i++){
+            for (size_t i = 0; i < kmersDB.size() and i < maxNgraph; i++){
                 adj_dict adj;
-                tie(adj, max)= buildAdjDict(kmersdatabase[i], k);
+                tie(adj, max)= buildAdjDict(kmersDB[i], k);
                 cout << "max: " << max << endl;
                 writeDot("ref.", i, adj);
             }

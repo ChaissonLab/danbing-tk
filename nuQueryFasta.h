@@ -221,17 +221,17 @@ void buildNuKmers(kmerCount_dict& kmers, string& read, size_t k, size_t flanksiz
     }
 }
 */
-void buildNuKmers(kmerCount_dict& kmers, string& read, size_t k, size_t flanksize = 0, bool count = 1) { // old version
+void buildNuKmers(kmerCount_dict& kmers, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0, bool count = 1) { // old version
     size_t rlen = read.length();
     size_t mask = (1UL << 2*(k-1)) - 1;
     size_t beg, nbeg, canonicalkmer, kmer, rckmer;
 
-    tie(beg, kmer) = getNextKmer(flanksize, read, k);
+    tie(beg, kmer) = getNextKmer(leftflank, read, k);
     if (beg == rlen){ return; }
     rckmer = getNuRC(kmer, k);
  
     if (count) {
-        for (size_t i = beg; i < rlen - k - flanksize + 1; i++){
+        for (size_t i = beg; i < rlen - k - rightflank + 1; i++){
             if (kmer > rckmer) {
                 canonicalkmer = rckmer;
             } else {
@@ -251,7 +251,7 @@ void buildNuKmers(kmerCount_dict& kmers, string& read, size_t k, size_t flanksiz
         }
     }
     else {
-        for (size_t i = beg; i < rlen - k - flanksize + 1; i++){
+        for (size_t i = beg; i < rlen - k - rightflank + 1; i++){
             if (kmer > rckmer) {
                 canonicalkmer = rckmer;
             } else {
