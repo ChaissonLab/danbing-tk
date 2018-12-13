@@ -21,10 +21,12 @@ using namespace std;
 
 int main(int argc, const char * argv[]) {
     if (argc < 2){
-        cerr << "usage: vntr2kmers -k -fs <-all | -list> [-nonca | -g] \n";
+        cerr << "usage: vntr2kmers -k -fs <-all | -list> [-nom | -nonca | -g] \n";
+        cerr << "  -nom                Use *.combined-hap.fasta instead of *combined-hap.fasta.masked.fix to count kmers\n";
+        cerr << "                      Default: Use *combined-hap.fasta.masked.fix if not specified\n";
         cerr << "  -nonca              Use canonical mode to count kmers\n";
-        cerr << "                      Default: canonical mode\n";
-        cerr << "  -g                  Generate graph. Default: no graph\n";
+        cerr << "                      Default: canonical mode if not specified\n";
+        cerr << "  -g                  Generate graph. Default: no graph if not specified\n";
         cerr << "  -fs                 Flank size. Length of flanking region around VNTR loci e.g. 500\n";
         cerr << "  -all                Include all haplotypes\n";
         cerr << "  -list               Specify haplotypes intended to be included. e.g. CHM1 HG00514.h0\n";
@@ -34,14 +36,18 @@ int main(int argc, const char * argv[]) {
         exit(0);
     }
     vector<string> args(argv, argv+argc);
+    vector<string>::iterator it_nom = find(args.begin(), args.end(), "-nom");
     vector<string>::iterator it_nonca = find(args.begin(), args.end(), "-nonca");
     vector<string>::iterator it_g = find(args.begin(), args.end(), "-g");
     vector<string>::iterator it_all = find(args.begin(), args.end(), "-all");
     vector<string>::iterator it_list = find(args.begin(), args.end(), "-list");
+    assert(it_all != args.end() or it_list != args.end());
 
     size_t k = stoi(*(find(args.begin(), args.end(), "-k") + 1));
     size_t flanksize = stoi(*(find(args.begin(), args.end(), "-fs") + 1));
 
+    bool masked = 1;
+    if (it_nom != args.end()) { masked = 0; }
     bool canonical_mode = 1;
     if (it_nonca != args.end()) { canonical_mode = 0; }
 
@@ -119,7 +125,9 @@ int main(int argc, const char * argv[]) {
     for (size_t n = 0; n < nhap; n++) {
         string &fname = haps[n];
         string read, line;
-        ifstream fin(fname+".combined-hap.fasta.masked.fix");
+        ifstream fin;
+        if (masked) { fin.open(fname+".combined-hap.fasta.masked.fix"); }
+        else { fin.open(fname+".combined-hap.fasta"); }
         size_t i = 0;
         assert(fin.is_open());
 
