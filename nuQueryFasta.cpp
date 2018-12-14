@@ -32,24 +32,28 @@ void rand_str(char *dest, size_t length) {
     *dest = '\0';
 }
 
-tuple<size_t, size_t> countHit(kmerCount_dict &kmers, kmerIndex_dict &kmerDBi, size_t nloci) {
-    vector<size_t> hits(nloci);
-    for (auto &p : kmers) {
-	if (kmerDBi.count(p.first) == 1) {
-	    for (size_t i : kmerDBi[p.first]) {
-		hits[i] += p.second;
-	    }	
-	}
+tuple<uint16_t, uint16_t> countHit(kmerCount_dict &kmers, vector<kmerIndex_dict*> &kmerDBis, size_t nloci) {
+    vector<uint16_t> totalHits(nloci);
+    for (kmerIndex_dict* kmerDBi : kmerDBis) {
+        for (auto &p : kmers) {
+            if ((*kmerDBi).count(p.first) == 1) {
+                for (uint16_t i : (*kmerDBi)[p.first]) {
+                    totalHits[i] += p.second;
+                }	
+            }
+        }
     }
-    vector<size_t>::iterator it = max_element(hits.begin(), hits.end());
-    return make_tuple(*it, distance(hits.begin(), it));
+    vector<uint16_t>::iterator it = max_element(totalHits.begin(), totalHits.end());
+    return make_tuple(*it, distance(totalHits.begin(), it));
 }
 
 class Counts {
 public:
     ifstream *in;
     bool ftype;
-    kmerIndex_dict *kmerDBi;
+    vector<kmerIndex_dict*> kmerDBis;
+    //kmerIndex_dict *trKmerDBi;
+    //kmerIndex_dict *ntrKmerDBi;
     size_t *readIndex;
     size_t threadIndex, k, nloci, threshold;
     vector<kmerCount_dict> queryResults;
@@ -67,12 +71,14 @@ size_t readNumber = 0;
 size_t nHits = 0;
 
 void CountWords(void *data) {
-    kmerIndex_dict &kmerDBi = *((Counts*)data)->kmerDBi;
-    size_t &readNumber = *((Counts*)data)->readIndex;
+    vector<kmerIndex_dict*> &kmerDBis = ((Counts*)data)->kmerDBis;
+    //kmerIndex_dict &trKmerDBi = *((Counts*)data)->trKmerDBi;
+    //kmerIndex_dict &ntrKmerDBi = *((Counts*)data)->ntrKmerDBi;
+    vector<kmerCount_dict> &queryResults = ((Counts*)data)->queryResults;
     ifstream *in = ((Counts*)data)->in;
     bool ftype = ((Counts*)data)->ftype;
+    size_t &readNumber = *((Counts*)data)->readIndex;
     size_t k = ((Counts*)data)->k;
-    vector<kmerCount_dict> &queryResults = ((Counts*)data)->queryResults;
     size_t threadIndex = ((Counts*)data)->threadIndex;
     size_t nloci = ((Counts*)data)->nloci;
     size_t threshold = ((Counts*)data)->threshold;
@@ -83,7 +89,11 @@ void CountWords(void *data) {
         //
         sem_wait(semreader);
 
+        if ((*in).good() == false) {
+            break;
+        }
         assert((*in).good() == true);
+
         string title, title1, seq, seq1, qualtitle, qualtitle1, qual, qual1;
         size_t readn = 0;
         vector<string> seqs;
@@ -147,21 +157,16 @@ void CountWords(void *data) {
                 string seq1 = seqs[2*seqi+1];
                 if (seq.size() < k or seq1.size() < k) { continue; }
 
-                kmerCount_dict kmers, kmers1; 
-                buildNuKmers(kmers, seq, k, 0);
-                buildNuKmers(kmers1, seq1, k, 0);
-                size_t ind, ind1, maxhit, maxhit1;
-                tie(maxhit, ind) = countHit(kmers, kmerDBi, nloci);
-                tie(maxhit1, ind1) = countHit(kmers1, kmerDBi, nloci);
+                kmerCount_dict kmers; 
+                buildNuKmers(kmers, seq, k);
+                buildNuKmers(kmers, seq1, k);
+                size_t ind, maxhit;
+                tie(maxhit, ind) = countHit(kmers, kmerDBis, nloci);
 
-                if (ind == ind1 and maxhit > threshold and maxhit1 > threshold) {
+                if (maxhit < threshold) { continue; }
+                else {
                     kmerCount_dict &query = queryResults[ind];
                     for (auto &p : kmers) {
-                        if (query.count(p.first) == 1) {
-                            query[p.first] += p.second;
-                        }
-                    }
-                    for (auto &p : kmers1) {
                         if (query.count(p.first) == 1) {
                             query[p.first] += p.second;
                         }
@@ -178,7 +183,7 @@ void CountWords(void *data) {
                 kmerCount_dict kmers;
                 buildNuKmers(kmers, seq, k, 0);
                 size_t ind, maxhit;
-                tie(maxhit, ind) = countHit(kmers, kmerDBi, nloci);
+                tie(maxhit, ind) = countHit(kmers, kmerDBis, nloci);
 
                 if (maxhit < threshold) { continue; }
                 else {
@@ -203,7 +208,7 @@ int main(int argc, char* argv[]) {
 
     if (argc < 4) {
         cout << endl;
-        cout << "Usage: nuQueryFasta -k <kmerSize> -q <file.queries> <-fs <file.fastq> | -fi <interleaved.fastq>> -o <outputFile> -p <nproc> -th <threshold>" << endl;
+        cout << "Usage: nuQueryFasta -k <kmerSize> <-q <query.kmers> | -qs <VNTR.kmers> <nonVNTR.kmers>> <-fs <singleEnd.fastq> | -fi <interleaved.fastq>> -o <outputFile> -p <nproc> -th <threshold>" << endl;
         cout << "  e.g. zcat ERR899717_1.fastq.gz | nuQueryFasta -k 21 -q PanGenomeGenotyping.21.kmers /dev/stdin ERR899717_1.fastq.21.kmers 8 5" << endl;
         cout << "  e.g. paste <(zcat ERR899717_1.fastq.gz | paste - - - -) <(zcat ERR899717_2.fastq.gz | paste - - - -) | tr '\\t' '\\n' | \\ \n";
         cout << "       nuQueryFasta -k 21 -q <*.kmers> -fi /dev/stdin -o <*.kmers> -p 8 -th 20" << endl;
@@ -218,7 +223,8 @@ int main(int argc, char* argv[]) {
    
     vector<string> args(argv, argv+argc);
     vector<string>::iterator it_k = find(args.begin(), args.begin()+argc, "-k") + 1;
-    vector<string>::iterator it_q = find(args.begin(), args.begin()+argc, "-q") + 1;
+    vector<string>::iterator it_q = find(args.begin(), args.begin()+argc, "-q");
+    vector<string>::iterator it_qs = find(args.begin(), args.begin()+argc, "-qs");
     size_t ind_fs = distance(args.begin(), find(args.begin(), args.begin()+argc, "-fs"));
     size_t ind_fi = distance(args.begin(), find(args.begin(), args.begin()+argc, "-fi"));
     vector<string>::iterator it_o = find(args.begin(), args.begin()+argc, "-o") + 1;
@@ -226,24 +232,43 @@ int main(int argc, char* argv[]) {
     vector<string>::iterator it_th = find(args.begin(), args.begin()+argc, "-th") + 1;
 
     size_t k = stoi(*it_k);
-    bool ftype;
+    bool ftype, qtype;
     size_t ind_f = min(ind_fs, ind_fi) + 1;
-    if (ind_f == ind_fs) { ftype = 0; }
-    else { ftype = 1; }
-
-    ifstream queryFile(*it_q);
     ifstream fastqFile(args[ind_f]);
-    ofstream outFile(*it_o);
-    assert(queryFile);
     assert(fastqFile);
+    if (ind_f == ind_fs) {
+        ftype = 0;
+    } else {
+        ftype = 1;
+    }
+
+    ifstream queryFile, ntrFile;
+    if (it_q != args.end()) { 
+        queryFile.open(*(it_q+1)); 
+        qtype = 0;
+    } else { 
+        queryFile.open(*(it_qs+1));
+        ntrFile.open(*(it_qs+2));
+        assert(ntrFile);
+        qtype = 1;
+    }
+    assert(queryFile);
+
+    ofstream outFile(*it_o);
 
     size_t nproc = stoi(*it_p);
     size_t threshold = stoi(*it_th);
 
     cout << "k: " << k << endl;
     cout << "ftype: " << ftype << endl;
-    cout << "query: " << *it_q << endl;
     cout << "fastq: " << args[ind_f] << endl;
+    cout << "qtype: " << qtype << endl;
+    cout << "query: ";
+    if (qtype) {
+        cout << *(it_qs+1) << '\t' << *(it_qs+2) << endl;
+    } else {
+        cout << *(it_q+1) << endl;
+    }
     
     // count the number of loci in a file
     cout << "total number of loci: ";
@@ -260,16 +285,16 @@ int main(int argc, char* argv[]) {
     queryFile.clear();
     queryFile.seekg(0, queryFile.beg);
  
-    // read kmer info
+    // read kmer info from *.tr.kmers
     size_t ind = 0;
     kmerCount_dict kmers;
-    vector<kmerCount_dict> kmerDB(nloci);
-    kmerIndex_dict kmerDBi;
+    vector<kmerCount_dict> trKmerDB(nloci);
+    kmerIndex_dict trKmerDBi;
     getline(queryFile, line);
     while (true){
         if (queryFile.peek() == EOF or queryFile.peek() == '>'){
             if (kmers.size() != 0){
-                kmerDB[ind] = kmers;
+                trKmerDB[ind] = kmers;
                 kmers.clear();
             }
             ind++;
@@ -285,11 +310,43 @@ int main(int argc, char* argv[]) {
             getline(queryFile, line, '\t');
             size_t kmer = stoul(line);
             kmers[kmer] = 0;
-            kmerDBi[kmer].push_back(ind);
+            trKmerDBi[kmer].push_back(ind);
             getline(queryFile, line);
         }
     }
-    cout << "read .kmer file in " << (float)(clock() - time1)/CLOCKS_PER_SEC << " sec." << endl;
+
+    // read kmer info from *.ntr.kmers
+    kmers.clear();
+    //vector<kmerCount_dict> ntrKmerDB(nloci);
+    kmerIndex_dict ntrKmerDBi;
+    if (qtype == 1) {
+        size_t ind = 0;
+        getline(ntrFile, line);
+        while (true){
+            if (ntrFile.peek() == EOF or ntrFile.peek() == '>'){
+                if (kmers.size() != 0){
+                    //ntrKmerDB[ind] = kmers;
+                    kmers.clear();
+                }
+                ind++;
+                if (ntrFile.peek() == EOF){
+                    ntrFile.close();
+                    break;
+                }
+                else {
+                    getline(ntrFile, line);
+                }
+            }
+            else {
+                getline(ntrFile, line, '\t');
+                size_t kmer = stoul(line);
+                kmers[kmer] = 0;
+                ntrKmerDBi[kmer].push_back(ind);
+                getline(ntrFile, line);
+            }
+        }
+    }
+    cout << "read *.kmers file in " << (float)(clock() - time1)/CLOCKS_PER_SEC << " sec." << endl;
 
 
     // create data for each process
@@ -299,21 +356,23 @@ int main(int argc, char* argv[]) {
     cout << "initialization" << endl;
     for (size_t i = 0; i < nproc; i++) {
         Counts &counts = threaddata.counts[i];
-        
-        //vector<kmerCount_dict> queryResults(nloci);
+ 
         for (size_t j = 0; j < nloci; j++) {
-            counts.queryResults[j] = kmerDB[j];
+            counts.queryResults[j] = trKmerDB[j];
         }
         counts.in = &fastqFile;
         counts.ftype = ftype;
-        counts.kmerDBi = &kmerDBi;
+        counts.kmerDBis.push_back(&trKmerDBi);
+        if (qtype == 1) {
+            counts.kmerDBis.push_back(&ntrKmerDBi);
+        }
         counts.readIndex = &readNumber;
         counts.threadIndex = i;
         counts.k = k;
         counts.threshold = threshold;
         cout << "thread " << i << " done" << endl;
     }
-    kmerDB.clear();
+    trKmerDB.clear();
     cout << "thread data preparation completed in " << (float)(clock() - time1)/CLOCKS_PER_SEC << " sec." << endl;
 
     const int idLen=10;

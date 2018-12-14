@@ -21,8 +21,8 @@
 using namespace std;
 
 typedef unordered_set<size_t> kmer_set;
-typedef unordered_map<size_t, size_t> kmerCount_dict;
-typedef unordered_map<size_t, vector<size_t>> kmerIndex_dict;
+typedef unordered_map<size_t, uint16_t> kmerCount_dict; // assume locus length < (2^16 -1)
+typedef unordered_map<size_t, vector<uint16_t>> kmerIndex_dict; // assume number of loci < (2^16 -1)
 typedef unordered_map<size_t, vector<size_t>> kmerAttr_dict;
 typedef unordered_map<string, unordered_map<string, size_t>> adj_dict;
 typedef unordered_map<string, unordered_map<string, vector<size_t>>> adj_dict_attr;
