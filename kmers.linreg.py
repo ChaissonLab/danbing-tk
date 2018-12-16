@@ -15,12 +15,14 @@ ap.add_argument("illumina", help="*.kmers of illumina query results")
 ap.add_argument("start", help="starting index of locus")
 ap.add_argument("end", help="ending index of locus")
 ap.add_argument("plot", help="plot option. e.g. 'all', 'none'")
+ap.add_argument("threshold", help="rejecting outliers locating threshold*std away from the mean. recommended value: 10")
 args = ap.parse_args()
 hap = args.pacbio.split('.')[0]
 fastq = args.illumina.split('.')[0]
 plotname = '.'.join(args.pacbio.split('.')[:-1]) + "." + fastq
 start = int(args.start)
 end = int(args.end)
+threshold = int(args.threshold)
 
 def GetRSquare(p, x, y):
     yhat = p(x)
@@ -29,7 +31,7 @@ def GetRSquare(p, x, y):
     sstot = np.sum((y - ybar)**2)
     return ssres/sstot
 
-def RejectOutlier(x, y, t = 10):
+def RejectOutlier(x, y, t):
     logic = (x != 0)[:,0]
     x0 = x[logic]
     y = y[logic]
@@ -95,7 +97,7 @@ for k, v in data.items():
     # fit data
     x1 = v[:,0:1]
     y = v[:,1:2]
-    x1, y = RejectOutlier(x1, y)     # mild data cleaning, esp. for simple repeat
+    x1, y = RejectOutlier(x1, y, threshold)     # mild data cleaning, esp. for simple repeat
     if len(x1) == 0:
         continue
     reg = LinearRegression(fit_intercept=False).fit(x1, y)
@@ -127,24 +129,26 @@ for k, v in data.items():
 print("writing outputs")
 # write outputs as <locus> <pacbio kmer sum> <predicted pacbio kmer sum> <a> <rsqaure>
 with open(fastq+"."+hap+"."+args.start+"."+args.end+".pred", 'wb') as f:
-    np.savetxt(f, results, fmt=['%.0f','%.0f','%.2f','%.4f'])
+    np.savetxt(f, results, fmt=['%8.0f','%8.0f','%8.2f','%8.4f'])
 
-print("plotting summary report")
 # plot performance
+print("plotting summary report")
 truth = results[:,0:1]
 pred = results[:,1:2]
-truth1, pred1 = RejectOutlier(truth, pred, -1)
-#truth1 = np.log(truth1)
-#pred1 = np.log(pred1)
+truth0, pred0 = RejectOutlier(truth, pred, -1) # do not plot zeros
+nloci0 = truth0.shape[0]
+truth1, pred1 = RejectOutlier(truth0, pred0, threshold)
+print("# of nonzero outliers: ", nloci0 - truth1.shape[0])
 if any(truth1) and any(pred1):
     reg = LinearRegression(fit_intercept=False).fit(truth1, pred1)
 
     a, b = reg.coef_[0,0], reg.intercept_
     tp = np.arange(0, truth1.max(), 2).reshape(-1,1)
     rsquare = reg.score(truth1, pred1)
-    rejected = np.setdiff1d(truth, truth1)
-    rejdata = np.column_stack((truth[np.isin(truth, rejected)], pred[np.isin(truth, rejected)]))
+    #rejected = np.setdiff1d(truth, truth1)
+    #rejdata = np.column_stack((truth[np.isin(truth, rejected)], pred[np.isin(truth, rejected)]))
 
+    plt.plot(truth0[pred0 < pred1.max()], pred0[pred0 < pred1.max()], '.', color='C1')
     plt.plot(truth1, pred1, '.', color='C0')
     plt.plot(tp, reg.predict(tp), '-', color='C0')
     text = "y = "+f'{a:.2f}'+"x"+f'{b:+.2f}'+"\n"+"$R^2$ = "+f'{rsquare:.4f}'
@@ -157,7 +161,7 @@ if any(truth1) and any(pred1):
     plt.show()
     plt.close()
     print(plotname+".summary."+str(start)+"."+str(end)+".png done")
-    print("rejected data: \n", rejdata.astype(int)) 
+    #print("rejected data: \n", rejdata.astype(int)) 
 else:
     print("empty data in regression!")
 
