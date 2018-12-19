@@ -96,7 +96,9 @@ void CountWords(void *data) {
         sem_wait(semreader);
 
         if ((*in).good() == false) {
-            break;
+            cout << "Finished at read index " << readNumber << endl;
+            sem_post(semreader);
+            return;
         }
         assert((*in).good() == true);
 
@@ -201,10 +203,7 @@ void CountWords(void *data) {
             }
         }
         cout << "Batch query in " << (float)(clock() - time2)/CLOCKS_PER_SEC << " sec." << endl;
-        if ((*in).good() == false or (qual == "")) {
-            cout << "Finished at read index " << readNumber << endl;
-            return;
-        }
+        
     }
 }
 
@@ -259,6 +258,7 @@ int main(int argc, char* argv[]) {
     assert(queryFile);
 
     ofstream outFile(*it_o);
+    assert(outFile);
 
     size_t nproc = stoi(*it_p);
     uint16_t threshold = stoi(*it_th);
@@ -423,11 +423,11 @@ int main(int argc, char* argv[]) {
         cout << "starting thread " << t << endl;
         pthread_create(&threads[t], &threadAttr[t], (void* (*)(void*))CountWords, &threaddata.counts[t]);
     }
-
+    cout << "threads created" << endl;
+ 
     for (t = 0; t < nproc; t++) {
         pthread_join(threads[t], NULL);
     }
-
     cout << "parallel query completed in " << (float)(clock() - time1)/CLOCKS_PER_SEC << " sec." << endl;
 
     cout << "combining restuls..." << endl;
