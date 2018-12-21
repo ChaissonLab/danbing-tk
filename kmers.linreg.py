@@ -12,17 +12,17 @@ import pandas as pd
 ap = argparse.ArgumentParser(description="read *.kmers and output regression plots and prediction results")
 ap.add_argument("pacbio", help="*.kmers of pacbio assembled loci")
 ap.add_argument("illumina", help="*.kmers of illumina query results")
-ap.add_argument("start", help="starting index of locus")
-ap.add_argument("end", help="ending index of locus")
-ap.add_argument("plot", help="plot option. e.g. 'all', 'none'")
-ap.add_argument("threshold", help="rejecting outliers locating threshold*std away from the mean. recommended value: 10")
+ap.add_argument("start", help="starting index of locus", type=int)
+ap.add_argument("end", help="ending index of locus", type=int)
+ap.add_argument("plot", help="plot option. e.g. 'all', 'none'. Default: none", default="none")
+ap.add_argument("threshold", help="rejecting outliers locating threshold*std away from the mean. Default: 10", type=int, default=10)
 args = ap.parse_args()
 hap = args.pacbio.split('.')[0]
 fastq = args.illumina.split('.')[0]
 plotname = '.'.join(args.pacbio.split('.')[:-1]) + "." + fastq
-start = int(args.start)
-end = int(args.end)
-threshold = int(args.threshold)
+start = args.start
+end = args.end
+threshold = args.threshold
 
 def GetRSquare(p, x, y):
     yhat = p(x)
@@ -128,7 +128,7 @@ for k, v in data.items():
 
 print("writing outputs")
 # write outputs as <locus> <pacbio kmer sum> <predicted pacbio kmer sum> <a> <rsqaure>
-with open(fastq+"."+hap+"."+args.start+"."+args.end+".pred", 'wb') as f:
+with open(fastq+"."+hap+"."+str(start)+"."+str(end)+".pred", 'wb') as f:
     np.savetxt(f, results, fmt=['%8.0f','%8.0f','%8.2f','%8.4f'])
 
 # plot performance
