@@ -21,7 +21,7 @@ using namespace std;
 
 int main(int argc, const char * argv[]) {
     if (argc < 2){
-        cerr << "usage: vntr2kmers -k -fs <-all | -list> [-nom | -nonca | -g] \n";
+        cerr << "usage: vntr2kmers [-nom | -nonca | -g] -k -fs <-all | -none | -exclude | -list <haps>> \n";
         cerr << "  -nom                Use *.combined-hap.fasta instead of *combined-hap.fasta.masked.fix to count kmers\n";
         cerr << "                      Default: Use *combined-hap.fasta.masked.fix if not specified\n";
         cerr << "  -nonca              Use canonical mode to count kmers\n";
@@ -29,9 +29,11 @@ int main(int argc, const char * argv[]) {
         cerr << "  -g                  Generate graph. Default: no graph if not specified\n";
         cerr << "  -fs                 Flank size. Length of flanking region around VNTR loci e.g. 500\n";
         cerr << "  -all                Include all haplotypes\n";
+        cerr << "  -none               Do not count any haplotypes\n";
+        cerr << "  -exclude            Exclude the specified haplotypes\n";
         cerr << "  -list               Specify haplotypes intended to be included. e.g. CHM1 HG00514.h0\n";
-        cerr << "  e.g.:  vntr2kmers -k 21 -fs 1950 AK1\n";
-        cerr << "  e.g.:  vntr2kmers -k 21 -fs 0 -nonca -g CHM1\n";
+        cerr << "  e.g.:  vntr2kmers -nom -k 21 -fs 1950 -list AK1.h0 AK1.h1\n";
+        cerr << "  e.g.:  vntr2kmers -nonca -g -k 21 -fs 0 -list CHM1\n";
         cerr << "  ** The program assumes 2000 bp flanking regions around each VNTR locus\n\n";
         exit(0);
     }
@@ -41,7 +43,9 @@ int main(int argc, const char * argv[]) {
     vector<string>::iterator it_g = find(args.begin(), args.end(), "-g");
     vector<string>::iterator it_all = find(args.begin(), args.end(), "-all");
     vector<string>::iterator it_list = find(args.begin(), args.end(), "-list");
-    assert(it_all != args.end() or it_list != args.end());
+    vector<string>::iterator it_none = find(args.begin(), args.end(), "-none");
+    vector<string>::iterator it_ex = find(args.begin(), args.end(), "-exclude");
+    assert(it_all != args.end() or it_list != args.end() or it_none != args.end() or it_ex != args.end());
 
     size_t k = stoi(*(find(args.begin(), args.end(), "-k") + 1));
     size_t flanksize = stoi(*(find(args.begin(), args.end(), "-fs") + 1));
@@ -74,32 +78,54 @@ int main(int argc, const char * argv[]) {
     if (it_all != args.end()) {
         clist.assign(nhap, 1);
     }
-    else {
+    else if (it_none != args.end()) {
         clist.assign(nhap, 0);
-        haplist.assign(it_list+1, args.end());
+    }
+    else {
+        if (it_ex != args.end()) {
+            clist.assign(nhap, 1);
+            haplist.assign(it_ex+1, args.end());
+        } else {
+            clist.assign(nhap, 0);
+            haplist.assign(it_list+1, args.end());
+        }
+        assert(haplist.size() != 0);
+
         for (auto& s : haplist) {
             if (find(haps.begin(), haps.end(), s) == haps.end()) {
                 cerr << "cannot find haplotype " << s << endl << endl;
                 return 1;
             }
-            clist[distance(haps.begin(), find(haps.begin(), haps.end(), s))] = 1;
-        }
-        if (accumulate(clist.begin(), clist.end(), 0) == 0) {
-            cerr << "cannot find specified haplotype!" << endl << endl;
-            return 1;
+            if (it_ex != args.end()) {
+                clist[distance(haps.begin(), find(haps.begin(), haps.end(), s))] = 0;
+            } else {
+                clist[distance(haps.begin(), find(haps.begin(), haps.end(), s))] = 1;
+            }
         }
 
         if (haplist.size() == 1) { // e.g. CHM1
-            outfname = haplist[0];
+            if (it_ex != args.end()) {
+                outfname = haplist[0] + "-PanGenome";
+            } else {
+                outfname = haplist[0];
+            }
         }
         else if (haplist.size() == 2) { // e.g. HG00514.h0 HG00514.h1
             assert(haplist[0].substr(0,haplist[0].length()-1) == haplist[1].substr(0,haplist[1].length()-1));
             assert(haplist[0].substr(haplist[0].length()-1,1) == "0" or haplist[1].substr(haplist[1].length()-1,1) == "0");
             assert(haplist[0].substr(haplist[0].length()-1,1) == "1" or haplist[1].substr(haplist[1].length()-1,1) == "1");
-            outfname = haplist[0].substr(0,haplist[0].length()-3);
+            if (it_ex != args.end()) {
+                outfname = haplist[0].substr(0,haplist[0].length()-3) + "-PanGenome";
+            } else {
+                outfname = haplist[0].substr(0,haplist[0].length()-3);
+            }
         }
         else {
-            outfname = "PanGenome_" + to_string(haplist.size());
+            if (it_ex != args.end()) {
+                outfname = "n-" + to_string(haplist.size()) + "PanGenome" + to_string(haplist.size());
+            } else {
+                outfname = to_string(haplist.size()) + "PanGenome";
+            }
             cout << "Note: combining different individuals!" << endl;
         }
     }
@@ -107,7 +133,7 @@ int main(int argc, const char * argv[]) {
     // count the number of loci in a file
     size_t nread = 0;
     cout << "counting total number of loci\n";
-    ifstream fin(haplist[0]+".combined-hap.fasta.masked.fix", ios::in);
+    ifstream fin("HG00514.h0.combined-hap.fasta.masked.fix", ios::in);
     assert(fin.is_open());
     string line;
     while (getline(fin, line)) {
@@ -179,6 +205,9 @@ int main(int argc, const char * argv[]) {
     if (it_all != args.end()) {
     	fout_tr.open("PanGenome." + to_string(k) + "." + to_string(flanksize) + ".tr.kmers");
         fout_ntr.open("PanGenome." + to_string(k) + "." + to_string(flanksize) + ".ntr.kmers");
+    } else if (it_none != args.end()) {
+        fout_tr.open("nullPanGenome." + to_string(k) + "." + to_string(flanksize) + ".tr.kmers");
+        fout_ntr.open("nullPanGenome." + to_string(k) + "." + to_string(flanksize) + ".ntr.kmers");
     } else {
         fout_tr.open(outfname + "." + to_string(k) + "." + to_string(flanksize) + ".tr.kmers");
         fout_ntr.open(outfname + "." + to_string(k) + "." + to_string(flanksize) + ".ntr.kmers");
