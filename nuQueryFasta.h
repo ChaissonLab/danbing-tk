@@ -23,9 +23,9 @@ using namespace std;
 typedef unordered_set<size_t> kmer_set;
 typedef unordered_map<size_t, uint16_t> kmerCount_dict; // assume locus length < (2^16 -1)
 typedef unordered_map<size_t, vector<uint16_t>> kmerIndex_dict; // assume number of loci < (2^16 -1)
-typedef unordered_map<size_t, vector<size_t>> kmerAttr_dict;
-typedef unordered_map<string, unordered_map<string, size_t>> adj_dict;
-typedef unordered_map<string, unordered_map<string, vector<size_t>>> adj_dict_attr;
+typedef unordered_map<size_t, vector<uint16_t>> kmerAttr_dict;
+typedef unordered_map<string, unordered_map<string, uint16_t>> adj_dict;
+typedef unordered_map<string, unordered_map<string, vector<uint16_t>>> adj_dict_attr;
 
 //const unordered_map<char, size_t> base( {{'A', 0}, {'C', 1}, {'G', 2}, {'T', 3}});
 //const char baseinv[] = {'A', 'C', 'G', 'T'};
@@ -326,9 +326,9 @@ void readKmersFile(vector<kmerCount_dict>& kmerDB, ifstream& f, size_t startInd 
             getline(f, line, '\t');
             size_t kmer = stoul(line);
             getline(f, line);
-            size_t count = stoul(line);
+            size_t kmercount = stoul(line);
             if (count) {
-                kmerDB[startInd][kmer] += count;
+                kmerDB[startInd][kmer] += kmercount;
             } else {
                 kmerDB[startInd][kmer] += 0;
             }
@@ -354,7 +354,7 @@ tuple<adj_dict, size_t> buildAdjDict(kmerCount_dict& kmers, size_t k) {
 
 void writeDot(string outfpref, size_t i, adj_dict &adj) {
     ofstream fout;
-    fout.open(outfpref + "loci." + to_string(i) + ".dot");
+    fout.open(outfpref + ".loci." + to_string(i) + ".dot");
     assert(fout.is_open());
     fout << "strict digraph \"\" {" << '\n';
     for (auto& p : adj){
@@ -370,7 +370,11 @@ void writeDot(string outfpref, size_t i, adj_dict &adj) {
 void writeDot(string outfpref, size_t i, adj_dict_attr &adj_attr) { // function polymorphism: adj with attributes information
     // can only compare 2 graphs at this moment
     ofstream fout;
-    fout.open(outfpref + ".diff.dot");
+    if (i == -1) {
+        fout.open(outfpref + ".diff.dot");
+    } else {
+        fout.open(outfpref + "." + to_string(i) + ".unique.dot");
+    }
     assert(fout.is_open());
     fout << "strict digraph \"\" {" << '\n';
     for (auto& p : adj_attr){
@@ -518,7 +522,7 @@ public:
         }
    }
 
-    void updateDBG(int sInAdj, int tInAdj, string &s, string &t, string &s_rc, string &t_rc, size_t count) {
+    void updateDBG(int sInAdj, int tInAdj, string &s, string &t, string &s_rc, string &t_rc, uint16_t count) {
 
         if (sInAdj == 0 and tInAdj == 0) {			// s, t not in graph; create a new set
             updatesets(&s, &t, 2);
@@ -600,7 +604,7 @@ public:
         }
     }
 
-    void updateDBG(int sInAdj, int tInAdj, string &s, string &t, string &s_rc, string &t_rc, vector<size_t> &attr) {
+    void updateDBG(int sInAdj, int tInAdj, string &s, string &t, string &s_rc, string &t_rc, vector<uint16_t> &attr) {
     // function polymorphism: adj with attributes information
 
         if (sInAdj == 0 and tInAdj == 0) {			// s, t not in graph; create a new set
@@ -683,7 +687,7 @@ public:
         }
     }
 
-    void addkmer(const string &kmer, size_t count) {
+    void addkmer(const string &kmer, uint16_t count) {
         string s = kmer.substr(0, kmer.size() - 1);
         string t = kmer.substr(1, kmer.size() - 1);
         string s_rc = getRC(s);
@@ -694,7 +698,7 @@ public:
         if (count > maxcount) { maxcount = count; }
     }
 
-    void addkmer(const string &kmer, vector<size_t> &attr) { // function polymorphism: adj with attributes information
+    void addkmer(const string &kmer, vector<uint16_t> &attr) { // function polymorphism: adj with attributes information
         string s = kmer.substr(0, kmer.size() - 1);
         string t = kmer.substr(1, kmer.size() - 1);
         string s_rc = getRC(s);
