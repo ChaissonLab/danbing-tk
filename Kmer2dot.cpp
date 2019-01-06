@@ -54,18 +54,9 @@ int main(int argc, char * argv[]) {
                 cout << "loci: " << lociList[i] << endl;
             }
         }
-        string infname = *(it_i+1);
-        ifstream inf(infname); 
-        assert(inf);
-        string line;
-        size_t nloci = 0;
-        while (getline(inf, line)) {
-            if (line[0] == '>'){
-                nloci++;
-            }
-        }
-        inf.clear();
-        inf.seekg(0, inf.beg);
+
+        ifstream inf(*(it_i+1)); 
+        size_t nloci = countLoci(inf);
 
         // read kmers
         vector<kmerCount_dict> kmerDB(nloci);
@@ -144,56 +135,44 @@ int main(int argc, char * argv[]) {
         // merge kmers in kmerDB and assign labels
         // A kmer has label 0 if it is present in the reference (1st kmer file)
         // A kmer has label i if it is present in i kmer files but not in the reference
-        kmerAttr_dict kmerAttr;
+        vector<kmerAttr_dict> kmerAttr(1);
         for (size_t i = 0; i < kmerDB.size(); i++) {
             for (auto &p : kmerDB[i]) {
-                if (kmerAttr.count(p.first) == 0) {
+                if (p.second == 0) { continue; }
+
+                if (kmerAttr[0].count(p.first) == 0) {
                     if (i == 0) {
-                        kmerAttr[p.first] = vector<uint16_t>{p.second, 0};
+                        kmerAttr[0][p.first] = vector<uint16_t>{p.second, 0};
                     } else {
-                        kmerAttr[p.first] = vector<uint16_t>{p.second, 1};
+                        kmerAttr[0][p.first] = vector<uint16_t>{p.second, 1};
                     }
                 } else {
-                    kmerAttr[p.first][0] = max(kmerAttr[p.first][0], p.second);   // [?] whether this implementation is reasonable still needs to be evaluated
-                    if (kmerAttr[p.first][1] != 0 and kmerAttr[p.first][1] < 5) {
-                        kmerAttr[p.first][1] += 1;
+                    kmerAttr[0][p.first][0] = max(kmerAttr[0][p.first][0], p.second);
+                    // [?] whether this implementation is reasonable still needs to be evaluated
+
+                    if (kmerAttr[0][p.first][1] != 0 and kmerAttr[0][p.first][1] < 5) {
+                        kmerAttr[0][p.first][1] += 1;
                     }
                 }
             }
         }
-        ofstream fout(*(it_o+1)+".diff.kmers");
-        assert(fout);
-        fout << ">merged locus\n";
-        for (auto &p : kmerAttr) {
-            fout << p.first << '\t' << p.second[0] << '\t' << p.second[1] << '\n';
-        }
+        writeKmers(*(it_o+1)+".diff", kmerAttr, 1);
 
         // write .dot files seperately for each kmers
-        DBG dbg(kmerAttr.size());
-        for (auto &p : kmerAttr) {
+        DBG dbg(kmerAttr[0].size());
+        for (auto &p : kmerAttr[0]) {
             dbg.addkmer(decodeNumericSeq(p.first, k), p.second);
         }
         cout << "# of subgraphs: " << dbg.nset << endl;
         cout << "max: " << dbg.maxcount << endl;
         writeDot(*(it_o+1), -1, dbg.adj_attr);
-        fout.close();
 
 
     } else { // "unique" mode
-        size_t maxNgraph = 10;
+        size_t maxNgraph = 9999;  // hard-coded parameter at this moment
 
-        string infname = *(it_i+1);
-        ifstream inf(infname);
-        assert(inf);
-        string line;
-        size_t nloci = 0;
-        while (getline(inf, line)) {
-            if (line[0] == '>'){
-                nloci++;
-            }
-        }
-        inf.clear();
-        inf.seekg(0, inf.beg);
+        ifstream inf(*(it_i+1));
+        size_t nloci = countLoci(inf);
 
         vector<kmerCount_dict> kmerDB(nloci);
         readKmersFile(kmerDB, inf);
@@ -208,28 +187,25 @@ int main(int argc, char * argv[]) {
         readKmersFile(kmerDBsubpangen, subpangenf);
 
         vector<kmerAttr_dict> kmerAttrDB(nloci);
+        vector<bool> candidate(nloci, false);
         for (size_t i = 0; i < nloci; i++) {
             for (auto &p : kmerDB[i]) {
+                if (p.second == 0) { continue; }
+
                 if (kmerDBpangen[i][p.first] != 0 and kmerDBsubpangen[i][p.first] == 0) {
                     kmerAttrDB[i][p.first] = vector<uint16_t>{p.second, 0};  // label 0 for kmer missing in (n-1)-PanGenome
+                    candidate[i] = true;
                 } else {
                     kmerAttrDB[i][p.first] = vector<uint16_t>{p.second, 1};
                 }
             }
         }
-
-        ofstream fout(*(it_o+1)+".unique.kmers");
-        assert(fout);
-        for (size_t i = 0; i < nloci; i++) {
-            fout << ">locus " << i <<"\n";
-            for (auto &p : kmerAttrDB[i]) {
-                fout << p.first << '\t' << p.second[0] << '\t' << p.second[1] << '\n';
-            }
-        }
-        fout.close();
+        writeKmers(*(it_o+1)+".unique", kmerAttrDB, nloci);
 
         // write .dot files seperately for each kmers
         for (size_t i = 0; i < maxNgraph; i++) {
+            if (candidate[i] == false) { continue; }
+
             DBG dbg(kmerAttrDB[i].size());
             for (auto &p : kmerAttrDB[i]) {
                 dbg.addkmer(decodeNumericSeq(p.first, k), p.second);

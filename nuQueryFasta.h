@@ -309,6 +309,20 @@ void buildNuNoncaKmers(kmerCount_dict& kmers, string& read, size_t k, size_t fla
     }
 }
 
+size_t countLoci(ifstream& inf) {
+    assert(inf);
+    string line;
+    size_t nloci = 0;
+    while (getline(inf, line)) {
+        if (line[0] == '>'){
+            nloci++;
+        }
+    }
+    inf.clear();
+    inf.seekg(0, inf.beg);
+    return nloci;
+}
+
 void readKmersFile(vector<kmerCount_dict>& kmerDB, ifstream& f, size_t startInd = 0, bool count = true) {
     string line;
     getline(f, line);
@@ -334,6 +348,34 @@ void readKmersFile(vector<kmerCount_dict>& kmerDB, ifstream& f, size_t startInd 
             }
         }
     }
+}
+
+void writeKmers(string outfpref, vector<kmerCount_dict>& kmerDB, size_t nloci) {
+    ofstream fout(outfpref+".kmers");
+    assert(fout);
+    for (size_t i = 0; i < nloci; i++) {
+        fout << ">locus " << i <<"\n";
+        for (auto &p : kmerDB[i]) {
+            fout << p.first << '\t' << p.second << '\n';
+        }
+    }
+    fout.close();
+}
+
+void writeKmers(string outfpref, vector<kmerAttr_dict>& kmerAttrDB, size_t nloci) {
+    ofstream fout(outfpref+".kmers");
+    assert(fout);
+    for (size_t i = 0; i < nloci; i++) {
+        fout << ">locus " << i <<"\n";
+        for (auto &p : kmerAttrDB[i]) {
+            fout << p.first;
+            for (auto &q : p.second) {
+                fout << '\t' << q;
+            }
+            fout << '\n';
+        }
+    }
+    fout.close();
 }
 
 tuple<adj_dict, size_t> buildAdjDict(kmerCount_dict& kmers, size_t k) {
