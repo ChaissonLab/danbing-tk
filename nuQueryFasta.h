@@ -323,6 +323,7 @@ size_t countLoci(ifstream& inf) {
     return nloci;
 }
 
+// function polymorphism: record kmerDB only
 void readKmersFile(vector<kmerCount_dict>& kmerDB, ifstream& f, size_t startInd = 0, bool count = true) {
     string line;
     getline(f, line);
@@ -340,12 +341,64 @@ void readKmersFile(vector<kmerCount_dict>& kmerDB, ifstream& f, size_t startInd 
             getline(f, line, '\t');
             size_t kmer = stoul(line);
             getline(f, line);
-            size_t kmercount = stoul(line);
+            uint16_t kmercount = stoul(line);
             if (count) {
                 kmerDB[startInd][kmer] += kmercount;
             } else {
                 kmerDB[startInd][kmer] += 0;
             }
+        }
+    }
+}
+
+// function polymorphism: record kmerDB and kmerDBi
+void readKmersFile(vector<kmerCount_dict>& kmerDB, kmerIndex_dict& kmerDBi, ifstream& f, size_t startInd = 0, bool count = true) {
+    string line;
+    getline(f, line);
+    cout <<"starting reading kmers..."<<endl;
+    while (true){
+        if (f.peek() == EOF or f.peek() == '>'){
+            startInd++;
+            if (f.peek() == EOF){
+                f.close();
+                break;
+            } else {
+                getline(f, line);
+            }
+        } else {
+            getline(f, line, '\t');
+            size_t kmer = stoul(line);
+            getline(f, line);
+            uint16_t kmercount = stoul(line);
+            if (count) {
+                kmerDB[startInd][kmer] += kmercount;
+            } else {
+                kmerDB[startInd][kmer] += 0;
+            }
+            kmerDBi[kmer].push_back(startInd);
+        }
+    }
+}
+
+// function polymorphism: record kmerDBi only
+void readKmersFile(kmerIndex_dict& kmerDBi, ifstream& f, size_t startInd = 0, bool count = false) {
+    string line;
+    getline(f, line);
+    cout <<"starting reading kmers..."<<endl;
+    while (true){
+        if (f.peek() == EOF or f.peek() == '>'){
+            startInd++;
+            if (f.peek() == EOF){
+                f.close();
+                break;
+            } else {
+                getline(f, line);
+            }
+        } else {
+            getline(f, line, '\t');
+            size_t kmer = stoul(line);
+            getline(f, line);
+            kmerDBi[kmer].push_back(startInd);
         }
     }
 }

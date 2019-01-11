@@ -45,7 +45,7 @@ uint16_t countHit(kmerCount_dict &kmers, vector<kmerIndex_dict*> &kmerDBis, uint
         }
     }
     vector<uint16_t>::iterator it = max_element(totalHits.begin(), totalHits.end());
-    if (*it > threshold) {
+    if (*it >= threshold) {
         return distance(totalHits.begin(), it);
     } else {
         return nloci;
@@ -57,14 +57,13 @@ public:
     ifstream *in;
     bool ftype;
     vector<kmerIndex_dict*> kmerDBis;
-    //kmerIndex_dict *trKmerDBi;
-    //kmerIndex_dict *ntrKmerDBi;
     size_t *readIndex;
     size_t threadIndex;
     uint16_t k, nloci, threshold;
-    vector<kmerCount_dict> queryResults;
+    vector<kmerCount_dict> trResults;
+    vector<kmerCount_dict> ntrResults;
 
-    Counts(uint16_t nloci_) : queryResults(nloci_), nloci(nloci_) {}
+    Counts(uint16_t nloci_) : trResults(nloci_), ntrResults(nloci_), nloci(nloci_) {}
 };
 
 class Threads {
@@ -78,9 +77,8 @@ size_t nHits = 0;
 
 void CountWords(void *data) {
     vector<kmerIndex_dict*> &kmerDBis = ((Counts*)data)->kmerDBis;
-    //kmerIndex_dict &trKmerDBi = *((Counts*)data)->trKmerDBi;
-    //kmerIndex_dict &ntrKmerDBi = *((Counts*)data)->ntrKmerDBi;
-    vector<kmerCount_dict> &queryResults = ((Counts*)data)->queryResults;
+    vector<kmerCount_dict> &trResults = ((Counts*)data)->trResults;
+    vector<kmerCount_dict> &ntrResults = ((Counts*)data)->ntrResults;
     ifstream *in = ((Counts*)data)->in;
     bool ftype = ((Counts*)data)->ftype;
     size_t &readNumber = *((Counts*)data)->readIndex;
@@ -107,7 +105,7 @@ void CountWords(void *data) {
         vector<string> seqs;
 
         if (ftype) {
-            while (readn <= 150000 and (*in)) {
+            while (readn < 150000 and (*in)) {
                 getline(*in, title);
                 getline(*in, seq);
                 getline(*in, qualtitle);
@@ -134,7 +132,7 @@ void CountWords(void *data) {
             }
         }
         else {
-            while (readn <= 300000 and (*in)) {
+            while (readn < 300000 and (*in)) {
                 getline(*in, title);
                 getline(*in, seq);
                 getline(*in, qualtitle);
@@ -172,10 +170,13 @@ void CountWords(void *data) {
 
                 if (ind == nloci) { continue; }
                 else {
-                    kmerCount_dict &query = queryResults[ind];
+                    kmerCount_dict &trKmers = trResults[ind];
+                    kmerCount_dict &ntrKmers = ntrResults[ind];
                     for (auto &p : kmers) {
-                        if (query.count(p.first) == 1) {
-                            query[p.first] += p.second;
+                        if (trKmers.count(p.first) == 1) {
+                            trKmers[p.first] += p.second;
+                        } else if (ntrKmers.count(p.first) == 1) { // this will exclude shared kmers btw trKmers and ntrKmers
+                            ntrKmers[p.first] += p.second;
                         }
                     }
                 }
@@ -193,10 +194,10 @@ void CountWords(void *data) {
 
                 if (ind == nloci) { continue; }
                 else {
-                    kmerCount_dict &query = queryResults[ind];
+                    kmerCount_dict &trKmers = trResults[ind];
                     for (auto &p : kmers) {
-                        if (query.count(p.first) == 1) {
-                            query[p.first] += p.second;
+                        if (trKmers.count(p.first) == 1) {
+                            trKmers[p.first] += p.second;
                         }
                     }
                 }
@@ -211,14 +212,17 @@ int main(int argc, char* argv[]) {
 
     if (argc < 4) {
         cout << endl;
-        cout << "Usage: nuQueryFasta -k <kmerSize> <-q <query.kmers> | -qs <VNTR.kmers> <nonVNTR.kmers>> <-fs <singleEnd.fastq> | -fi <interleaved.fastq>> -o <outputFile> -p <nproc> -th <threshold>" << endl;
-        cout << "  e.g. zcat ERR899717_1.fastq.gz | nuQueryFasta -k 21 -q PanGenomeGenotyping.21.kmers /dev/stdin ERR899717_1.fastq.21.kmers 8 5" << endl;
+        cout << "Usage: nuQueryFasta -k <-q | -qs> <-fs | -fi> -o -p -th " << endl;
+        cout << "  e.g. zcat ERR899717_1.fastq.gz | nuQueryFasta -k 21 -q PanGenomeGenotyping.21.kmers -fs /dev/stdin -o ERR899717_1.fastq.21 8 5" << endl;
         cout << "  e.g. paste <(zcat ERR899717_1.fastq.gz | paste - - - -) <(zcat ERR899717_2.fastq.gz | paste - - - -) | tr '\\t' '\\n' | \\ \n";
-        cout << "       nuQueryFasta -k 21 -q <*.kmers> -fi /dev/stdin -o <*.kmers> -p 8 -th 20" << endl;
+        cout << "       nuQueryFasta -k 21 -qs <*.tr.kmers> <*.ntr.kmers> -fi /dev/stdin -o <*.kmers> -p 8 -th 20" << endl;
         cout << "Options:" << endl;
-        cout << "  -q     *.kmer file to be queried" << endl;
+        cout << "  -k     kmer size" << endl;
+        cout << "  -q     *.kmers file to be queried" << endl;
+        cout << "  -qs    *.tr.kmers and *.ntr.kmers files to be queried" << endl;
         cout << "  -fs    single end fastq file" << endl;
         cout << "  -fi    interleaved pair-end fastq file" << endl;
+        cout << "  -o     output prefix" << endl;
         cout << "  -p     Use n threads." << endl;
         cout << "  -th    Discard reads with maxhit below this threshold" << endl << endl;
         exit(0);
@@ -257,8 +261,15 @@ int main(int argc, char* argv[]) {
     }
     assert(queryFile);
 
-    ofstream outFile(*it_o);
-    assert(outFile);
+    ofstream outTrFile, outNtrFile;
+    if (qtype) {
+        outTrFile.open(*it_o + ".tr.kmers");
+        outNtrFile.open(*it_o + ".ntr.kmers");
+        assert(outNtrFile);
+    } else {
+        outTrFile.open(*it_o + ".kmers");
+    }
+    assert(outTrFile);
 
     size_t nproc = stoi(*it_p);
     uint16_t threshold = stoi(*it_th);
@@ -274,81 +285,19 @@ int main(int argc, char* argv[]) {
         cout << *(it_q+1) << endl;
     }
     
-    // count the number of loci in a file
     cout << "total number of loci: ";
     clock_t time1 = clock();
-    assert(queryFile);
-    uint16_t nloci = 0;
-    string line;
-    while (getline(queryFile, line)) {
-        if (line[0] == '>'){
-            nloci++;
-        }
-    }
+    uint16_t nloci = countLoci(queryFile);
     cout << nloci << endl;
-    queryFile.clear();
-    queryFile.seekg(0, queryFile.beg);
  
-    // read kmer info from *.tr.kmers
-    uint16_t ind = 0;
-    kmerCount_dict kmers;
     vector<kmerCount_dict> trKmerDB(nloci);
     kmerIndex_dict trKmerDBi;
-    getline(queryFile, line);
-    while (true){
-        if (queryFile.peek() == EOF or queryFile.peek() == '>'){
-            if (kmers.size() != 0){
-                trKmerDB[ind] = kmers;
-                kmers.clear();
-            }
-            ind++;
-            if (queryFile.peek() == EOF){
-                queryFile.close();
-                break;
-            }
-            else {
-                getline(queryFile, line);
-            }
-        }
-        else {
-            getline(queryFile, line, '\t');
-            size_t kmer = stoul(line);
-            kmers[kmer] = 0;
-            trKmerDBi[kmer].push_back(ind);
-            getline(queryFile, line);
-        }
-    }
+    readKmersFile(trKmerDB, trKmerDBi, queryFile, 0, false);
 
-    // read kmer info from *.ntr.kmers
-    kmers.clear();
-    //vector<kmerCount_dict> ntrKmerDB(nloci);
+    vector<kmerCount_dict> ntrKmerDB(nloci);
     kmerIndex_dict ntrKmerDBi;
     if (qtype == 1) {
-        uint16_t ind = 0;
-        getline(ntrFile, line);
-        while (true){
-            if (ntrFile.peek() == EOF or ntrFile.peek() == '>'){
-                if (kmers.size() != 0){
-                    //ntrKmerDB[ind] = kmers;
-                    kmers.clear();
-                }
-                ind++;
-                if (ntrFile.peek() == EOF){
-                    ntrFile.close();
-                    break;
-                }
-                else {
-                    getline(ntrFile, line);
-                }
-            }
-            else {
-                getline(ntrFile, line, '\t');
-                size_t kmer = stoul(line);
-                kmers[kmer] = 0;
-                ntrKmerDBi[kmer].push_back(ind);
-                getline(ntrFile, line);
-            }
-        }
+        readKmersFile(ntrKmerDB, ntrKmerDBi, ntrFile, 0, false);
     }
     cout << "read *.kmers file in " << (float)(clock() - time1)/CLOCKS_PER_SEC << " sec." << endl;
 
@@ -362,7 +311,10 @@ int main(int argc, char* argv[]) {
         Counts &counts = threaddata.counts[i];
  
         for (size_t j = 0; j < nloci; j++) {
-            counts.queryResults[j] = trKmerDB[j];
+            counts.trResults[j] = trKmerDB[j];
+            if (qtype) {
+                counts.ntrResults[j] = ntrKmerDB[j];
+            }
         }
         counts.in = &fastqFile;
         counts.ftype = ftype;
@@ -414,7 +366,7 @@ int main(int argc, char* argv[]) {
     pthread_attr_t *threadAttr = new pthread_attr_t[nproc];
     int t;	
 
-    for (t = 0; t < nproc; t++ ){
+    for (t = 0; t < nproc; t++ ) {
         pthread_attr_init(&threadAttr[t]);
     }
     pthread_t *threads = new pthread_t[nproc];
@@ -431,28 +383,40 @@ int main(int argc, char* argv[]) {
     cout << "parallel query completed in " << (float)(clock() - time1)/CLOCKS_PER_SEC << " sec." << endl;
 
     cout << "combining restuls..." << endl;
-    vector<kmerCount_dict> combinedQueryResults(nloci);
+    vector<kmerCount_dict> combinedTrResults(nloci);
+    vector<kmerCount_dict> combinedNtrResults(nloci);
     for (size_t i = 0; i < nproc; i++) {
         Counts &counts = threaddata.counts[i];
-        for (uint16_t locus = 0; locus < nloci; locus++){
-            for (auto &p : counts.queryResults[locus]){
-                combinedQueryResults[locus][p.first] += p.second;
+        for (uint16_t locus = 0; locus < nloci; locus++) {
+            for (auto &p : counts.trResults[locus]) {
+                combinedTrResults[locus][p.first] += p.second;
+            }
+            if (qtype) {
+                for (auto &p : counts.ntrResults[locus]) {
+                    combinedNtrResults[locus][p.first] += p.second;
+                }
             }
         }
     }
 
     cout << "writing outputs..." << endl;
-    for (uint16_t locus = 0; locus < nloci; locus++){
-        outFile << ">locus " << locus << '\n';
-        //fprintf(outFile, ">locus %zu\n", locus);
-        for (auto &p : combinedQueryResults[locus]){
-            outFile << p.first << '\t' << p.second << '\n';
-            //fprintf(outFile, "%zu\t%zu\n", p.first, p.second);
+    for (uint16_t locus = 0; locus < nloci; locus++) {
+        outTrFile << ">locus " << locus << '\n';
+        for (auto &p : combinedTrResults[locus]) {
+            outTrFile << p.first << '\t' << p.second << '\n';
         }
     }
+    outTrFile.close();
+    if (qtype) {
+        for (uint16_t locus = 0; locus < nloci; locus++) {
+            outNtrFile << ">locus " << locus << '\n';
+            for (auto &p : combinedNtrResults[locus]) {
+                outNtrFile << p.first << '\t' << p.second << '\n';
+            }
+        }
+        outNtrFile.close();
+    }
 
-    
-    outFile.close();
     return 0;
 }
 
