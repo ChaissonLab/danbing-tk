@@ -14,16 +14,18 @@
 int main(int argc, char * argv[]) {
     // insert code here...    
     if (argc < 2){
-	cerr << "usage: kmer2dot -k -o <-max | -list | -diff | -unique> -i <*.kmers>\n";
+	cerr << "usage: kmer2dot -k -o <-max | -list | -diff | [-nog] -l -unique> -i <*.kmers>\n";
         cerr << "  -o           output prefix\n";
         cerr << "  -max         max number of subgraphs to be convereted, starting from zeroth subgraph\n";
         cerr << "  -list        list of subgraphs to be convereted, 0-indexed\n";
         cerr << "  -diff        compared multiple *.kmers and write one .dot file. The first file is treated as reference.\n";
+        cerr << "  -nog         do not output graphs, only works with -unique option\n";
+        cerr << "  -l           path to 'goodness.loci file', only works with -unique option\n";
         cerr << "  -unique      label individual-unique kmers in the first file by referencing (n)-Pangenome and (n-1)-PanGenome.\n";
 	cerr << "e.g.:  kmer2dot -k 21 -o ERR899717_1 -max 5 -i ERR899717_1.fastq.21.kmers\n";
 	cerr << "e.g.:  kmer2dot -k 21 -o ERR899717_1 -list 0 2 3 5 10 -i ERR899717_1.fastq.21.kmers\n";
         cerr << "e.g.:  kmer2dot -k 21 -o ERR899717_1.test -diff -i ERR899717_1.fastq.21.kmers testIL.kmers\n";
-        cerr << "e.g.:  kmer2dot -k 21 -o ERR899717_1.unique -unique -i ERR899717_1.fastq.21.kmers PanGenome.21.kmers HG00514-PanGenome.21.kmers\n\n";
+        cerr << "e.g.:  kmer2dot -k 21 -o ERR899717_1.tr -nog -l goodness.loci -unique -i ERR899717_1.fastq.21.kmers PanGenome.21.kmers HG00514-PanGenome.21.kmers\n\n";
         exit(0);
     }
 
@@ -35,6 +37,8 @@ int main(int argc, char * argv[]) {
     vector<string>::iterator it_diff = find(args.begin(), args.end(), "-diff");
     vector<string>::iterator it_unique = find(args.begin(), args.end(), "-unique");
     vector<string>::iterator it_i = find(args.begin(), args.end(), "-i");
+    vector<string>::iterator it_l = find(args.begin(), args.end(), "-l");
+    vector<string>::iterator it_nog = find(args.begin(), args.end(), "-nog");
 
     size_t k = stoi(*(find(args.begin(), args.end(), "-k") + 1));
 
@@ -169,7 +173,6 @@ int main(int argc, char * argv[]) {
 
 
     } else { // "unique" mode
-        size_t maxNgraph = 9999;  // hard-coded parameter at this moment
 
         ifstream inf(*(it_i+1));
         size_t nloci = countLoci(inf);
@@ -202,17 +205,34 @@ int main(int argc, char * argv[]) {
         }
         writeKmers(*(it_o+1)+".unique", kmerAttrDB, nloci);
 
+        // goodness indicates in how many loci the regression performance > 0.3
+        ifstream locif(*(it_l+1));
+        assert(locif);
+        vector<uint16_t> goodness(nloci);
+        string line;
+        size_t ind = 0;
+        while (getline(locif, line)) {
+            goodness[ind] = stoi(line);
+            ind += 1;
+        }
+        locif.close();
+
         // write .dot files seperately for each kmers
-        for (size_t i = 0; i < maxNgraph; i++) {
+        for (size_t i = 0; i < nloci; i++) {
             if (candidate[i] == false) { continue; }
 
-            DBG dbg(kmerAttrDB[i].size());
-            for (auto &p : kmerAttrDB[i]) {
-                dbg.addkmer(decodeNumericSeq(p.first, k), p.second);
+            cout << "locus: " << i << '\t' << goodness[i] << '\n';
+            if (goodness[i] < 3) { continue; }
+
+            if (it_nog != args.end()) {
+                DBG dbg(kmerAttrDB[i].size());
+                for (auto &p : kmerAttrDB[i]) {
+                    dbg.addkmer(decodeNumericSeq(p.first, k), p.second);
+                }
+                cout << "# of subgraphs: " << dbg.nset << endl;
+                cout << "max: " << dbg.maxcount << endl;
+                writeDot(*(it_o+1), i, dbg.adj_attr);
             }
-            cout << "# of subgraphs: " << dbg.nset << endl;
-            cout << "max: " << dbg.maxcount << endl;
-            writeDot(*(it_o+1), i, dbg.adj_attr);
         }
 
 
