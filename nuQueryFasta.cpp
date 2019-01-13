@@ -10,7 +10,7 @@
 #include <semaphore.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <time.h>
+#include <ctime>
 #include <cassert>
 #include <cstring>
 #include <algorithm>
@@ -117,13 +117,15 @@ void CountWords(void *data) {
 
                 uint16_t start = 0;
                 uint16_t len = seq.size();
-                while (qual[start] == '#'){ start++; len--; }
-                while (qual[start + len - 1] == '#'){ len--; }
+                while (qual[start] == '#' and len > 0) { start++; len--; }
+                while (qual[start + len - 1] == '#' and len > 0) { len--; }
+                if (len < k) { continue; }
 
                 uint16_t start1 = 0;
                 uint16_t len1 = seq1.size();
-                while (qual1[start1] == '#'){ start1++; len1--; }
-                while (qual1[start1 + len1 - 1] == '#'){ len1--; }
+                while (qual1[start1] == '#' and len > 0) { start1++; len1--; }
+                while (qual1[start1 + len1 - 1] == '#' and len > 0) { len1--; }
+                if (len1 < k) { continue; }
 
                 seqs.push_back(seq.substr(start, len));
                 seqs.push_back(seq1.substr(start1, len1));
@@ -140,8 +142,9 @@ void CountWords(void *data) {
 
                 uint16_t start = 0;
                 uint16_t len = seq.size();
-                while (qual[start] == '#'){ start++; len--; }
-                while (qual[start + len - 1] == '#'){ len--; }
+                while (qual[start] == '#' and len > 0) { start++; len--; }
+                while (qual[start + len - 1] == '#' and len > 0) { len--; }
+                if (len < k) { continue; }
 
                 seqs.push_back(seq.substr(start, len));
                 readn++;
@@ -155,13 +158,12 @@ void CountWords(void *data) {
         //
         sem_post(semreader);
 
-        clock_t time2 = clock();
+        time_t time2 = time(nullptr);
         if (ftype) {
-            for (size_t seqi = 0; seqi < seqs.size()/2; ++seqi) {
+            for (size_t seqi = 0; seqi < seqs.size()/2; seqi++) {
 
                 string seq = seqs[2*seqi];
                 string seq1 = seqs[2*seqi+1];
-                if (seq.size() < k or seq1.size() < k) { continue; }
 
                 kmerCount_dict kmers; 
                 buildNuKmers(kmers, seq, k);
@@ -203,8 +205,7 @@ void CountWords(void *data) {
                 }
             }
         }
-        cout << "Batch query in " << (float)(clock() - time2)/CLOCKS_PER_SEC << " sec." << endl;
-        
+        cout << "Batch query in " << (time(nullptr) - time2) << " sec." << endl;
     }
 }
 
@@ -286,25 +287,35 @@ int main(int argc, char* argv[]) {
     }
     
     cout << "total number of loci: ";
-    clock_t time1 = clock();
+    time_t time1 = time(nullptr);
     uint16_t nloci = countLoci(queryFile);
     cout << nloci << endl;
  
     vector<kmerCount_dict> trKmerDB(nloci);
     kmerIndex_dict trKmerDBi;
-    readKmersFile(trKmerDB, trKmerDBi, queryFile, 0, false);
+    readKmersFile(trKmerDB, trKmerDBi, queryFile, 0, false, 1); // discard kmers w/ count < 1
+    size_t nkmers = 0;
+    for (size_t i = 0; i < nloci; i++) {
+        nkmers += trKmerDB[i].size();
+    }
+    cout << "# unique kmers in trKmerDB: " << nkmers << '\n';
 
     vector<kmerCount_dict> ntrKmerDB(nloci);
     kmerIndex_dict ntrKmerDBi;
     if (qtype == 1) {
-        readKmersFile(ntrKmerDB, ntrKmerDBi, ntrFile, 0, false);
+        readKmersFile(ntrKmerDB, ntrKmerDBi, ntrFile, 0, false, 1); // discard kmers w/ count < 1
+        nkmers = 0;
+        for (size_t i = 0; i < nloci; i++) {
+            nkmers += ntrKmerDB[i].size();
+        }
+        cout << "# unique kmers in ntrKmerDB: " << nkmers << '\n';
     }
-    cout << "read *.kmers file in " << (float)(clock() - time1)/CLOCKS_PER_SEC << " sec." << endl;
+    cout << "read *.kmers file in " << (time(nullptr) - time1) << " sec." << endl;
 
 
     // create data for each process
     cout << "create data for each process..." << endl;
-    time1 = clock();
+    time1 = time(nullptr);
     Threads threaddata(nproc, nloci);
     cout << "initialization" << endl;
     for (size_t i = 0; i < nproc; i++) {
@@ -329,9 +340,9 @@ int main(int argc, char* argv[]) {
         cout << "thread " << i << " done" << endl;
     }
     trKmerDB.clear();
-    cout << "thread data preparation completed in " << (float)(clock() - time1)/CLOCKS_PER_SEC << " sec." << endl;
+    cout << "thread data preparation completed in " << (time(nullptr) - time1) << " sec." << endl;
 
-    time1 = clock();
+    time1 = time(nullptr);
     const int idLen=10;
     char id[idLen+1];
     id[idLen] = '\0';
@@ -380,7 +391,7 @@ int main(int argc, char* argv[]) {
     for (t = 0; t < nproc; t++) {
         pthread_join(threads[t], NULL);
     }
-    cout << "parallel query completed in " << (float)(clock() - time1)/CLOCKS_PER_SEC << " sec." << endl;
+    cout << "parallel query completed in " << (time(nullptr) - time1) << " sec." << endl;
 
     cout << "combining restuls..." << endl;
     vector<kmerCount_dict> combinedTrResults(nloci);
