@@ -324,7 +324,7 @@ size_t countLoci(ifstream& inf) {
 }
 
 // function polymorphism: record kmerDB only
-void readKmersFile(vector<kmerCount_dict>& kmerDB, ifstream& f, size_t startInd = 0, bool count = true) {
+void readKmersFile(vector<kmerCount_dict>& kmerDB, ifstream& f, size_t startInd = 0, bool count = true, uint16_t threshold = 0) {
     string line;
     getline(f, line);
     cout <<"starting reading kmers..."<<endl;
@@ -342,6 +342,8 @@ void readKmersFile(vector<kmerCount_dict>& kmerDB, ifstream& f, size_t startInd 
             size_t kmer = stoul(line);
             getline(f, line);
             uint16_t kmercount = stoul(line);
+
+            if (kmercount < threshold) { continue; }
             if (count) {
                 kmerDB[startInd][kmer] += kmercount;
             } else {
@@ -352,7 +354,7 @@ void readKmersFile(vector<kmerCount_dict>& kmerDB, ifstream& f, size_t startInd 
 }
 
 // function polymorphism: record kmerDB and kmerDBi
-void readKmersFile(vector<kmerCount_dict>& kmerDB, kmerIndex_dict& kmerDBi, ifstream& f, size_t startInd = 0, bool count = true) {
+void readKmersFile(vector<kmerCount_dict>& kmerDB, kmerIndex_dict& kmerDBi, ifstream& f, size_t startInd = 0, bool count = true, uint16_t threshold = 0) {
     string line;
     getline(f, line);
     cout <<"starting reading kmers..."<<endl;
@@ -370,6 +372,8 @@ void readKmersFile(vector<kmerCount_dict>& kmerDB, kmerIndex_dict& kmerDBi, ifst
             size_t kmer = stoul(line);
             getline(f, line);
             uint16_t kmercount = stoul(line);
+
+            if (kmercount < threshold) { continue; }
             if (count) {
                 kmerDB[startInd][kmer] += kmercount;
             } else {
@@ -381,7 +385,7 @@ void readKmersFile(vector<kmerCount_dict>& kmerDB, kmerIndex_dict& kmerDBi, ifst
 }
 
 // function polymorphism: record kmerDBi only
-void readKmersFile(kmerIndex_dict& kmerDBi, ifstream& f, size_t startInd = 0, bool count = false) {
+void readKmersFile(kmerIndex_dict& kmerDBi, ifstream& f, size_t startInd = 0, bool count = false, uint16_t threshold = 0) {
     string line;
     getline(f, line);
     cout <<"starting reading kmers..."<<endl;
@@ -398,6 +402,9 @@ void readKmersFile(kmerIndex_dict& kmerDBi, ifstream& f, size_t startInd = 0, bo
             getline(f, line, '\t');
             size_t kmer = stoul(line);
             getline(f, line);
+            uint16_t kmercount = stoul(line);
+
+            if (kmercount < threshold) { continue; }
             kmerDBi[kmer].push_back(startInd);
         }
     }
