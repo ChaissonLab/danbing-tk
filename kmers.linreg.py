@@ -16,10 +16,11 @@ ap.add_argument("start", help="starting index of locus", type=int)
 ap.add_argument("end", help="ending index of locus", type=int)
 ap.add_argument("plot", help="plot option. e.g. 'all', 'none'. Default: none", default="none")
 ap.add_argument("threshold", help="rejecting outliers locating threshold*std away from the mean. Default: 10", type=int, default=10)
+ap.add_argument("out", help="output file prefix")
 args = ap.parse_args()
 hap = args.pacbio.split('.')[0]
 fastq = args.illumina.split('.')[0]
-plotname = '.'.join(args.pacbio.split('.')[:-1]) + "." + fastq
+#plotname = '.'.join(args.pacbio.split('.')[:-1]) + "." + fastq
 start = args.start
 end = args.end
 threshold = args.threshold
@@ -117,7 +118,7 @@ for k, v in data.items():
         fig = plt.gcf()
         fig.text(0.25, 0.75, text)
         plt.title(hap+"_"+fastq+"_"+"locus"+str(k))
-        plt.savefig(plotname+"."+str(k)+".png", dpi=150, bbox_inches='tight')
+        plt.savefig(args.out+"."+str(k)+".png", dpi=150, bbox_inches='tight')
         plt.show()
         plt.close()
     if k % 1000 == 0:
@@ -128,7 +129,7 @@ for k, v in data.items():
 
 print("writing outputs")
 # write outputs as <locus> <pacbio kmer sum> <predicted pacbio kmer sum> <a> <rsqaure>
-with open(fastq+"."+hap+"."+str(start)+"."+str(end)+".pred", 'wb') as f:
+with open(args.out+"."+str(start)+"."+str(end)+".pred", 'wb') as f:
     np.savetxt(f, results, fmt=['%8.0f','%8.0f','%8.2f','%8.4f'])
 
 # plot performance
@@ -157,10 +158,10 @@ if any(truth1) and any(pred1):
     fig = plt.gcf()
     fig.text(0.25, 0.75, text)
     plt.title(hap+"_"+fastq)
-    plt.savefig(plotname+".sum."+str(start)+"."+str(end)+".png", dpi=150, bbox_inches='tight')
+    plt.savefig(args.out+".sum."+str(start)+"."+str(end)+".png", dpi=150, bbox_inches='tight')
     plt.show()
     plt.close()
-    print(plotname+".summary."+str(start)+"."+str(end)+".png done")
+    print(args.out+".sum."+str(start)+"."+str(end)+".png done")
     #print("rejected data: \n", rejdata.astype(int)) 
 else:
     print("empty data in regression!")
