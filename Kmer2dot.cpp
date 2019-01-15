@@ -14,18 +14,24 @@
 int main(int argc, char * argv[]) {
     // insert code here...    
     if (argc < 2){
-	cerr << "usage: kmer2dot -k -o <-max | -list | -diff | [-nog] -l -unique> -i <*.kmers>\n";
+	cerr << "usage: kmer2dot -k -o <[-th -offset] -max | -list | -diff | [-nog] -l -unique | -common> -i <*.kmers>\n";
+        cerr << "  -k           kmer size\n";
         cerr << "  -o           output prefix\n";
+        cerr << "  -th          remove kmers w/ count below this threshold\n";
+        cerr << "  -offset      increment kmer count w/ this offset\n";
         cerr << "  -max         max number of subgraphs to be convereted, starting from zeroth subgraph\n";
         cerr << "  -list        list of subgraphs to be convereted, 0-indexed\n";
         cerr << "  -diff        compared multiple *.kmers and write one .dot file. The first file is treated as reference.\n";
         cerr << "  -nog         do not output graphs, only works with -unique option\n";
         cerr << "  -l           path to 'goodness.loci file', only works with -unique option\n";
         cerr << "  -unique      label individual-unique kmers in the first file by referencing (n)-Pangenome and (n-1)-PanGenome.\n";
+        cerr << "  -common      output kmers in the first file shared by (n-1)-PanGenome.\n";
 	cerr << "e.g.:  kmer2dot -k 21 -o ERR899717_1 -max 5 -i ERR899717_1.fastq.21.kmers\n";
 	cerr << "e.g.:  kmer2dot -k 21 -o ERR899717_1 -list 0 2 3 5 10 -i ERR899717_1.fastq.21.kmers\n";
         cerr << "e.g.:  kmer2dot -k 21 -o ERR899717_1.test -diff -i ERR899717_1.fastq.21.kmers testIL.kmers\n";
-        cerr << "e.g.:  kmer2dot -k 21 -o ERR899717_1.tr -nog -l goodness.loci -unique -i ERR899717_1.fastq.21.kmers PanGenome.21.kmers HG00514-PanGenome.21.kmers\n\n";
+        cerr << "e.g.:  kmer2dot -k 21 -o ERR899717_1.tr -nog -l goodness.loci -unique -i ERR899717_1.fastq.21.kmers PanGenome.21.kmers \\ \n";
+        cerr << "                HG00514-PanGenome.21.kmers\n";
+        cerr << "e.g.:  kmer2dot -k 21 -o HG00514.21.1300 -common -i HG00514.21.1300.kmers HG00514-PanGenome.21.1300.kmers\n\n";
         exit(0);
     }
 
@@ -39,9 +45,11 @@ int main(int argc, char * argv[]) {
     vector<string>::iterator it_i = find(args.begin(), args.end(), "-i");
     vector<string>::iterator it_l = find(args.begin(), args.end(), "-l");
     vector<string>::iterator it_nog = find(args.begin(), args.end(), "-nog");
+    vector<string>::iterator it_common = find(args.begin(), args.end(), "-common");
 
     size_t k = stoi(*(find(args.begin(), args.end(), "-k") + 1));
-
+    size_t threshold = stoi(*(find(args.begin(), args.end(), "-th") + 1));
+    size_t offset = stoi(*(find(args.begin(), args.end(), "-offset") + 1));
 
     if (it_max != args.end() or it_list != args.end()) { // for "max" and "list" mode
 
@@ -60,15 +68,16 @@ int main(int argc, char * argv[]) {
         }
 
         ifstream inf(*(it_i+1)); 
+        assert(inf);
         size_t nloci = countLoci(inf);
 
         // read kmers
         vector<kmerCount_dict> kmerDB(nloci);
-        readKmersFile(kmerDB, inf);
+        readKmersFile(kmerDB, inf, 0, true, threshold, offset);
 
         // build DBG
         cout << "starting building DBG..." << endl;
-        string outfpref = *(it_o+1);
+        string outfpref = *(it_o+1)+".th"+to_string(threshold)+".off"+to_string(offset);
         if (it_max != args.end()) {
             for (size_t i = 0; i < kmerDB.size() and i < maxNgraph; i++){
                 DBG dbg(kmerDB[i].size());
@@ -108,6 +117,7 @@ int main(int argc, char * argv[]) {
         vector<kmerCount_dict> kmerDB(nfile);
         for (size_t i = 0; i < nfile; i++) {
             ifstream inf(*(it_i+1+i));
+            assert(inf);
             readKmersFile(kmerDB, inf, i, true);
             inf.close();
         }
@@ -160,7 +170,7 @@ int main(int argc, char * argv[]) {
                 }
             }
         }
-        writeKmers(*(it_o+1)+".diff", kmerAttr, 1);
+        writeKmers(*(it_o+1)+".diff", kmerAttr);
 
         // write .dot files seperately for each kmers
         DBG dbg(kmerAttr[0].size());
@@ -172,9 +182,10 @@ int main(int argc, char * argv[]) {
         writeDot(*(it_o+1), -1, dbg.adj_attr);
 
 
-    } else { // "unique" mode
+    } else if (it_unique != args.end()) { // "unique" mode
 
         ifstream inf(*(it_i+1));
+        assert(inf);
         size_t nloci = countLoci(inf);
 
         vector<kmerCount_dict> kmerDB(nloci);
@@ -203,7 +214,7 @@ int main(int argc, char * argv[]) {
                 }
             }
         }
-        writeKmers(*(it_o+1)+".unique", kmerAttrDB, nloci);
+        writeKmers(*(it_o+1)+".unique", kmerAttrDB);
 
         // goodness indicates in how many loci the regression performance > 0.3
         ifstream locif(*(it_l+1));
@@ -236,7 +247,29 @@ int main(int argc, char * argv[]) {
         }
 
 
+    } else if (it_common != args.end()) {
 
+
+        ifstream inf(*(it_i+1));
+        assert(inf);
+        size_t nloci = countLoci(inf);
+
+        vector<kmerCount_dict> kmerDB(nloci);
+        readKmersFile(kmerDB, inf);
+
+        ifstream subpangenf(*(it_i+2));
+        assert(subpangenf);
+        vector<kmerCount_dict> kmerDBsubpangen(nloci);
+        readKmersFile(kmerDBsubpangen, subpangenf);
+
+        for (size_t i = 0; i < nloci; i++) {
+            for (auto &p : kmerDB[i]) {
+                if (kmerDBsubpangen[i].count(p.first) == 0) {
+                    kmerDB[i][p.first] == 0;
+                }
+            }
+        }
+        writeKmers(*(it_o+1)+".common", kmerDB, 1);
     }
     
     return 0;
