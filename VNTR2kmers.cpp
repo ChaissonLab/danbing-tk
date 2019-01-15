@@ -21,13 +21,14 @@ using namespace std;
 
 int main(int argc, const char * argv[]) {
     if (argc < 2){
-        cerr << "usage: vntr2kmers [-nom | -nonca | -g] -k -fs <-all | -none | -exclude | -list <haps>> \n";
+        cerr << "usage: vntr2kmers [-nom | -nonca | -g] -k -fs -th <-all | -none | -exclude | -list <haps>> \n";
         cerr << "  -nom                Use *.combined-hap.fasta instead of *combined-hap.fasta.masked.fix to count kmers\n";
         cerr << "                      Default: Use *combined-hap.fasta.masked.fix if not specified\n";
         cerr << "  -nonca              Use canonical mode to count kmers\n";
         cerr << "                      Default: canonical mode if not specified\n";
         cerr << "  -g                  Generate graph. Default: no graph if not specified\n";
         cerr << "  -fs                 Flank size. Length of flanking region around VNTR loci e.g. 500\n";
+        cerr << "  -th                 Filter out kmers w/ count below this threshold\n";
         cerr << "  -all                Include all haplotypes\n";
         cerr << "  -none               Do not count any haplotypes\n";
         cerr << "  -exclude            Exclude the specified haplotypes\n";
@@ -45,11 +46,16 @@ int main(int argc, const char * argv[]) {
     vector<string>::iterator it_list = find(args.begin(), args.end(), "-list");
     vector<string>::iterator it_none = find(args.begin(), args.end(), "-none");
     vector<string>::iterator it_ex = find(args.begin(), args.end(), "-exclude");
+    vector<string>::iterator it_th = find(args.begin(), args.end(), "-th");
     assert(it_all != args.end() or it_list != args.end() or it_none != args.end() or it_ex != args.end());
 
     size_t k = stoi(*(find(args.begin(), args.end(), "-k") + 1));
     size_t flanksize = stoi(*(find(args.begin(), args.end(), "-fs") + 1));
     size_t trueFlankSize = 2000;
+    size_t threshold = 0;
+    if (it_th != args.end()) {
+        threshold = stoi(*(find(args.begin(), args.end(), "-th") + 1));
+    }
 
     bool masked = 1;
     if (it_nom != args.end()) { masked = 0; }
@@ -77,9 +83,11 @@ int main(int argc, const char * argv[]) {
     string outfname;
     if (it_all != args.end()) {
         clist.assign(nhap, 1);
+        outfname = "Pangenome";
     }
     else if (it_none != args.end()) {
         clist.assign(nhap, 0);
+        outfname = "nullPangenome";
     }
     else {
         if (it_ex != args.end()) {
@@ -131,25 +139,16 @@ int main(int argc, const char * argv[]) {
     }
 
     // count the number of loci in a file
-    size_t nread = 0;
     cout << "counting total number of loci\n";
-    ifstream fin("HG00514.h0.combined-hap.fasta.masked.fix", ios::in);
-    assert(fin.is_open());
-    string line;
-    while (getline(fin, line)) {
-        if (line[0] == '>'){
-            nread++;
-        }
-    }
-    fin.close();
-
+    ifstream fin("HG00514.h0.combined-hap.fasta.masked.fix");
+    size_t nloci = countLoci(fin);
 
     // -----
     // open each file and create a kmer database for each loci
     // combine the kmer databases of the same loci across different files
     // -----
-    vector<kmerCount_dict> kmersDB(nread);
-    vector<kmerCount_dict> nonTRkmersDB(nread);
+    vector<kmerCount_dict> kmersDB(nloci);
+    vector<kmerCount_dict> nonTRkmersDB(nloci);
     for (size_t n = 0; n < nhap; n++) {
         string &fname = haps[n];
         string read, line;
@@ -201,36 +200,14 @@ int main(int argc, const char * argv[]) {
     // -----
     ofstream fout_tr;
     ofstream fout_ntr;
-
-    if (it_all != args.end()) {
-    	fout_tr.open("PanGenome." + to_string(k) + "." + to_string(flanksize) + ".tr.kmers");
-        fout_ntr.open("PanGenome." + to_string(k) + "." + to_string(flanksize) + ".ntr.kmers");
-    } else if (it_none != args.end()) {
-        fout_tr.open("nullPanGenome." + to_string(k) + "." + to_string(flanksize) + ".tr.kmers");
-        fout_ntr.open("nullPanGenome." + to_string(k) + "." + to_string(flanksize) + ".ntr.kmers");
-    } else {
-        fout_tr.open(outfname + "." + to_string(k) + "." + to_string(flanksize) + ".tr.kmers");
-        fout_ntr.open(outfname + "." + to_string(k) + "." + to_string(flanksize) + ".ntr.kmers");
-    }
-
-    for (size_t i = 0; i < kmersDB.size(); i++){
-        cout << "# of unique kmers: " << kmersDB[i].size() << '\t' << nonTRkmersDB[i].size() << '\n';
-
-        fout_tr << ">loci " + to_string(i) << '\n';
-        for (auto& p : kmersDB[i]) {
-            fout_tr << p.first << '\t' << p.second << '\n';
-        }
-
-        fout_ntr << ">loci " + to_string(i) << '\n';
-        for (auto& p : nonTRkmersDB[i]) {
-            fout_ntr << p.first << '\t' << p.second << '\n';
-        }
-    }
+    writeKmers(outfname + "." + to_string(k) + "." + to_string(flanksize) + ".th" + to_string(threshold) + ".tr", kmersDB, threshold);
+    writeKmers(outfname + "." + to_string(k) + "." + to_string(flanksize) + ".th" + to_string(threshold) + ".ntr", nonTRkmersDB, threshold);
 
 
     // -----
     // write a dot file for each dbg according to each kmer database
     // -----
+    /*
     if (it_g != args.end()) { // possibly deprecated
         size_t maxNgraph = 5, max;
         string outfpref = "ref.";
@@ -270,6 +247,7 @@ int main(int argc, const char * argv[]) {
             }
         }
     }
+    */
 
     return 0;
 }
