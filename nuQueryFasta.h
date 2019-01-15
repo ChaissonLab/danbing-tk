@@ -310,7 +310,6 @@ void buildNuNoncaKmers(kmerCount_dict& kmers, string& read, size_t k, size_t fla
 }
 
 size_t countLoci(ifstream& inf) {
-    assert(inf);
     string line;
     size_t nloci = 0;
     while (getline(inf, line)) {
@@ -324,7 +323,7 @@ size_t countLoci(ifstream& inf) {
 }
 
 // function polymorphism: record kmerDB only
-void readKmersFile(vector<kmerCount_dict>& kmerDB, ifstream& f, size_t startInd = 0, bool count = true, uint16_t threshold = 0) {
+void readKmersFile(vector<kmerCount_dict>& kmerDB, ifstream& f, size_t startInd = 0, bool count = true, uint16_t threshold = 0, uint16_t offset = 0) {
     string line;
     getline(f, line);
     cout <<"starting reading kmers..."<<endl;
@@ -345,7 +344,7 @@ void readKmersFile(vector<kmerCount_dict>& kmerDB, ifstream& f, size_t startInd 
 
             if (kmercount < threshold) { continue; }
             if (count) {
-                kmerDB[startInd][kmer] += kmercount;
+                kmerDB[startInd][kmer] += (kmercount + offset);
             } else {
                 kmerDB[startInd][kmer] += 0;
             }
@@ -410,22 +409,23 @@ void readKmersFile(kmerIndex_dict& kmerDBi, ifstream& f, size_t startInd = 0, bo
     }
 }
 
-void writeKmers(string outfpref, vector<kmerCount_dict>& kmerDB, size_t nloci) {
+void writeKmers(string outfpref, vector<kmerCount_dict>& kmerDB, size_t threshold = 0) {
     ofstream fout(outfpref+".kmers");
     assert(fout);
-    for (size_t i = 0; i < nloci; i++) {
+    for (size_t i = 0; i < kmerDB.size(); i++) {
         fout << ">locus " << i <<"\n";
         for (auto &p : kmerDB[i]) {
+            if (p.second < threshold) { continue; }
             fout << p.first << '\t' << p.second << '\n';
         }
     }
     fout.close();
 }
 
-void writeKmers(string outfpref, vector<kmerAttr_dict>& kmerAttrDB, size_t nloci) {
+void writeKmers(string outfpref, vector<kmerAttr_dict>& kmerAttrDB) {
     ofstream fout(outfpref+".kmers");
     assert(fout);
-    for (size_t i = 0; i < nloci; i++) {
+    for (size_t i = 0; i < kmerAttrDB.size(); i++) {
         fout << ">locus " << i <<"\n";
         for (auto &p : kmerAttrDB[i]) {
             fout << p.first;
