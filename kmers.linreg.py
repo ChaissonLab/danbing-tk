@@ -49,6 +49,33 @@ def RejectOutlier(x, y, t):
     else: # only remove zeros
         return x0, y
 
+def assignKmerTable(kmerDB, locus, table, sort):
+    table = np.array(table, dtype=int)
+    if sort:
+        table = table[table[:,0].argsort()]
+    kmerDB[locus] = table[:,1]
+
+def readKmers(fname, kmerDB, start, end, sort=True):
+    with open(fname) as f:
+        table = []
+        locus = 0
+        qual = False
+        f.readline()
+        for line in f:
+            if line[0] == ">":
+                if len(table) and locus >= start and qual:
+                    assignKmerTable(kmerDB, locus, table, sort)
+                table = []
+                locus = int(line.split()[1])
+                qual = False
+                if locus >= end: break
+            else:
+                table.append(line.split())
+                if int(line.split()[1]):
+                    qual = True
+        else:
+            assignKmerTable(kmerDB, locus, table, sort)
+
 print("reading regions.bed")
 with open("regions.bed") as f:
     locName = pd.read_table(f, header=None)
@@ -57,43 +84,22 @@ locName = []
 
 print("reading illumina kmers")
 y = {}
-with open(args.illumina, 'r') as f:
-    table = []
-    locus = -1
-    for line in f:
-        if line[0] == ">":
-            if len(table) and locus >= start:
-                table = np.array(table, dtype=int)
-                table = table[table[:,0].argsort()]
-                y[locus] = table
-            table = []
-            locus = int(line.split()[1])
-            if locus > end: break
-        else:
-            table.append(line.split())
+readKmers(args.illumina, y, start, end, True)
 
 print("reading pacbio kmers")
+x = {}
+readKmers(args.pacbio, x, start, end, True)
+
 data = {}
-with open(args.pacbio, 'r') as f:
-    table = []
-    qual = False
-    locus = -1
-    for line in f:
-        if line[0] == ">":
-            if len(table) and qual and locus in y and locus >= start:
-                table = np.array(table, dtype=int)
-                table = table[table[:,0].argsort()]
-                data[locus] = np.column_stack((table[:,1], y[locus][:,1]))
-            table = []
-            qual = False
-            locus = int(line.split()[1])
-            if locus > end: break
-        else:
-            table.append(line.split())
-            if int(line.split()[1]) >= 10: # quality parameter = 10
-                qual = True
+for k, v in y.items():
+    if k in x:
+        data[k] = np.column_stack((x[k], y[k]))
 
 results = np.zeros((nloci, 4))
+for k, v in x.items():
+    truth = np.sum(v) / 2              ## divide by 2 since diploid individual
+    results[k,0] = truth
+
 for k, v in data.items():
     # fit data
     x1 = v[:,0:1]
@@ -104,7 +110,7 @@ for k, v in data.items():
     reg = LinearRegression(fit_intercept=False).fit(x1, y)
     a, b = np.asscalar(reg.coef_), reg.intercept_
     rsquare = reg.score(x1, y)
-    if a == 0: 
+    if a <= 0: 
         continue
  
     if args.plot == "all":
@@ -119,13 +125,12 @@ for k, v in data.items():
         fig.text(0.25, 0.75, text)
         plt.title(hap+"_"+fastq+"_"+"locus"+str(k))
         plt.savefig(args.out+"."+str(k)+".png", dpi=150, bbox_inches='tight')
-        plt.show()
+        #plt.show()
         plt.close()
     if k % 1000 == 0:
         print(str(k)+" loci processed")
-    truth = np.sum(x1) / 2
-    pred = ((np.sum(y)-b) / a) / 2
-    results[k] = [truth, pred, a, rsquare]
+    pred = ((np.sum(y)-b) / a) / 2      ## divide by 2 since diploid individual
+    results[k, 1:] = [pred, a, rsquare]
 
 print("writing outputs")
 # write outputs as <locus> <pacbio kmer sum> <predicted pacbio kmer sum> <a> <rsqaure>
