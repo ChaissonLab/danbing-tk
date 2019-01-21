@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import vntrutils as vu
 import numpy as np
 import matplotlib as mpl
 mpl.use('Agg')
@@ -15,40 +16,12 @@ def poisson(lam, k):
 def negLogLn(lam, data):
     return -np.sum(np.log(poisson(lam, data)))
 
-def assignKmerTable(kmerDB, locus, table, sort):
-    table = np.array(table, dtype=int)
-    if not table.size: 
-        kmerDB[locus] = np.array([])
-        return
-    if np.all(table[:,1] == 0):
-        kmerDB[locus] = np.array([])
-        return
-    if sort:
-        table = table[table[:,0].argsort()]
-    kmerDB[locus] = table[:,1]
-
-def readKmers(fname, kmerDB, end=99999, sort=True):
-    with open(fname) as f:
-        table = []
-        locus = 0
-        f.readline()
-        for line in f:
-            if line[0] == ">":
-                assignKmerTable(kmerDB, locus, table, sort)
-                table = []
-                locus = int(line.split()[1])
-                if locus >= end: break
-            else:
-                table.append(line.split())
-        else:
-            assignKmerTable(kmerDB, locus, table, sort)
-
 ap = argparse.ArgumentParser(description="read *.ntr.kmers and estimate coverage by fitting edge weights to Poisson distribution")
-ap.add_argument("kmerFile", help="IL.ntr.kmers")
-ap.add_argument("pred", help="*.pred")
+ap.add_argument("ILkmerFile", help="IL.ntr.kmers")
 ap.add_argument("PBkmerFile", help="PB.ntr.kmers")
-ap.add_argument("graph", help="sepcify g to output graphs, - to skip")
+ap.add_argument("pred", help="*.pred")
 ap.add_argument("out", help="output file prefix")
+ap.add_argument("-g", help="sepcify to output graphs, Default: no output", action='store_true')
 args = ap.parse_args()
 
 print("reading regions.bed")
@@ -62,18 +35,18 @@ with open(args.pred) as f:
 
 print("reading IL.ntr.kmers")
 data = {}
-readKmers(args.kmerFile, data, sort=True)
+vu.readKmers(args.ILkmerFile, data, sort=True)
 assert len(data) == nloci, "nloci inconsistent"
 
 print("reading PB.ntr.kmers")
 groundTruth = {}
-readKmers(args.PBkmerFile, groundTruth, sort=True)
+vu.readKmers(args.PBkmerFile, groundTruth, sort=True)
 assert len(groundTruth) == nloci, "nloci inconsistent"
 
 filtered_data = {}
 for k, v in groundTruth.items():
     tmp = []
-    if not v.size:
+    if not v.size or not data[k].size:
         filtered_data[k] = np.array(tmp)
         continue
     for i in range(v.shape[0]):
@@ -109,7 +82,7 @@ with open(args.out+".cov", 'w') as f:
 
 np.savetxt(args.out+".succ.x.cov", optResult, fmt=['%-7.1f','%-8.0f'], header="coverage, success")
 
-if args.graph == "g":
+if args.g:
     nbin = 15
     xs = np.linspace(0, nbin, nbin*10)
     for i in range(nloci):
@@ -123,8 +96,8 @@ if args.graph == "g":
         #    den += (poisson(j, np.arange(nbin)) * denArray[0][j])
         #print(sum(den), den)
         #plt.hist(groundTruth[i], bins=np.arange(15)-0.5, density=True, color='r', histtype='step')
-        plt.hist(filtered_data[i], bins=np.arange(15)-0.5, density=True, color='b', histtype='step')
         #plt.plot(np.arange(nbin), den, '-', color='r')
+        plt.hist(filtered_data[i], bins=np.arange(15)-0.5, density=True, color='b', histtype='step')
         plt.plot(xs, poisson(optResult[i,0], xs), '-', color='c')
         plt.title("success_"+str(optResult[i,1])+".lambda_"+str(optResult[i,0]))
         plt.savefig(args.out+".L"+str(i)+".fit.png", dpi=150)
