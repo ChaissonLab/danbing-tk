@@ -7,33 +7,76 @@ import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 import pandas as pd
 
-def assignKmerTable(kmerDB, locus, table, sort):
-    table = np.array(table, dtype=int)
-    if not table.size:
-        kmerDB[locus] = np.array([])
-        return
-    if np.all(table[:,1] == 0):
-        kmerDB[locus] = np.array([])
-        return
-    if sort:
-        table = table[table[:,0].argsort()]
-    kmerDB[locus] = table[:,1]
+def writeKmers(fname, kmerDB):
+    keys = np.zeros(len(kmerDB))
+    ind = 0
+    for k in kmerDB:
+        keys[ind] = k
+        ind += 1
+    keys = keys[keys.argsort()]
+    with open(fname+".kmers", 'w') as f:
+        for k in keys:
+            f.write(">locus\t%.0f\n" % (k))
+            if kmerDB[k].size:
+                assert kmerDB[k].shape[1] == 2, "table does not contain 2 columns (kmer, count)"
+                for i in range(kmerDB[k].shape[0]):
+                    f.write("%-21.0f\t%.0f\n" % (kmerDB[k][i,0], kmerDB[k][i,1]))
+            else:
+                continue
 
-def readKmers(fname, kmerDB, end=999999, sort=True):
+def checkTable(table):
+    return table.size and np.any(table[:,1])
+
+def assignNewTable(kmerDB, locus, table, sort, kmerName):
+    if checkTable(table):
+        if sort:
+            table = table[table[:,0].argsort()]
+        if kmerName:
+            kmerDB[locus] = table
+        else:
+            kmerDB[locus] = table[:,1]
+    else:
+        kmerDB[locus] = np.array([])
+
+def IncrementKmerCount(kmerDB, locus, table, sort, kmerName):
+    if checkTable(table): # table is valid
+        if sort:
+            assert table.size == kmerDB[locus].size, "inconsistent table size"
+            table = table[table[:,0].argsort()]
+            if kmerName:
+                kmerDB[locus][:,1] += table[:,1]
+            else:
+                kmerDB[locus] += table[:,1]
+        else:
+            print("invalid argument: {'sort': False}")
+            exit(1)
+    else:
+        return
+
+def assignKmerTable(kmerDB, locus, table, sort, kmerName):
+    table = np.array(table, dtype=int)
+    if locus not in kmerDB:
+        assignNewTable(kmerDB, locus, table, sort, kmerName)
+    elif kmerDB[locus].size:
+        IncrementKmerCount(kmerDB, locus, table, sort, kmerName)
+    else:
+        assignNewTable(kmerDB, locus, table, sort, kmerName)
+
+def readKmers(fname, kmerDB, end=999999, sort=True, kmerName=False):
     with open(fname) as f:
         table = []
         locus = 0
         f.readline()
         for line in f:
             if line[0] == ">":
-                assignKmerTable(kmerDB, locus, table, sort)
+                assignKmerTable(kmerDB, locus, table, sort, kmerName)
                 table = []
                 locus = int(line.split()[1])
                 if locus >= end: break
             else:
                 table.append(line.split())
         else:
-            assignKmerTable(kmerDB, locus, table, sort)
+            assignKmerTable(kmerDB, locus, table, sort, kmerName)
 
 def RecursiveRejection(x, y):
     reg = LinearRegression(fit_intercept=False).fit(x, y)
@@ -105,7 +148,7 @@ def PlotRegression(x, y, xlabel="data_X", ylabel="data_Y", title="", fname="", o
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
         plt.title(title)
-        text = "y = "+f'{a:.2f}'+"x"+f'{b:+.2f}'+"\n"+"$R^2$ = "+f'{rsquare:.4f}'
+        text = "y = "+f'{a:.2f}'+"x"+f'{b:+.2f}'+"\n"+"$R^2$ = "+f'{rsquare:.4f}'+"\n#sample: "+f'{x1.size:.0f}'
         fig = plt.gcf()
         fig.text(0.25, 0.75, text)
         plt.savefig(fname+"."+outlier+".reg.png", dpi=150, bbox_inches='tight')

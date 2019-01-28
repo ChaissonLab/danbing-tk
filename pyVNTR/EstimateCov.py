@@ -24,35 +24,26 @@ ap.add_argument("out", help="output file prefix")
 ap.add_argument("-g", help="sepcify to output graphs, Default: no output", action='store_true')
 args = ap.parse_args()
 
-print("reading regions.bed")
-with open("regions.bed") as f:
-    locName = pd.read_table(f, header=None)
-nloci = len(locName)
-
 print("reading *.pred")
-with open(args.pred) as f:
-    regResult = np.loadtxt(f)
+regResult = np.loadtxt(args.pred)
+nloci = regResult.shape[0]
 
 print("reading IL.ntr.kmers")
 data = {}
-vu.readKmers(args.ILkmerFile, data, sort=True)
+vu.readKmers(args.ILkmerFile, data, sort=True, kmerName=True)
 assert len(data) == nloci, "nloci inconsistent"
 
 print("reading PB.ntr.kmers")
 groundTruth = {}
-vu.readKmers(args.PBkmerFile, groundTruth, sort=True)
+vu.readKmers(args.PBkmerFile, groundTruth, sort=True, kmerName=True)
 assert len(groundTruth) == nloci, "nloci inconsistent"
 
 filtered_data = {}
 for k, v in groundTruth.items():
-    tmp = []
-    if not v.size or not data[k].size:
-        filtered_data[k] = np.array(tmp)
-        continue
-    for i in range(v.shape[0]):
-        if v[i] == 2: ## kmercount = 2. most common for NTR region
-            tmp.append(data[k][i])
-    filtered_data[k] = np.array(tmp)
+    tmp = np.array([])
+    if v.size and data[k].size:
+        tmp = data[k][v[:,1]==2][:,1] ## kmercount = 2. most common for NTR region
+    filtered_data[k] = tmp[tmp>0]
 
 optResult = np.zeros((nloci,2))
 with open(args.out+".cov", 'w') as f:
@@ -60,7 +51,7 @@ with open(args.out+".cov", 'w') as f:
         #if i >= 20: break
         f.write(">locus "+str(i)+'\n')
         if filtered_data[i].size:
-            train = filtered_data[i]
+            train = filtered_data[i][filtered_data[i]>0]    ## tentative implementation
             print("locus:", i)
             result = minimize(negLogLn, 1, args=(train,), method='Powell')
             print(result)
@@ -83,11 +74,10 @@ with open(args.out+".cov", 'w') as f:
 np.savetxt(args.out+".succ.x.cov", optResult, fmt=['%-7.1f','%-8.0f'], header="coverage, success")
 
 if args.g:
-    nbin = 15
-    xs = np.linspace(0, nbin, nbin*10)
+    nbin = 30
     for i in range(nloci):
         if i >= 50: break
-        if groundTruth[i].size == 0: continue
+        if not groundTruth[i].size or not filtered_data[i].size: continue
         print("plotting locus:", i)
         #denArray = np.histogram(groundTruth[i], bins=np.arange(nbin+1)-0.5, density=True)
         #print(denArray[0])
@@ -97,7 +87,9 @@ if args.g:
         #print(sum(den), den)
         #plt.hist(groundTruth[i], bins=np.arange(15)-0.5, density=True, color='r', histtype='step')
         #plt.plot(np.arange(nbin), den, '-', color='r')
-        plt.hist(filtered_data[i], bins=np.arange(15)-0.5, density=True, color='b', histtype='step')
+        xmax = np.max(filtered_data[i])
+        xs = np.linspace(0, xmax, nbin*10)
+        plt.hist(filtered_data[i], bins=np.linspace(0,xmax,nbin)-0.5, density=True, color='b', histtype='step')
         plt.plot(xs, poisson(optResult[i,0], xs), '-', color='c')
         plt.title("success_"+str(optResult[i,1])+".lambda_"+str(optResult[i,0]))
         plt.savefig(args.out+".L"+str(i)+".fit.png", dpi=150)
