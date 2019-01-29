@@ -32,16 +32,13 @@ void rand_str(char *dest, size_t length) {
     *dest = '\0';
 }
 
-uint16_t countHit(kmerCount_dict &kmers, vector<kmerIndex_dict*> &kmerDBis, uint16_t nloci, uint16_t threshold) {
-    vector<uint16_t> totalHits(nloci);
-    for (uint16_t i = 0; i < kmerDBis.size(); i++) {
-        kmerIndex_dict &kmerDBi = *kmerDBis[i];
-        for (auto &p : kmers) {
-            if (kmerDBi.count(p.first) == 1) {
-                for (uint16_t i : kmerDBi[p.first]) {
-                    totalHits[i] += p.second;
-                }	
-            }
+uint16_t countHit(kmerCount_dict& kmers, kmerIndex_dict& kmerDBi, uint16_t nloci, uint16_t threshold) {
+    vector<uint16_t> totalHits(nloci, 0);
+    for (auto &p : kmers) {
+        if (kmerDBi.count(p.first) == 1) {
+            for (uint16_t i : kmerDBi[p.first]) {
+                totalHits[i] += p.second;
+            }	
         }
     }
     vector<uint16_t>::iterator it = max_element(totalHits.begin(), totalHits.end());
@@ -55,15 +52,14 @@ uint16_t countHit(kmerCount_dict &kmers, vector<kmerIndex_dict*> &kmerDBis, uint
 class Counts {
 public:
     ifstream *in;
-    bool ftype;
-    vector<kmerIndex_dict*> kmerDBis;
+    bool interleaved;
+    kmerIndex_dict* kmerDBi;
     size_t *readIndex;
     size_t threadIndex;
     uint16_t k, nloci, threshold;
-    vector<kmerCount_dict> trResults;
-    vector<kmerCount_dict> ntrResults;
+    vector<kmerCount_dict> trResults, lntrResults, rntrResults;
 
-    Counts(uint16_t nloci_) : trResults(nloci_), ntrResults(nloci_), nloci(nloci_) {}
+    Counts(uint16_t nloci_) : trResults(nloci_), lntrResults(nloci_), rntrResults(nloci_), nloci(nloci_) {}
 };
 
 class Threads {
@@ -76,11 +72,12 @@ size_t readNumber = 0;
 size_t nHits = 0;
 
 void CountWords(void *data) {
-    vector<kmerIndex_dict*> &kmerDBis = ((Counts*)data)->kmerDBis;
+    kmerIndex_dict& kmerDBi = *((Counts*)data)->kmerDBi;
     vector<kmerCount_dict> &trResults = ((Counts*)data)->trResults;
-    vector<kmerCount_dict> &ntrResults = ((Counts*)data)->ntrResults;
+    vector<kmerCount_dict> &lntrResults = ((Counts*)data)->lntrResults;
+    vector<kmerCount_dict> &rntrResults = ((Counts*)data)->rntrResults;
     ifstream *in = ((Counts*)data)->in;
-    bool ftype = ((Counts*)data)->ftype;
+    bool interleaved = ((Counts*)data)->interleaved;
     size_t &readNumber = *((Counts*)data)->readIndex;
     uint16_t k = ((Counts*)data)->k;
     size_t threadIndex = ((Counts*)data)->threadIndex;
@@ -104,7 +101,7 @@ void CountWords(void *data) {
         size_t readn = 0;
         vector<string> seqs;
 
-        if (ftype) {
+        if (interleaved) {
             while (readn < 150000 and (*in)) {
                 getline(*in, title);
                 getline(*in, seq);
@@ -117,7 +114,7 @@ void CountWords(void *data) {
 
                 uint16_t start = 0;
                 uint16_t len = seq.size();
-                while (qual[start] == '#' and len > 0) { start++; len--; }
+                while (qual[start] == '#' and len > 0) { start++; len--; }  // quick quality check based on '#', might change in the future
                 while (qual[start + len - 1] == '#' and len > 0) { len--; }
                 if (len < k) { continue; }
 
@@ -142,7 +139,7 @@ void CountWords(void *data) {
 
                 uint16_t start = 0;
                 uint16_t len = seq.size();
-                while (qual[start] == '#' and len > 0) { start++; len--; }
+                while (qual[start] == '#' and len > 0) { start++; len--; }  // quick quality check based on '#', might change in the future
                 while (qual[start + len - 1] == '#' and len > 0) { len--; }
                 if (len < k) { continue; }
 
@@ -159,7 +156,7 @@ void CountWords(void *data) {
         sem_post(semreader);
 
         time_t time2 = time(nullptr);
-        if (ftype) {
+        if (interleaved) {
             for (size_t seqi = 0; seqi < seqs.size()/2; seqi++) {
 
                 string seq = seqs[2*seqi];
@@ -168,38 +165,47 @@ void CountWords(void *data) {
                 kmerCount_dict kmers; 
                 buildNuKmers(kmers, seq, k);
                 buildNuKmers(kmers, seq1, k);
-                uint16_t ind = countHit(kmers, kmerDBis, nloci, threshold);
+                uint16_t ind = countHit(kmers, kmerDBi, nloci, threshold);
 
                 if (ind == nloci) { continue; }
                 else {
                     kmerCount_dict &trKmers = trResults[ind];
-                    kmerCount_dict &ntrKmers = ntrResults[ind];
+                    kmerCount_dict &lntrKmers = lntrResults[ind];
+                    kmerCount_dict &rntrKmers = rntrResults[ind];
                     for (auto &p : kmers) {
                         if (trKmers.count(p.first) == 1) {
                             trKmers[p.first] += p.second;
-                        } else if (ntrKmers.count(p.first) == 1) { // this will exclude shared kmers btw trKmers and ntrKmers
-                            ntrKmers[p.first] += p.second;
+                        } else if (lntrKmers.count(p.first) == 1) { // this will exclude shared kmers btw trKmers and ntrKmers
+                            lntrKmers[p.first] += p.second;
+                        } else if (rntrKmers.count(p.first) == 1) { // this will exclude shared kmers btw lntrKmers and rntrKmers
+                            rntrKmers[p.first] += p.second;
                         }
                     }
                 }
             }
         }
-        else {
+        else { // thresholdNTR not implemented yet
             for (size_t seqi = 0; seqi < seqs.size(); ++seqi) {
 
                 string seq = seqs[seqi];
                 if (seq.size() < k) { continue; }
 
                 kmerCount_dict kmers;
-                buildNuKmers(kmers, seq, k, 0);
-                uint16_t ind = countHit(kmers, kmerDBis, nloci, threshold);
+                buildNuKmers(kmers, seq, k);
+                uint16_t ind = countHit(kmers, kmerDBi, nloci, threshold);
 
                 if (ind == nloci) { continue; }
                 else {
                     kmerCount_dict &trKmers = trResults[ind];
+                    kmerCount_dict &lntrKmers = lntrResults[ind];
+                    kmerCount_dict &rntrKmers = rntrResults[ind];
                     for (auto &p : kmers) {
                         if (trKmers.count(p.first) == 1) {
                             trKmers[p.first] += p.second;
+                        } else if (lntrKmers.count(p.first) == 1) { // this will exclude shared kmers btw trKmers and ntrKmers
+                            lntrKmers[p.first] += p.second;
+                        } else if (rntrKmers.count(p.first) == 1) { // this will exclude shared kmers btw lntrKmers and rntrKmers
+                            rntrKmers[p.first] += p.second;
                         }
                     }
                 }
@@ -220,12 +226,13 @@ int main(int argc, char* argv[]) {
         cout << "Options:" << endl;
         cout << "  -k     kmer size" << endl;
         cout << "  -q     *.kmers file to be queried" << endl;
-        cout << "  -qs    *.tr.kmers and *.ntr.kmers files to be queried" << endl;
+        cout << "  -qs    prefix for *.tr.kmers, *.lntr.kmers, *.rntr.kmers and *.fr.kmers files" << endl;
         cout << "  -fs    single end fastq file" << endl;
         cout << "  -fi    interleaved pair-end fastq file" << endl;
         cout << "  -o     output prefix" << endl;
         cout << "  -p     Use n threads." << endl;
-        cout << "  -th    Discard reads with maxhit below this threshold" << endl << endl;
+        cout << "  -th    Discard reads with maxhit below this threshold" << endl;
+        cout << "  -th1    Discard ntr kmers with maxhit below this threshold" << endl << endl;
         exit(0);
     }
    
@@ -238,77 +245,68 @@ int main(int argc, char* argv[]) {
     vector<string>::iterator it_o = find(args.begin(), args.begin()+argc, "-o") + 1;
     vector<string>::iterator it_p = find(args.begin(), args.begin()+argc, "-p") + 1;
     vector<string>::iterator it_th = find(args.begin(), args.begin()+argc, "-th") + 1;
+    vector<string>::iterator it_th1 = find(args.begin(), args.begin()+argc, "-th1");
 
     uint16_t k = stoi(*it_k);
-    bool ftype, qtype;
+    bool interleaved, multiKmerFile;
     size_t ind_f = min(ind_fs, ind_fi) + 1;
     ifstream fastqFile(args[ind_f]);
     assert(fastqFile);
     if (ind_f == ind_fs) {
-        ftype = 0;
+        interleaved = false;
     } else {
-        ftype = 1;
+        interleaved = true;
     }
 
-    ifstream queryFile, ntrFile;
+    ifstream trFile, lntrFile, rntrFile, ntrfrFile;
     if (it_q != args.end()) { 
-        queryFile.open(*(it_q+1)); 
-        qtype = 0;
+        trFile.open(*(it_q+1)); 
+        multiKmerFile = false;
     } else { 
-        queryFile.open(*(it_qs+1));
-        ntrFile.open(*(it_qs+2));
-        assert(ntrFile);
-        qtype = 1;
+        trFile.open(*(it_qs+1)+".tr.kmers");
+        lntrFile.open(*(it_qs+1)+".lntr.kmers");
+        rntrFile.open(*(it_qs+1)+".rntr.kmers");
+        ntrfrFile.open(*(it_qs+1)+".ntrfr.kmers");
+        assert(lntrFile and rntrFile and ntrfrFile);
+        multiKmerFile = true;
     }
-    assert(queryFile);
-
-    ofstream outTrFile, outNtrFile;
-    if (qtype) {
-        outTrFile.open(*it_o + ".tr.kmers");
-        outNtrFile.open(*it_o + ".ntr.kmers");
-        assert(outNtrFile);
-    } else {
-        outTrFile.open(*it_o + ".kmers");
-    }
-    assert(outTrFile);
+    assert(trFile);
 
     size_t nproc = stoi(*it_p);
     uint16_t threshold = stoi(*it_th);
+    uint16_t NTRthreshold = 0;
+    if (it_th1 != args.end()) {
+        NTRthreshold = stoi(*(it_th1+1));
+    }
 
     cout << "k: " << k << endl;
-    cout << "ftype: " << ftype << endl;
+    cout << "interleaved: " << interleaved << endl;
     cout << "fastq: " << args[ind_f] << endl;
-    cout << "qtype: " << qtype << endl;
+    cout << "multiKmerFile: " << multiKmerFile << endl;
     cout << "query: ";
-    if (qtype) {
-        cout << *(it_qs+1) << '\t' << *(it_qs+2) << endl;
+    if (multiKmerFile) {
+        cout << *(it_qs+1)+".(tr/lntr/rntr/ntrfr).kmers" << endl;
     } else {
         cout << *(it_q+1) << endl;
     }
     
     cout << "total number of loci: ";
     time_t time1 = time(nullptr);
-    uint16_t nloci = countLoci(queryFile);
+    uint16_t nloci = countLoci(*(it_qs+1)+".tr.kmers");
     cout << nloci << endl;
  
     vector<kmerCount_dict> trKmerDB(nloci);
-    kmerIndex_dict trKmerDBi;
-    readKmersFile(trKmerDB, trKmerDBi, queryFile, 0, false, 1); // discard kmers w/ count < 1
-    size_t nkmers = 0;
-    for (size_t i = 0; i < nloci; i++) {
-        nkmers += trKmerDB[i].size();
-    }
-    cout << "# unique kmers in trKmerDB: " << nkmers << '\n';
+    kmerIndex_dict kmerDBi;
+    readKmersFile(trKmerDB, kmerDBi, *(it_qs+1)+".tr.kmers", 0, false); // start from index 0, do not count
+    cout << "# unique kmers in trKmerDB: " << kmerDBi.size() << '\n';
 
-    vector<kmerCount_dict> ntrKmerDB(nloci);
-    kmerIndex_dict ntrKmerDBi;
-    if (qtype == 1) {
-        readKmersFile(ntrKmerDB, ntrKmerDBi, ntrFile, 0, false, 1); // discard kmers w/ count < 1
-        nkmers = 0;
-        for (size_t i = 0; i < nloci; i++) {
-            nkmers += ntrKmerDB[i].size();
-        }
-        cout << "# unique kmers in ntrKmerDB: " << nkmers << '\n';
+    vector<kmerCount_dict> lntrKmerDB(nloci), rntrKmerDB(nloci);
+    if (multiKmerFile) {
+        readKmersFile(lntrKmerDB, kmerDBi, *(it_qs+1)+".lntr.kmers", 0, false); // start from index 0, do not count
+        readKmersFile(rntrKmerDB, kmerDBi, *(it_qs+1)+".rntr.kmers", 0, false); // start from index 0, do not count
+        cout << "# unique kmers in tr/ntrKmerDB: " << kmerDBi.size() << '\n';
+        readKmersFile(kmerDBi, *(it_qs+1)+".ntrfr.kmers", 0); // start from index 0
+        cout << "# unique kmers in tr/ntr/ntrfrKmerDB: " << kmerDBi.size() << '\n';
     }
     cout << "read *.kmers file in " << (time(nullptr) - time1) << " sec." << endl;
 
@@ -323,16 +321,14 @@ int main(int argc, char* argv[]) {
  
         for (size_t j = 0; j < nloci; j++) {
             counts.trResults[j] = trKmerDB[j];
-            if (qtype) {
-                counts.ntrResults[j] = ntrKmerDB[j];
+            if (multiKmerFile) {
+                counts.lntrResults[j] = lntrKmerDB[j];
+                counts.rntrResults[j] = rntrKmerDB[j];
             }
         }
         counts.in = &fastqFile;
-        counts.ftype = ftype;
-        counts.kmerDBis.push_back(&trKmerDBi);
-        if (qtype == 1) {
-            counts.kmerDBis.push_back(&ntrKmerDBi);
-        }
+        counts.interleaved = interleaved;
+        counts.kmerDBi = &kmerDBi;
         counts.readIndex = &readNumber;
         counts.threadIndex = i;
         counts.k = k;
@@ -340,6 +336,8 @@ int main(int argc, char* argv[]) {
         cout << "thread " << i << " done" << endl;
     }
     trKmerDB.clear();
+    lntrKmerDB.clear();
+    rntrKmerDB.clear();
     cout << "thread data preparation completed in " << (time(nullptr) - time1) << " sec." << endl;
 
     time1 = time(nullptr);
@@ -394,38 +392,42 @@ int main(int argc, char* argv[]) {
     cout << "parallel query completed in " << (time(nullptr) - time1) << " sec." << endl;
 
     cout << "combining restuls..." << endl;
-    vector<kmerCount_dict> combinedTrResults(nloci);
-    vector<kmerCount_dict> combinedNtrResults(nloci);
+    vector<kmerCount_dict> combinedTrResults(nloci), combinedlNtrResults(nloci), combinedrNtrResults(nloci);
     for (size_t i = 0; i < nproc; i++) {
         Counts &counts = threaddata.counts[i];
         for (uint16_t locus = 0; locus < nloci; locus++) {
             for (auto &p : counts.trResults[locus]) {
                 combinedTrResults[locus][p.first] += p.second;
             }
-            if (qtype) {
-                for (auto &p : counts.ntrResults[locus]) {
-                    combinedNtrResults[locus][p.first] += p.second;
+            if (multiKmerFile) {
+                for (auto &p : counts.lntrResults[locus]) {
+                    combinedlNtrResults[locus][p.first] += p.second;
+                }
+                for (auto &p : counts.rntrResults[locus]) {
+                    combinedrNtrResults[locus][p.first] += p.second;
                 }
             }
         }
     }
 
-    cout << "writing outputs..." << endl;
-    for (uint16_t locus = 0; locus < nloci; locus++) {
-        outTrFile << ">locus " << locus << '\n';
-        for (auto &p : combinedTrResults[locus]) {
-            outTrFile << p.first << '\t' << p.second << '\n';
-        }
-    }
-    outTrFile.close();
-    if (qtype) {
-        for (uint16_t locus = 0; locus < nloci; locus++) {
-            outNtrFile << ">locus " << locus << '\n';
-            for (auto &p : combinedNtrResults[locus]) {
-                outNtrFile << p.first << '\t' << p.second << '\n';
+    cout << "averaging duplicate kmers in lNTR and rNTR" << endl;
+    for (size_t i = 0; i < nloci; i++) {
+        for (auto &p : combinedlNtrResults[i]) {
+            if (combinedrNtrResults[i].count(p.first) == 1) {
+                uint16_t tmp = (combinedlNtrResults[i][p.first] + combinedlNtrResults[i][p.first] ) / 2;
+                combinedlNtrResults[i][p.first] = tmp;
+                combinedrNtrResults[i][p.first] = tmp;
             }
         }
-        outNtrFile.close();
+    }
+
+    cout << "writing outputs..." << endl;
+    if (multiKmerFile) {
+        writeKmers(*it_o + ".tr", combinedTrResults);
+        writeKmers(*it_o + ".lntr", combinedlNtrResults);
+        writeKmers(*it_o + ".rntr", combinedrNtrResults);
+    } else {
+        writeKmers(*it_o, combinedTrResults);
     }
 
     return 0;
