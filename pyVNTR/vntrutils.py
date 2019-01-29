@@ -27,8 +27,9 @@ def writeKmers(fname, kmerDB):
 def checkTable(table):
     return table.size and np.any(table[:,1])
 
-def assignNewTable(kmerDB, locus, table, sort, kmerName):
+def assignNewTable(kmerDB, locus, table, sort, kmerName, threshold):
     if checkTable(table):
+        table = table[table[:,1] >= threshold]
         if sort:
             table = table[table[:,0].argsort()]
         if kmerName:
@@ -40,43 +41,41 @@ def assignNewTable(kmerDB, locus, table, sort, kmerName):
 
 def IncrementKmerCount(kmerDB, locus, table, sort, kmerName):
     if checkTable(table): # table is valid
-        if sort:
-            assert table.size == kmerDB[locus].size, "inconsistent table size"
-            table = table[table[:,0].argsort()]
-            if kmerName:
-                kmerDB[locus][:,1] += table[:,1]
-            else:
-                kmerDB[locus] += table[:,1]
+        assert sort, "invalid argument: {'sort': False}"
+        assert table.size == kmerDB[locus].size, "inconsistent table size"
+        table = table[table[:,0].argsort()]
+        if kmerName:
+            kmerDB[locus][:,1] += table[:,1]
         else:
-            print("invalid argument: {'sort': False}")
-            exit(1)
+            kmerDB[locus] += table[:,1]
     else:
         return
 
-def assignKmerTable(kmerDB, locus, table, sort, kmerName):
+def assignKmerTable(kmerDB, locus, table, sort, kmerName, threshold):
     table = np.array(table, dtype=int)
     if locus not in kmerDB:
-        assignNewTable(kmerDB, locus, table, sort, kmerName)
+        assignNewTable(kmerDB, locus, table, sort, kmerName, threshold)
     elif kmerDB[locus].size:
+        assert threshold == 0, "filtering while incrementing counts!"
         IncrementKmerCount(kmerDB, locus, table, sort, kmerName)
     else:
-        assignNewTable(kmerDB, locus, table, sort, kmerName)
+        assignNewTable(kmerDB, locus, table, sort, kmerName, threshold)
 
-def readKmers(fname, kmerDB, end=999999, sort=True, kmerName=False):
+def readKmers(fname, kmerDB, end=999999, sort=True, kmerName=False, threshold=0):
     with open(fname) as f:
         table = []
         locus = 0
         f.readline()
         for line in f:
             if line[0] == ">":
-                assignKmerTable(kmerDB, locus, table, sort, kmerName)
+                assignKmerTable(kmerDB, locus, table, sort, kmerName, threshold)
                 table = []
                 locus = int(line.split()[1])
                 if locus >= end: break
             else:
                 table.append(line.split())
         else:
-            assignKmerTable(kmerDB, locus, table, sort, kmerName)
+            assignKmerTable(kmerDB, locus, table, sort, kmerName, threshold)
 
 def RecursiveRejection(x, y):
     reg = LinearRegression(fit_intercept=False).fit(x, y)
