@@ -41,4 +41,10 @@ np.savetxt(args.out+".best.cov", best_cov, fmt=['%-7.1f'])
 
 x = data[:,0:1]
 y = VNTRlen
-vu.PlotRegression(x, y, "true_len", "est_cov_len", fname=args.out+".cov.pred", outlier="strict")
+_, _, rsquare1 = vu.PlotRegression(x, y, "true_len", "est_cov_len", fname=args.out+".cov.pred", outlier="strict", plot=False)
+_, _, rsquare2 = vu.PlotRegression(y, x, "est_cov_len", "true_len", fname=args.out+".cov.pred", outlier="strict", plot=False)
+print(rsquare1, rsquare2)
+if rsquare1 > rsquare2:
+    vu.PlotRegression(x, y, "true_len", "est_cov_len", fname=args.out+".cov.pred", outlier="strict")
+else:
+    vu.PlotRegression(y, x, "est_cov_len", "true_len", fname=args.out+".cov.pred", outlier="strict")
