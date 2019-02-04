@@ -20,10 +20,15 @@
 
 using namespace std;
 
-void readBedTable(string& fsuffix, vector<string>& haps, vector<vector<size_t>>& sizeTable) {
+void readBedTable(string& fsuffix, vector<string>& haps, vector<string>& configFiles, vector<vector<size_t>>& sizeTable) {
     size_t nloci = sizeTable.size();
     for (size_t k = 0; k < haps.size(); k++) {
-        ifstream f(haps[k]+"."+fsuffix);
+        ifstream f;
+        if (configFiles.size() != 0) {
+            f.open(configFiles[k]);
+        } else {
+            f.open(haps[k]+"."+fsuffix);
+        }
         assert(f);
         string line, entry;
         getline(f, line);
@@ -70,7 +75,8 @@ int main(int argc, const char * argv[]) {
         cerr << "  -th                 Filter out kmers w/ count below this threshold. Default: 0, i.e. no filtering\n";
         cerr << "  -k                  Kmer size\n";
         cerr << "  -c                  Suffix of configure files e.g. 5k.sum.txt for HG00514.h0.5k.sum.txt\n";
-        cerr << "  -fa                 Include specified *.fasta only for kmer counting\n";
+        cerr << "  -fa [n] [list]      Use specified *.fasta in the [list] instead of hapDB.\n";
+        cerr << "                      Count the first [n] files and build kmers for the rest\n";
         cerr << "  -o                  Output prefix\n";
         cerr << "  -all                Count kmers for all haplotypes\n";
         cerr << "  -none               Do not count any haplotypes\n";
@@ -131,10 +137,15 @@ int main(int argc, const char * argv[]) {
     //"NA12878.h1",
     size_t nhap = haps.size();
     vector<bool> clist;
+    vector<string> configFiles;
     if (it_fa != args.end()) {
-        haps.assign(it_fa+1, args.end());
+        haps.assign(it_fa+2, args.end());
         nhap = haps.size();
-        clist.assign(nhap, 1);
+        configFiles.assign(it_c+1, it_c+1+nhap);
+        clist.assign(nhap, 0);
+        for (size_t i = 0; i < stoi(*(it_fa+1)); i++) {
+            clist[i] = 1;
+        }
     }
     else if (it_all != args.end()) {
         clist.assign(nhap, 1);
@@ -180,11 +191,16 @@ int main(int argc, const char * argv[]) {
 
     // count the number of loci in a file
     cout << "counting total number of loci\n";
-    size_t nloci = countLoci(haps[0]+".combined-hap.fasta");
+    size_t nloci;
+    if (it_fa != args.end()) {
+        nloci = countLoci(haps[0]);
+    } else {
+        nloci = countLoci(haps[0]+".combined-hap.fasta");
+    }
 
     // read bedTable
     vector<vector<size_t>> sizeTable(nloci, vector<size_t>(3*nhap));
-    readBedTable(*(it_c+1), haps, sizeTable);
+    readBedTable(*(it_c+1), haps, configFiles, sizeTable);
 
     // -----
     // open each file and create a kmer database for each loci
