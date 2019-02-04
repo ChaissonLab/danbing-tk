@@ -109,7 +109,7 @@ string decodeNumericSeq(size_t num, size_t k){
 size_t encodeSeq(string seq){
     size_t numericSeq = 0;
     for (size_t i = 0; i < seq.length(); i++){
-        numericSeq = numericSeq * 4 + baseNumConversion[seq[i]];
+        numericSeq = (numericSeq<<2) + baseNumConversion[seq[i]];
     }
     return numericSeq;
 }
@@ -156,25 +156,12 @@ size_t getNuRC(size_t num, size_t k) {
         k -= 4;
     }
     if (k > 0) { // convert remaining bits
-        num_rc <<= (k*2);
-        num_rc += (byteRC[num] >> ((4-k) * 2));
+        num_rc <<= (k<<1); // was num_rc <<= (k*2);
+        num_rc += (byteRC[num] >> ((4-k)<<1)); // was num_rc += (byteRC[num] >> ((4-k)*2));
     }
     return num_rc;
 }
 /*
-tuple<size_t, size_t> countHit(kmerCount_dict &kmers, kmerIndex_dict &kmerDBi, size_t nloci) {
-        vector<size_t> hits(nloci);
-        for (auto &p : kmers) {
-                if (kmerDBi.count(p.first) == 1) {
-                        for (size_t i : kmerDBi[p.first]) {
-                                hits[i] += p.second;
-                        }
-                }
-        }
-        vector<size_t>::iterator it = max_element(hits.begin(), hits.end());
-    return make_tuple(*it, distance(hits.begin(), it));
-}
-
 void buildNuKmers(kmerCount_dict& kmers, string& read, size_t k, size_t flanksize, bool count, ) { // new version
     size_t rlen = read.length();
     size_t mask = (1UL << 2*(k-1)) - 1;
@@ -232,7 +219,6 @@ void buildNuKmers(kmerCount_dict& kmers, string& read, size_t k, size_t leftflan
     size_t beg, nbeg, canonicalkmer, kmer, rckmer;
 
     beg = getNextKmer(kmer, leftflank, read, k);
-    //tie(beg, kmer) = getNextKmer(leftflank, read, k);
     if (beg == rlen){ return; }
     rckmer = getNuRC(kmer, k);
  
@@ -247,7 +233,6 @@ void buildNuKmers(kmerCount_dict& kmers, string& read, size_t k, size_t leftflan
 
             if (find(alphabet, alphabet+4, read[i + k]) == alphabet+4){
                 nbeg = getNextKmer(kmer, i+k+1, read, k);
-                //tie(nbeg, kmer) = getNextKmer(i + k + 1, read, k);
                 if (nbeg == rlen) { return; }
                 rckmer = getNuRC(kmer, k);
                 i = nbeg - 1;
