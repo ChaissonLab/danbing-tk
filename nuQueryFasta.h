@@ -106,9 +106,17 @@ string decodeNumericSeq(size_t num, size_t k){
     return seq;
 }
     
-size_t encodeSeq(string seq){
+size_t encodeSeq(string seq){ // poor implementation, extra string copy
     size_t numericSeq = 0;
     for (size_t i = 0; i < seq.length(); i++){
+        numericSeq = (numericSeq<<2) + baseNumConversion[seq[i]];
+    }
+    return numericSeq;
+}
+
+size_t encodeSeq(string& seq, size_t start, size_t k) { // no extra copy
+    size_t numericSeq = 0;
+    for (size_t i = start; i < start+k; i++){
         numericSeq = (numericSeq<<2) + baseNumConversion[seq[i]];
     }
     return numericSeq;
@@ -133,7 +141,7 @@ size_t getNextKmer(size_t& kmer, size_t beg, string& read, size_t k){
             validlen += 1;
         }
     }
-    kmer = encodeSeq(read.substr(beg, k));
+    kmer = encodeSeq(read, beg, k);
     return beg;
 }
 
@@ -508,7 +516,7 @@ void writeDot(string outfpref, size_t i, adj_dict &adj) {
     fout.close();
 }
 
-void writeDot(string outfpref, size_t i, adj_dict_attr &adj_attr) { // function polymorphism: adj with attributes information
+void writeDot(string outfpref, int i, adj_dict_attr &adj_attr) { // function polymorphism: adj with attributes information
     // can only compare 2 graphs at this moment
     ofstream fout;
     if (i == -1) {

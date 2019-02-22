@@ -10,7 +10,7 @@
 #include <semaphore.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <time.h>
+#include <ctime>
 #include <cassert>
 #include <cstring>
 #include <algorithm>
@@ -32,206 +32,303 @@ void rand_str(char *dest, size_t length) {
     *dest = '\0';
 }
 
-tuple<size_t, size_t> countHit(kmerCount_dict &kmers, kmerIndex_dict &kmerDBi, size_t nloci) {
-    vector<size_t> hits(nloci);
+uint16_t countHit(kmerCount_dict& kmers, kmerIndex_dict& kmerDBi, uint16_t nloci, uint16_t threshold) {
+    vector<uint16_t> totalHits(nloci, 0);
     for (auto &p : kmers) {
-	if (kmerDBi.count(p.first) == 1) {
-	    for (size_t i : kmerDBi[p.first]) {
-		hits[i] += p.second;
-	    }	
-	}
+        if (kmerDBi.count(p.first) == 1) {
+            for (uint16_t i : kmerDBi[p.first]) {
+                totalHits[i] += p.second;
+            }	
+        }
     }
-    vector<size_t>::iterator it = max_element(hits.begin(), hits.end());
-    return make_tuple(*it, distance(hits.begin(), it));
+    vector<uint16_t>::iterator it = max_element(totalHits.begin(), totalHits.end());
+    if (*it >= threshold) {
+        return distance(totalHits.begin(), it);
+    } else {
+        return nloci;
+    }
 }
 
 class Counts {
 public:
     ifstream *in;
-    kmerIndex_dict *kmerDBi;
+    bool interleaved;
+    kmerIndex_dict* kmerDBi;
     size_t *readIndex;
-    size_t threadIndex, k, nloci, threshold;
-    //vector<kmerCount_dict> queryResults;
-    vector<vector<string>> mappedReads;
+    size_t threadIndex;
+    uint16_t k, nloci, threshold;
+    vector<kmerCount_dict> trResults, lntrResults, rntrResults;
+    // extractFasta only
+    vector<string> mappedReads;
+    size_t target;
+    size_t *nMappedReads;
 
-    Counts(size_t nloci_) : mappedReads(nloci_), nloci(nloci_) {}
+    Counts(uint16_t nloci_, size_t target_) : target(target_), trResults(nloci_), lntrResults(nloci_), rntrResults(nloci_), nloci(nloci_) {}
 };
 
 class Threads {
 public:
-    vector<Counts> allCounts;
-    Threads(size_t nproc, size_t nloci) : allCounts(nproc, Counts(nloci)) {}
+    vector<Counts> counts;
+    Threads(size_t nproc, uint16_t nloci, size_t target) : counts(nproc, Counts(nloci, target)) {}
 };
 
-size_t readNumber = 0;
-size_t nHits = 0;
 
 void CountWords(void *data) {
-    kmerIndex_dict &kmerDBi = *((Counts*)data)->kmerDBi;
-    size_t &readNumber = *((Counts*)data)->readIndex;
+    kmerIndex_dict& kmerDBi = *((Counts*)data)->kmerDBi;
+    //vector<kmerCount_dict> &trResults = ((Counts*)data)->trResults;
+    //vector<kmerCount_dict> &lntrResults = ((Counts*)data)->lntrResults;
+    //vector<kmerCount_dict> &rntrResults = ((Counts*)data)->rntrResults;
     ifstream *in = ((Counts*)data)->in;
-    size_t k = ((Counts*)data)->k;
-    vector<vector<string>> &mappedReads = ((Counts*)data)->mappedReads;
+    bool interleaved = ((Counts*)data)->interleaved;
+    size_t& readNumber = *((Counts*)data)->readIndex; // why have to declare readNumber first?
+    uint16_t k = ((Counts*)data)->k;
+    uint16_t lowerbound = k-1;
     size_t threadIndex = ((Counts*)data)->threadIndex;
-    size_t nloci = ((Counts*)data)->nloci;
-    size_t threshold = ((Counts*)data)->threshold;
+    uint16_t nloci = ((Counts*)data)->nloci;
+    uint16_t threshold = ((Counts*)data)->threshold;
+    // extractFasta only
+    vector<string>& mappedReads = ((Counts*)data)->mappedReads;
+    size_t target = ((Counts*)data)->target;
+    size_t& nMappedReads = *((Counts*)data)->nMappedReads; // not thread safe
 
     while (true) {
-
+        //
+        // begin thread locking
+        //
         sem_wait(semreader);
-        string title, seq, qualtitle, qual;
 
-        size_t totalSize = 0;
-        vector<string> seqs;
-
-        while (totalSize < 50000000 and (*in)) {
-
-            getline(*in, title);
-            getline(*in, seq);
-            getline(*in, qualtitle);
-            getline(*in, qual);
-
-            size_t start = 0;
-            size_t len = seq.size();
-            while (qual[start] == '#'){ start++; len--; }
-            while (qual[start + len - 1] == '#'){ len--; }
-
-            seqs.push_back(seq.substr(start, len));
-            totalSize += seq.size();
-
-            ++readNumber;
+        if ((*in).good() == false) {
+            cout << "Finished at read index " << readNumber << endl;
+            sem_post(semreader);
+            return;
         }
-        cerr << "Buffered reading " << totalSize << "\t" << readNumber << endl;
+        assert((*in).good() == true);
+
+        string title, title1, seq, seq1, qualtitle, qualtitle1, qual, qual1;
+        size_t readn = 0;
+        vector<string> seqs(300000);
+
+        if (interleaved) {
+            while (readn < 300000 and (*in)) {
+                getline(*in, title);
+                //getline(*in, seqs[readn++]);
+                getline(*in, seq);
+                getline(*in, qualtitle);
+                getline(*in, qual);
+                getline(*in, title1);
+                //getline(*in, seqs[readn++]);
+                getline(*in, seq1);
+                getline(*in, qualtitle1);
+                getline(*in, qual1);
+
+                seqs[readn++] = seq;
+                seqs[readn++] = seq1;
+
+
+                //seqs.push_back(seq.substr(start, len));
+                //seqs.push_back(seq1.substr(start1, len1));
+                readNumber += 2;
+            }
+        }
+        cerr << "Buffered reading " << readn << "\t" << readNumber << endl;
 
         //
         // All done reading, release the thread lock.
         //
         sem_post(semreader);
 
-        clock_t time2 = clock();	
-        for (size_t seqi = 0; seqi < seqs.size(); ++seqi) { // nseq
+        time_t time2 = time(nullptr);
+        if (interleaved) {
+            for (size_t seqi = 0; seqi < seqs.size(); seqi++) {
 
-            string seq = seqs[seqi];
-            if (seq.size() < k) { continue; }
+                string& seq = seqs[seqi++];
+                string& seq1 = seqs[seqi++];
 
-            kmerCount_dict kmers;
-            buildNuKmers(kmers, seq, k, 0);
-            size_t ind, maxhit;
-            tie(maxhit, ind) = countHit(kmers, kmerDBi, nloci);
+                uint16_t start = 0;
+                uint16_t len = seq.size();
+                while (qual[start] == '#' and len > lowerbound) { start++; len--; }  // quick quality check based on '#', might change in the future
+                while (qual[start + len - 1] == '#' and len > lowerbound) { len--; }
+                if (len < k) { continue; }
 
-            if (maxhit < threshold) { continue; }
-            else {
-                //kmerCount_dict &query = queryResults[ind];
-                vector<string> &mReads = mappedReads[ind];
-                mReads.push_back(seq);
-                //for (auto &p : kmers) {
-                //    if (query.count(p.first) == 1) {
-                //        query[p.first] += p.second;
-                //    }
-                //}
+                uint16_t start1 = 0;
+                uint16_t len1 = seq1.size();
+                while (qual1[start1] == '#' and len > lowerbound) { start1++; len1--; }
+                while (qual1[start1 + len1 - 1] == '#' and len > lowerbound) { len1--; }
+                if (len1 < k) { continue; }
+
+
+                kmerCount_dict kmers; 
+                buildNuKmers(kmers, seq, k, start, seq.size()-start-len);
+                buildNuKmers(kmers, seq1, k, start1, seq.size()-start1-len1);
+                uint16_t ind = countHit(kmers, kmerDBi, nloci, threshold);
+
+                //if (ind == nloci) { continue; } // extractFasta only
+                if (ind != target) { continue; } // extractFasta only
+                else {
+                    mappedReads.push_back(seq.substr(start, len));  // extractFasta only
+                    mappedReads.push_back(seq1.substr(start1, len1)); // extractFasta only
+                    nMappedReads += 2;
+
+                    /* // extractFasta only
+                    kmerCount_dict &trKmers = trResults[ind];
+                    kmerCount_dict &lntrKmers = lntrResults[ind];
+                    kmerCount_dict &rntrKmers = rntrResults[ind];
+                    for (auto &p : kmers) {
+                        if (trKmers.count(p.first) == 1) {
+                            trKmers[p.first] += p.second;
+                        } else if (lntrKmers.count(p.first) == 1) { // this will exclude shared kmers btw trKmers and ntrKmers
+                            lntrKmers[p.first] += p.second;
+                        } else if (rntrKmers.count(p.first) == 1) { // this will exclude shared kmers btw lntrKmers and rntrKmers
+                            rntrKmers[p.first] += p.second;
+                        }
+                    }
+                    */
+                }
             }
         }
-        cout << "Batch query in " << (float)(clock() - time2)/CLOCKS_PER_SEC << " sec." << endl;
-        if ((*in).good() == false or (qual == "")) {
-            cout << "Finished at read index " << readNumber << endl;
-            return;
-        }
+        cout << "Batch query in " << (time(nullptr) - time2) << " sec.     # mapped reads: " << nMappedReads << endl;
+
     }
 }
 
 int main(int argc, char* argv[]) {
 
-    if (argc < 7) {
+    if (argc < 4) {
         cout << endl;
-        cout << "Usage: nuExtractFasta <k> <PB.kmers> <IL.fastq> <outputPrefix> [nproc] [threshold]" << endl;
-        cout << "  e.g. zcat ERR899717_1.fastq.gz | ./queryFastq 21 PanGenomeGenotyping.21.kmers /dev/stdin ERR899717_1 8 5" << endl;
+        cout << "Usage: nuQueryFasta -k <-q | -qs> <-fs | -fi> -o -p -th " << endl;
+        cout << "  e.g. zcat ERR899717_1.fastq.gz | nuQueryFasta -k 21 -q PanGenomeGenotyping.21.kmers -fs /dev/stdin -o ERR899717_1.fastq.21 8 5" << endl;
+        cout << "  e.g. paste <(zcat ERR899717_1.fastq.gz | paste - - - -) <(zcat ERR899717_2.fastq.gz | paste - - - -) | tr '\\t' '\\n' | \\ \n";
+        cout << "       nuQueryFasta -k 21 -qs <*.tr.kmers> <*.ntr.kmers> -fi /dev/stdin -o <*.kmers> -p 8 -th 20" << endl;
         cout << "Options:" << endl;
-        cout << "  nproc        Use n threads." << endl;
-        cout << "  threshold    Discard reads with maxhit below this threshold" << endl << endl;
+        cout << "  -k     kmer size" << endl;
+        cout << "  -q     *.kmers file to be queried" << endl;
+        cout << "  -qs    prefix for *.tr.kmers, *.lntr.kmers, *.rntr.kmers and *.fr.kmers files" << endl;
+        cout << "  -fs    single end fastq file" << endl;
+        cout << "  -fi    interleaved pair-end fastq file" << endl;
+        cout << "  -o     output prefix" << endl;
+        cout << "  -p     Use n threads." << endl;
+        cout << "  -th    Discard reads with maxhit below this threshold" << endl;
+        cout << "  -th1   Discard ntr kmers with maxhit below this threshold" << endl;
+        cout << "  -t     target locus" << endl << endl;
         exit(0);
     }
    
- 
-    size_t k = stoi(argv[1]);
-    ifstream queryFile(argv[2]);
-    ifstream fastqFile(argv[3]);
-    size_t nproc = atoi(argv[5]);
-    size_t threshold = atoi(argv[6]);
+    vector<string> args(argv, argv+argc);
+    vector<string>::iterator it_k = find(args.begin(), args.begin()+argc, "-k") + 1;
+    vector<string>::iterator it_q = find(args.begin(), args.begin()+argc, "-q");
+    vector<string>::iterator it_qs = find(args.begin(), args.begin()+argc, "-qs");
+    size_t ind_fs = distance(args.begin(), find(args.begin(), args.begin()+argc, "-fs"));
+    size_t ind_fi = distance(args.begin(), find(args.begin(), args.begin()+argc, "-fi"));
+    vector<string>::iterator it_o = find(args.begin(), args.begin()+argc, "-o") + 1;
+    vector<string>::iterator it_p = find(args.begin(), args.begin()+argc, "-p") + 1;
+    vector<string>::iterator it_th = find(args.begin(), args.begin()+argc, "-th") + 1;
+    vector<string>::iterator it_th1 = find(args.begin(), args.begin()+argc, "-th1");
+    vector<string>::iterator it_t = find(args.begin(), args.begin()+argc, "-t");
+
+    uint16_t k = stoi(*it_k);
+    size_t target = stoi(*(it_t+1));
+    bool interleaved, multiKmerFile;
+    size_t ind_f = min(ind_fs, ind_fi) + 1;
+    ifstream fastqFile(args[ind_f]);
+    assert(fastqFile);
+    if (ind_f == ind_fs) {
+        interleaved = false;
+    } else {
+        interleaved = true;
+    }
+
+    ifstream trFile, lntrFile, rntrFile, ntrfrFile;
+    if (it_q != args.end()) { 
+        trFile.open(*(it_q+1)); 
+        multiKmerFile = false;
+    } else { 
+        trFile.open(*(it_qs+1)+".tr.kmers");
+        lntrFile.open(*(it_qs+1)+".lntr.kmers");
+        rntrFile.open(*(it_qs+1)+".rntr.kmers");
+        ntrfrFile.open(*(it_qs+1)+".ntrfr.kmers");
+        assert(lntrFile and rntrFile and ntrfrFile);
+        multiKmerFile = true;
+    }
+    assert(trFile);
+
+    size_t nproc = stoi(*it_p);
+    uint16_t threshold = stoi(*it_th);
+    uint16_t NTRthreshold = 0;
+    if (it_th1 != args.end()) {
+        NTRthreshold = stoi(*(it_th1+1));
+    }
+
+    assert(it_o != args.end() + 1);
+    ofstream outfile((*it_o)+".tr.kmers");
+    assert(outfile);
+    outfile.close();
+
+    cout << "k: " << k << endl;
+    cout << "interleaved: " << interleaved << endl;
+    cout << "fastq: " << args[ind_f] << endl;
+    cout << "multiKmerFile: " << multiKmerFile << endl;
+    cout << "query: ";
+    if (multiKmerFile) {
+        cout << *(it_qs+1)+".(tr/lntr/rntr/ntrfr).kmers" << endl;
+    } else {
+        cout << *(it_q+1) << endl;
+    }
     
-    // count the number of loci in a file
     cout << "total number of loci: ";
-    clock_t time1 = clock();
-    assert(queryFile.is_open());
-    size_t nloci = 0;
-    string line;
-    while (getline(queryFile, line)) {
-        if (line[0] == '>'){
-            nloci++;
-        }
-    }
+    time_t time1 = time(nullptr);
+    uint16_t nloci = countLoci(*(it_qs+1)+".tr.kmers");
     cout << nloci << endl;
-    queryFile.clear();
-    queryFile.seekg(0, queryFile.beg);
  
-    // read kmer info
-    size_t ind = 0;
-    kmerCount_dict kmers;
-    vector<kmerCount_dict> kmerDB(nloci);
+    vector<kmerCount_dict> trKmerDB(nloci);
     kmerIndex_dict kmerDBi;
-    getline(queryFile, line);
-    while (true){
-        if (queryFile.peek() == EOF or queryFile.peek() == '>'){
-            if (kmers.size() != 0){
-                kmerDB[ind] = kmers;
-                kmers.clear();
-            }
-            ind++;
-            if (queryFile.peek() == EOF){
-                queryFile.close();
-                break;
-            }
-            else {
-                getline(queryFile, line);
-            }
-        }
-        else {
-            getline(queryFile, line, '\t');
-            size_t kmer = stoul(line);
-            getline(queryFile, line);
-            size_t c = stoi(line);
-            if (c == 0) { continue; }
-            else { 
-                kmers[kmer] = 0;
-                kmerDBi[kmer].push_back(ind);
-            }
-        }
+    readKmersFile(trKmerDB, kmerDBi, *(it_qs+1)+".tr.kmers", 0, false); // start from index 0, do not count
+    cout << "# unique kmers in trKmerDB: " << kmerDBi.size() << '\n';
+
+    vector<kmerCount_dict> lntrKmerDB(nloci), rntrKmerDB(nloci);
+    if (multiKmerFile) {
+        readKmersFile(lntrKmerDB, kmerDBi, *(it_qs+1)+".lntr.kmers", 0, false); // start from index 0, do not count
+        readKmersFile(rntrKmerDB, kmerDBi, *(it_qs+1)+".rntr.kmers", 0, false); // start from index 0, do not count
+        cout << "# unique kmers in tr/ntrKmerDB: " << kmerDBi.size() << '\n';
+        readKmersFile(kmerDBi, *(it_qs+1)+".ntrfr.kmers", 0); // start from index 0
+        cout << "# unique kmers in tr/ntr/ntrfrKmerDB: " << kmerDBi.size() << '\n';
     }
-    cout << "read .kmer file in " << (float)(clock() - time1)/CLOCKS_PER_SEC << " sec." << endl;
+    cout << "read *.kmers file in " << (time(nullptr) - time1) << " sec." << endl;
 
 
     // create data for each process
     cout << "create data for each process..." << endl;
-    time1 = clock();
-    Threads threaddata(nproc, nloci);
+    time1 = time(nullptr);
+    Threads threaddata(nproc, nloci, target);
+    size_t readNumber = 0;
+    size_t nMappedReads = 0;
     cout << "initialization" << endl;
     for (size_t i = 0; i < nproc; i++) {
-        Counts &counts = threaddata.allCounts[i];
-        
-        //vector<kmerCount_dict> queryResults(nloci);
-        //for (size_t j = 0; j < nloci; j++) {
-        //    counts.queryResults[j] = kmerDB[j];
-        //}
+        Counts &counts = threaddata.counts[i];
+ 
+        /*for (size_t j = 0; j < nloci; j++) {
+            counts.trResults[j] = trKmerDB[j];
+            if (multiKmerFile) {
+                counts.lntrResults[j] = lntrKmerDB[j];
+                counts.rntrResults[j] = rntrKmerDB[j];
+            }
+        }*/
         counts.in = &fastqFile;
+        counts.interleaved = interleaved;
         counts.kmerDBi = &kmerDBi;
         counts.readIndex = &readNumber;
         counts.threadIndex = i;
         counts.k = k;
         counts.threshold = threshold;
+        counts.target = target;
+        counts.nMappedReads = &nMappedReads;
         cout << "thread " << i << " done" << endl;
     }
-    kmerDB.clear();
-    cout << "thread data preparation completed in " << (float)(clock() - time1)/CLOCKS_PER_SEC << " sec." << endl;
+    trKmerDB.clear();
+    lntrKmerDB.clear();
+    rntrKmerDB.clear();
+    cout << "thread data preparation completed in " << (time(nullptr) - time1) << " sec." << endl;
 
+    time1 = time(nullptr);
     const int idLen=10;
     char id[idLen+1];
     id[idLen] = '\0';
@@ -266,53 +363,45 @@ int main(int argc, char* argv[]) {
     pthread_attr_t *threadAttr = new pthread_attr_t[nproc];
     int t;	
 
-    for (t = 0; t < nproc; t++ ){
+    for (t = 0; t < nproc; t++ ) {
         pthread_attr_init(&threadAttr[t]);
     }
     pthread_t *threads = new pthread_t[nproc];
 
     for (t = 0; t < nproc; t++) {
         cout << "starting thread " << t << endl;
-        pthread_create(&threads[t], &threadAttr[t], (void* (*)(void*))CountWords, &threaddata.allCounts[t]);
+        pthread_create(&threads[t], &threadAttr[t], (void* (*)(void*))CountWords, &threaddata.counts[t]);
     }
-
+    cout << "threads created" << endl;
+ 
     for (t = 0; t < nproc; t++) {
         pthread_join(threads[t], NULL);
     }
+    cout << "parallel query completed in " << (time(nullptr) - time1) << " sec." << endl;
 
-/*
-    cout << "combining restuls..." << endl;
-    vector<kmerCount_dict> combinedQueryResults(nloci);
-    for (size_t i = 0; i < threaddata.counts.size(); i++) {
-        Counts &counts = threaddata.counts[i];
-        for (size_t locus = 0; locus < counts.queryResults.size(); locus++){
-            for (auto &p : counts.queryResults[locus]){
-                combinedQueryResults[locus][p.first] += p.second;
-            }
-        }
-    }
-*/
+
 
     cout << "writing outputs..." << endl;
-    for (size_t locus = 0; locus < nloci; locus++){
-        string fname = string(argv[4]) + ".fasta";
-        FILE *outFile = fopen(fname.c_str(), "w");
-        size_t nread = 0;
-        for (size_t i = 0; i < nproc; i++) {
-            Counts &counts = threaddata.allCounts[i];
-            vector<string> &mReads = counts.mappedReads[locus];
+    string fname = *it_o + "." + to_string(target) + ".mafa";
+    ofstream outf(fname);
+    size_t nread = 0;
+    for (size_t i = 0; i < nproc; i++) {
+        Counts &counts = threaddata.counts[i];
+        vector<string> &mReads = counts.mappedReads;
 
-            for (size_t ind = 0; ind < counts.mappedReads[locus].size(); ind++) {
-                fprintf(outFile, ">read %zu\n", ind + nread);
-                fprintf(outFile, "%s\n", counts.mappedReads[locus][ind].c_str());
-            }
-            nread += (ind + 1);
+        size_t ind = 0;
+        while (ind < counts.mappedReads.size()) {
+            outf << ">read " << to_string(ind + nread) << "_0" << '\n';
+            outf << mReads[ind++] << '\n';
+            outf << ">read " << to_string(ind + nread) << "_1" << '\n';
+            outf << mReads[ind++] << '\n';
         }
-        fclose(outFile);
-        cout << "locus " << to_string(locus) << " done" << endl;
+        nread += ind;
+
     }
 
-    
+
+
     return 0;
 }
 
