@@ -330,7 +330,7 @@ void readKmersFile(vector<kmerCount_dict>& kmerDB, string fname, size_t startInd
     assert(f);
     string line;
     getline(f, line);
-    cout <<"starting reading kmers..."<<endl;
+    cout <<"starting reading kmers from " << fname << endl;
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
             startInd++;
@@ -363,7 +363,7 @@ void readKmersFile(vector<kmer_set>& kmerSetDB, kmerIndex_dict& kmerDBi, string 
     assert(f);
     string line;
     getline(f, line);
-    cout <<"starting reading kmers..."<<endl;
+    cout <<"starting reading kmers from " << fname << endl;
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
             startInd++;
@@ -395,7 +395,7 @@ void readKmersFile(vector<kmerCount_dict>& kmerDB, kmerIndex_dict& kmerDBi, stri
     assert(f);
     string line;
     getline(f, line);
-    cout <<"starting reading kmers..."<<endl;
+    cout <<"starting reading kmers from " << fname << endl;
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
             startInd++;
@@ -431,7 +431,7 @@ void readKmersFile(kmerIndex_dict& kmerDBi, string fname, size_t startInd = 0, u
     assert(f);
     string line;
     getline(f, line);
-    cout <<"starting reading kmers..."<<endl;
+    cout <<"starting reading kmers from " << fname << endl;
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
             startInd++;
