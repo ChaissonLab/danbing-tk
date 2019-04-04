@@ -4,14 +4,15 @@
 #include "stdlib.h"
 #include <vector>
 #include <string>
-#include <set>
 #include <iostream>
 #include <fstream>
 #include <numeric>
 #include <fcntl.h>
 #include <errno.h>
 #include <time.h>
+#include <map>
 #include <unordered_map>
+#include <set>
 #include <unordered_set>
 #include <cassert>
 #include <cmath>
@@ -21,13 +22,15 @@
 using namespace std;
 
 typedef unordered_set<size_t> kmer_set;
-typedef unordered_map<size_t, uint16_t> kmerCount_dict; // assume count < (2^16 -1)
-typedef unordered_map<size_t, uint16_t> kmerCount_dict; // assume count < (2^16 -1)
+typedef unordered_map<size_t, uint16_t> kmerCount_umap; // assume count < (2^16 -1)
 //typedef unordered_map<size_t, vector<uint16_t>> kmerIndex_dict; // assume number of loci < (2^16 -1)
-typedef unordered_map<size_t, set<uint16_t>> kmerIndex_dict; // assume number of loci < (2^16 -1)
+//typedef unordered_map<size_t, set<uint16_t>> kmerIndex_umap; // assume number of loci < (2^16 -1)
+typedef unordered_map<size_t, unordered_set<uint16_t>> kmeruIndex_umap; // assume number of loci < (2^16 -1)
 typedef unordered_map<size_t, vector<uint16_t>> kmerAttr_dict;
 typedef unordered_map<string, unordered_map<string, uint16_t>> adj_dict;
-typedef unordered_map<string, unordered_map<string, vector<uint16_t>>> adj_dict_attr;
+typedef unordered_map<string, unordered_map<string, vector<uint16_t>>> adjAttr_dict;
+typedef unordered_map<size_t, unordered_map<size_t, uint16_t>> nuAdj_dict;
+typedef unordered_map<size_t, unordered_map<size_t, vector<uint16_t>>> nuAdjAttr_dict;
 
 //const unordered_map<char, size_t> base( {{'A', 0}, {'C', 1}, {'G', 2}, {'T', 3}});
 //const char baseinv[] = {'A', 'C', 'G', 'T'};
@@ -221,7 +224,7 @@ void buildNuKmers(kmerCount_dict& kmers, string& read, size_t k, size_t flanksiz
     }
 }
 */
-void buildNuKmers(kmerCount_dict& kmers, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0, bool count = true) { // old version
+void buildNuKmers(kmerCount_umap& kmers, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0, bool count = true) { // old version
     size_t rlen = read.length();
     size_t mask = (1UL << 2*(k-1)) - 1;
     size_t beg, nbeg, canonicalkmer, kmer, rckmer;
@@ -325,12 +328,12 @@ size_t countLoci(string fname) {
 }
 
 // function polymorphism: record kmerDB only
-void readKmersFile(vector<kmerCount_dict>& kmerDB, string fname, size_t startInd = 0, bool count = true, uint16_t threshold = 0, uint16_t offset = 0) {
+void readKmersFile(vector<kmerCount_umap>& kmerDB, string fname, size_t startInd = 0, bool count = true, uint16_t threshold = 0, uint16_t offset = 0) {
     ifstream f(fname);
     assert(f);
     string line;
     getline(f, line);
-    cout <<"starting reading kmers from " << fname << endl;
+    cerr <<"starting reading kmers from " << fname << endl;
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
             startInd++;
@@ -357,13 +360,13 @@ void readKmersFile(vector<kmerCount_dict>& kmerDB, string fname, size_t startInd
     f.close();
 }
 
-// function polymorphism: record kmerSetDB and kmerDBi
-void readKmersFile(vector<kmer_set>& kmerSetDB, kmerIndex_dict& kmerDBi, string fname, size_t startInd = 0, uint16_t threshold = 0) {
+// function polymorphism: record kmerSetDB and kmerIndex_dict kmerDBi
+void readKmersFile(vector<kmer_set>& kmerSetDB, kmeruIndex_umap& kmerDBi, string fname, size_t startInd = 0, uint16_t threshold = 0) {
     ifstream f(fname);
     assert(f);
     string line;
     getline(f, line);
-    cout <<"starting reading kmers from " << fname << endl;
+    cerr <<"starting reading kmers from " << fname << endl;
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
             startInd++;
@@ -389,13 +392,13 @@ void readKmersFile(vector<kmer_set>& kmerSetDB, kmerIndex_dict& kmerDBi, string 
     f.close();
 }
 
-// function polymorphism: record kmerDB and kmerDBi
-void readKmersFile(vector<kmerCount_dict>& kmerDB, kmerIndex_dict& kmerDBi, string fname, size_t startInd = 0, bool count = true, uint16_t threshold = 0) {
+// function polymorphism: record kmerDB and kmerIndex_dict kmerDBi
+void readKmersFile(vector<kmerCount_umap>& kmerDB, kmeruIndex_umap& kmerDBi, string fname, size_t startInd = 0, bool count = true, uint16_t threshold = 0) {
     ifstream f(fname);
     assert(f);
     string line;
     getline(f, line);
-    cout <<"starting reading kmers from " << fname << endl;
+    cerr <<"starting reading kmers from " << fname << endl;
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
             startInd++;
@@ -425,13 +428,13 @@ void readKmersFile(vector<kmerCount_dict>& kmerDB, kmerIndex_dict& kmerDBi, stri
     f.close();
 }
 
-// function polymorphism: record kmerDBi only
-void readKmersFile(kmerIndex_dict& kmerDBi, string fname, size_t startInd = 0, uint16_t threshold = 0) {
+// function polymorphism: record kmerIndex_dict kmerDBi only
+void readKmersFile(kmeruIndex_umap& kmerDBi, string fname, size_t startInd = 0, uint16_t threshold = 0) {
     ifstream f(fname);
     assert(f);
     string line;
     getline(f, line);
-    cout <<"starting reading kmers from " << fname << endl;
+    cerr <<"starting reading kmers from " << fname << endl;
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
             startInd++;
@@ -456,7 +459,7 @@ void readKmersFile(kmerIndex_dict& kmerDBi, string fname, size_t startInd = 0, u
     f.close();
 }
 
-void writeKmers(string outfpref, vector<kmerCount_dict>& kmerDB, size_t threshold = 0) {
+void writeKmers(string outfpref, vector<kmerCount_umap>& kmerDB, size_t threshold = 0) {
     ofstream fout(outfpref+".kmers");
     assert(fout);
     for (size_t i = 0; i < kmerDB.size(); i++) {
@@ -485,7 +488,7 @@ void writeKmers(string outfpref, vector<kmerAttr_dict>& kmerAttrDB) {
     fout.close();
 }
 
-tuple<adj_dict, size_t> buildAdjDict(kmerCount_dict& kmers, size_t k) {
+tuple<adj_dict, size_t> buildAdjDict(kmerCount_umap& kmers, size_t k) {
     adj_dict adj;
     string s, t;
     size_t max = 0, m;
@@ -516,7 +519,7 @@ void writeDot(string outfpref, size_t i, adj_dict &adj) {
     fout.close();
 }
 
-void writeDot(string outfpref, int i, adj_dict_attr &adj_attr) { // function polymorphism: adj with attributes information
+void writeDot(string outfpref, int i, adjAttr_dict &adjAttr) { // function polymorphism: adj with attributes information
     // can only compare 2 graphs at this moment
     ofstream fout;
     if (i == -1) {
@@ -526,7 +529,7 @@ void writeDot(string outfpref, int i, adj_dict_attr &adj_attr) { // function pol
     }
     assert(fout.is_open());
     fout << "strict digraph \"\" {" << '\n';
-    for (auto& p : adj_attr){
+    for (auto& p : adjAttr){
         for (auto& q : p.second){
             fout << p.first << " -> " << q.first << " [Weight = " << q.second[0];
             fout << ", Label = " << to_string(q.second[1]) << "];" << '\n';
@@ -542,7 +545,7 @@ public:
     size_t setid = 0, nset = 0, maxcount = 0;
 
     adj_dict adj;
-    adj_dict_attr adj_attr;
+    adjAttr_dict adjAttr;
 	
     unordered_map<string, size_t> sets;          // store which node belongs which set in adj
     vector<vector<string>> nodes;                // store what nodes are in each set
@@ -634,20 +637,20 @@ public:
 
     void swapsubgraph(size_t label, bool isAttr = false) {
         if (isAttr) { // adj with attributes information
-            adj_dict_attr tmpadj_attr;
+            adjAttr_dict tmpadjAttr;
             for (auto &node : nodes[label]) {
                 string node_rc = getRC(node);
-                if (adj_attr.count(node) != 0) { // equivelant to if (node is a source_node in adj)
-                    for (auto &p : adj_attr[node]) {
+                if (adjAttr.count(node) != 0) { // equivelant to if (node is a source_node in adj)
+                    for (auto &p : adjAttr[node]) {
                         string target_rc = getRC(p.first);
-                        tmpadj_attr[target_rc][node_rc] = p.second;
+                        tmpadjAttr[target_rc][node_rc] = p.second;
                     }
-                    adj_attr.erase(node);
+                    adjAttr.erase(node);
                 }
             }
-            for (auto &p : tmpadj_attr) {
+            for (auto &p : tmpadjAttr) {
                 for (auto &q : p.second) {
-                    adj_attr[p.first][q.first] = q.second;
+                    adjAttr[p.first][q.first] = q.second;
                 }
             }
         }
@@ -673,19 +676,19 @@ public:
 
     void updateDBG(int sInAdj, int tInAdj, string &s, string &t, string &s_rc, string &t_rc, uint16_t count) {
 
-        if (sInAdj == 0 and tInAdj == 0) {			// s, t not in graph; create a new set
+        if (sInAdj == 0 and tInAdj == 0) {		// s, t not in graph; create a new set
             updatesets(&s, &t, 2);
             adj[s][t] += count;
         }
         else if (sInAdj == 0 or tInAdj == 0) {		// either s or t in graph; expand existing set
             if (sInAdj == 1 or tInAdj == 1) {		// forward strand in adj
-                if (tInAdj == 1)					// t is in the adj
+                if (tInAdj == 1)			// t is in the adj
                     { updatesets(&s, &t, 0); }
-                else								// s is in the adj
+                else					// s is in the adj
                     { updatesets(&s, &t, 1); }
                 adj[s][t] += count;
             }
-            else {									// forward strand in adj_rc
+            else {					// forward strand in adj_rc
                 if (tInAdj == 2)
                     { updatesets(&t_rc, &s_rc, 1); }
                 else
@@ -693,15 +696,15 @@ public:
                 adj[t_rc][s_rc] += count;
             }
         }
-        else if (sInAdj == tInAdj) {				// both s, t in the same graph
+        else if (sInAdj == tInAdj) {			// both s, t in the same graph
             if (sInAdj == 1) {						// s, t in adj
-                if (sets[s] != sets[t])				// s, t in different sets
-                    { updatesets(&s, &t, -1); }			// combine s, t sets 
+                if (sets[s] != sets[t])			// s, t in different sets
+                    { updatesets(&s, &t, -1); }		// combine s, t sets 
             	else
                     { setsizes[sets[s]]++; }
                 adj[s][t] += count;
             }
-            if (sInAdj == 2)  {						// s, t in adj_rc
+            if (sInAdj == 2)  {				// s, t in adj_rc
                 if (sets[s_rc] != sets[t_rc])
                     { updatesets(&s_rc, &t_rc, -1); }
                 else
@@ -709,18 +712,18 @@ public:
                 adj[t_rc][s_rc] += count;
             }
         }
-        else {										// s, t in different graphs
-            if (sInAdj == 1) {						// s in adj, t in adj_rc
+        else {						// s, t in different graphs
+            if (sInAdj == 1) {				// s in adj, t in adj_rc
                 if (sets[s] == sets[t_rc]) {		// s and t_rc in the same set; add edge
                     updatesets(&s, &t, 1);
                     adj[s][t] += count;
                 }
-                else {								// s and t_rc in different sets
+                else {					// s and t_rc in different sets
                     size_t label1 = sets[s];
                     size_t label2 = sets[t_rc];
                     if (setsizes[label1] >= setsizes[label2]) {     // swap label2 subgraph and connect s with t
                         swapsubgraph(label2);
-                        updatesets(NULL, NULL, -2, label2, label1);            // merge label2 to label1
+                        updatesets(NULL, NULL, -2, label2, label1); // merge label2 to label1
                         adj[s][t] += count;
                     }
                     else {
@@ -730,7 +733,7 @@ public:
                     }
                 }
             }
-            else {        // sInAdj == 2
+            else {                                      // sInAdj == 2
                 if (sets[s_rc] == sets[t]) {
                     updatesets(&s, &t, 1);
                     adj[s][t] += count;
@@ -756,67 +759,67 @@ public:
     void updateDBG(int sInAdj, int tInAdj, string &s, string &t, string &s_rc, string &t_rc, vector<uint16_t> &attr) {
     // function polymorphism: adj with attributes information
 
-        if (sInAdj == 0 and tInAdj == 0) {			// s, t not in graph; create a new set
+        if (sInAdj == 0 and tInAdj == 0) {		// s, t not in graph; create a new set
             updatesets(&s, &t, 2);
-            adj_attr[s][t] = attr;
+            adjAttr[s][t] = attr;                      // "=" sign only works when kmer size is odd; should implement elementwise += in the future
         }
         else if (sInAdj == 0 or tInAdj == 0) {		// either s or t in graph; expand existing set
             if (sInAdj == 1 or tInAdj == 1) {		// forward strand in adj
-                if (tInAdj == 1)					// t is in the adj
+                if (tInAdj == 1)			// t is in the adj
                     { updatesets(&s, &t, 0); }
-                else								// s is in the adj
+                else					// s is in the adj
                     { updatesets(&s, &t, 1); }
-                adj_attr[s][t] = attr;
+                adjAttr[s][t] = attr;
             }
-            else {									// forward strand in adj_rc
+            else {					// forward strand in adj_rc
                 if (tInAdj == 2)
                     { updatesets(&t_rc, &s_rc, 1); }
                 else
                     { updatesets(&t_rc, &s_rc, 0); }
-                adj_attr[t_rc][s_rc] = attr;
+                adjAttr[t_rc][s_rc] = attr;
             }
         }
         else if (sInAdj == tInAdj) {				// both s, t in the same graph
-            if (sInAdj == 1) {						// s, t in adj
+            if (sInAdj == 1) {					// s, t in adj
                 if (sets[s] != sets[t])				// s, t in different sets
                     { updatesets(&s, &t, -1); }			// combine s, t sets 
             	else
                     { setsizes[sets[s]]++; }
-                adj_attr[s][t] = attr;
+                adjAttr[s][t] = attr;
             }
-            if (sInAdj == 2)  {						// s, t in adj_rc
+            if (sInAdj == 2)  {					// s, t in adj_rc
                 if (sets[s_rc] != sets[t_rc])
                     { updatesets(&s_rc, &t_rc, -1); }
                 else
                     { setsizes[sets[t_rc]]++; }
-                adj_attr[t_rc][s_rc] = attr;
+                adjAttr[t_rc][s_rc] = attr;
             }
         }
-        else {										// s, t in different graphs
+        else {								// s, t in different graphs
             if (sInAdj == 1) {						// s in adj, t in adj_rc
-                if (sets[s] == sets[t_rc]) {		// s and t_rc in the same set; add edge
+                if (sets[s] == sets[t_rc]) {		                // s and t_rc in the same set; add edge
                     updatesets(&s, &t, 1);
-                    adj_attr[s][t] = attr;
+                    adjAttr[s][t] = attr;
                 }
-                else {								// s and t_rc in different sets
+                else {							// s and t_rc in different sets
                     size_t label1 = sets[s];
                     size_t label2 = sets[t_rc];
-                    if (setsizes[label1] >= setsizes[label2]) {     // swap label2 subgraph and connect s with t
+                    if (setsizes[label1] >= setsizes[label2]) {         // swap label2 subgraph and connect s with t
                         swapsubgraph(label2, true);
-                        updatesets(NULL, NULL, -2, label2, label1);            // merge label2 to label1
-                        adj_attr[s][t] = attr;
+                        updatesets(NULL, NULL, -2, label2, label1);     // merge label2 to label1
+                        adjAttr[s][t] = attr;
                     }
                     else {
                         swapsubgraph(label1, true);
                         updatesets(NULL, NULL, -2, label1, label2);
-                        adj_attr[t_rc][s_rc] = attr;
+                        adjAttr[t_rc][s_rc] = attr;
                     }
                 }
             }
-            else {        // sInAdj == 2
+            else {                                          // sInAdj == 2
                 if (sets[s_rc] == sets[t]) {
                     updatesets(&s, &t, 1);
-                    adj_attr[s][t] = attr;
+                    adjAttr[s][t] = attr;
                 }
                 else {
                     size_t label1 = sets[s_rc];
@@ -824,12 +827,12 @@ public:
                     if (setsizes[label1] >= setsizes[label2]) {
                         swapsubgraph(label2, true);
                         updatesets(NULL, NULL, -2, label2, label1);
-                        adj_attr[t_rc][s_rc] = attr;
+                        adjAttr[t_rc][s_rc] = attr;
                     }
                     else {
                         swapsubgraph(label1, true);
                         updatesets(NULL, NULL, -2, label1, label2);
-                        adj_attr[s][t] = attr;
+                        adjAttr[s][t] = attr;
                     }
                 }
             }
@@ -859,5 +862,82 @@ public:
     }
 
 }; // class DBG
+
+
+class BiDBG {
+public:
+    BiDBG(bool hasAttr_, size_t nkmers_, size_t ksize_) : hasAttr(hasAttr_), nkmers(nkmers_), ksize(ksize_) {}
+
+    void addkmer(const string &kmer, uint16_t count) {
+        string s, t, s_rc, t_rc;
+        getNodes(kmer, s, t, s_rc, t_rc);
+        adj[s][t] += count;
+        adj[t_rc][s_rc] += count;
+        if (count > maxcount) { maxcount = count; }
+    }
+
+    void addkmer(const string &kmer, vector<uint16_t> &attr) { // function polymorphism: adj with attributes information
+        string s, t, s_rc, t_rc;
+        getNodes(kmer, s, t, s_rc, t_rc);
+        adjAttr[s][t] = attr;          // "=" sign works only when kmer size is odd
+        adjAttr[t_rc][s_rc] = attr;
+        if (attr[0] > maxcount) { maxcount = attr[0]; }
+    }
+
+    void addkmer(size_t kmer, uint16_t count) { // function polymorphism: numeric adj
+        size_t s, t, s_rc, t_rc;
+        getNodes(kmer, s, t, s_rc, t_rc);
+        nuAdj[s][t] += count;
+        nuAdj[t_rc][s_rc] += count;
+        if (count > maxcount) { maxcount = count; }
+    }
+
+    void addkmer(size_t kmer, vector<uint16_t> &attr) { // function polymorphism: numeric adj with attributes information
+        size_t s, t, s_rc, t_rc;
+        getNodes(kmer, s, t, s_rc, t_rc);
+        nuAdjAttr[s][t] = attr;          // "=" sign works only when kmer size is odd
+        nuAdjAttr[t_rc][s_rc] = attr;
+        if (attr[0] > maxcount) { maxcount = attr[0]; }
+    }
+
+    void getAdj(adj_dict& out) { out = adj; }
+
+    void getAdj(adjAttr_dict& out) { out = adjAttr; }
+
+    void getAdj(nuAdj_dict& out) { out = nuAdj; }
+
+    void getAdj(nuAdjAttr_dict& out) { out = nuAdjAttr; }
+
+    size_t getMaxCount() { return maxcount; }
+
+    // TODO:
+    // void checkGraphIntegrity () {}
+    // check the number of subgraphs (<= 2)
+
+private:
+    size_t nkmers, ksize;
+    size_t maxcount = 0;
+    bool hasAttr; // if true: record other attributes other than counts
+
+    adj_dict adj;
+    adjAttr_dict adjAttr;
+    nuAdj_dict nuAdj;
+    nuAdjAttr_dict nuAdjAttr;
+
+    void getNodes(const string& kmer, string& s, string& t, string& s_rc, string& t_rc) {
+        s = kmer.substr(0, kmer.size() - 1);
+        t = kmer.substr(1, kmer.size() - 1);
+        s_rc = getRC(s);
+        t_rc = getRC(t);
+    }
+
+    void getNodes(size_t kmer, size_t& s, size_t& t, size_t& s_rc, size_t& t_rc) {
+        s = kmer >> 2;
+        t = kmer % (1UL << (2*(ksize-1)));
+        s_rc = getNuRC(s, ksize);
+        t_rc = getNuRC(t, ksize);
+    }
+
+}; // class BiDBG
 
 #endif

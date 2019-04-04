@@ -19,7 +19,7 @@ using namespace std;
 
 sem_t *semreader;
 sem_t *semcount;
-sem_t *semfastqwriter;
+sem_t *semwriter;
 
 void rand_str(char *dest, size_t length) {
     char charset[] = "0123456789"
@@ -32,25 +32,29 @@ void rand_str(char *dest, size_t length) {
     *dest = '\0';
 }
 
-uint16_t countHit(kmerCount_dict& kmers, kmerIndex_dict& kmerDBi, uint16_t nloci, uint16_t Cthreshold, float Rthreshold) {
+// used for extractFasta, no filtering by Rthreshold
+uint16_t countHit(kmerCount_umap& kmers, kmeruIndex_umap& kmerDBi, uint16_t nloci, uint16_t Cthreshold, float Rthreshold = 0.5) {
     vector<uint16_t> totalHits(nloci+1, 0); // one extra element for baitDB
+    size_t score1 = 0, score2 = 0;
+    int ind1 = -1;
+
     for (auto &p : kmers) {
         if (kmerDBi.count(p.first) == 1) {
             for (uint16_t i : kmerDBi[p.first]) {
                 totalHits[i] += p.second;
-            }	
-        }
-    }
-
-    size_t score1 = 0, score2 = 0;
-    int ind1 = -1, ind2 = -1;
-    for (size_t i = 0; i < nloci+1; i++) {
-        if (totalHits[i] > score1) {
-            score2 = score1;
-            score1 = totalHits[i];
-            ind1 = i;
-        } else if (totalHits[i] > score2) {
-            score2 = totalHits[i];
+                if (totalHits[i] > score1) {
+                    if (ind1 != i) { // top scoring locus is different from the current one
+                        score2 = score1;
+                        score1 = totalHits[i];
+                        ind1 = i;
+                    } else { // top scoring locus is the same
+                        score1 = totalHits[i];
+                    }
+                }
+                else if (totalHits[i] > score2) { // second scoring locus
+                    score2 = totalHits[i];
+                }
+            }
         }
     }
     
@@ -61,18 +65,64 @@ uint16_t countHit(kmerCount_dict& kmers, kmerIndex_dict& kmerDBi, uint16_t nloci
     }
 }
 
+// used for CountWords, record contamination
+uint16_t countHit(kmerCount_umap& kmers, kmeruIndex_umap& kmerDBi, uint16_t nloci, uint16_t Cthreshold, float Rthreshold, vector<uint16_t>& contamination) {
+    vector<uint16_t> totalHits(nloci+1, 0); // one extra element for baitDB
+    size_t score1 = 0, score2 = 0;
+    int ind1 = -1, ind2 = -1;
+
+    for (auto &p : kmers) {
+        if (kmerDBi.count(p.first) == 1) {
+            for (uint16_t i : kmerDBi[p.first]) {
+                totalHits[i] += p.second;
+                if (totalHits[i] > score1) {
+                    if (ind1 != i) { // top scoring locus is different from the current one
+                        score2 = score1;
+                        score1 = totalHits[i];
+                        ind2 = ind1;
+                        ind1 = i;
+                    } else { // top scoring locus is the same
+                        score1 = totalHits[i];
+                    }
+                }
+                else if (totalHits[i] > score2) { // second scoring locus
+                    score2 = totalHits[i];
+                    ind2 = i;
+                }
+                assert(not(ind1 == ind2 and ind1 == nloci));
+            }	
+        }
+    }
+
+    // only report bait-trapped kmer counts
+    // kmer counts too close to bait's or other locus' and filtered by Rthreshold are not reported in this implementation
+    if (score1 >= Cthreshold and float(score1) / (score1+score2) >= Rthreshold and ind1 != -1) {
+        if (ind1 != nloci) {
+            return ind1;
+        } else {
+            contamination[ind2] += score2;
+        }
+    }
+    return nloci;
+}
+
 class Counts {
 public:
     ifstream *in;
-    bool interleaved;
-    kmerIndex_dict* kmerDBi;
+    bool interleaved, isFasta;
+    kmeruIndex_umap* kmerDBi;
     size_t *readIndex;
     size_t threadIndex;
     uint16_t k, nloci, Cthreshold;
     float Rthreshold;
-    vector<kmerCount_dict> trResults, lntrResults, rntrResults;
+    vector<kmerCount_umap> trResults;
+    // extractFasta only
+    size_t target;
+    size_t *nMappedReads;
+    vector<uint16_t> contamination;
+    bool bait;
 
-    Counts(uint16_t nloci_) : trResults(nloci_), lntrResults(nloci_), rntrResults(nloci_), nloci(nloci_) {}
+    Counts(uint16_t nloci_) : trResults(nloci_), contamination(nloci_, 0), nloci(nloci_) {}
 };
 
 class Threads {
@@ -82,13 +132,10 @@ public:
 };
 
 size_t readNumber = 0;
-size_t nHits = 0;
 
 void CountWords(void *data) {
-    kmerIndex_dict& kmerDBi = *((Counts*)data)->kmerDBi;
-    vector<kmerCount_dict> &trResults = ((Counts*)data)->trResults;
-    vector<kmerCount_dict> &lntrResults = ((Counts*)data)->lntrResults;
-    vector<kmerCount_dict> &rntrResults = ((Counts*)data)->rntrResults;
+    kmeruIndex_umap& kmerDBi = *((Counts*)data)->kmerDBi;
+    vector<kmerCount_umap> &trResults = ((Counts*)data)->trResults;
     ifstream *in = ((Counts*)data)->in;
     bool interleaved = ((Counts*)data)->interleaved;
     size_t &readNumber = *((Counts*)data)->readIndex;
@@ -97,6 +144,9 @@ void CountWords(void *data) {
     uint16_t nloci = ((Counts*)data)->nloci;
     uint16_t Cthreshold = ((Counts*)data)->Cthreshold;
     float Rthreshold = ((Counts*)data)->Rthreshold;
+    bool bait = ((Counts*)data)->bait;
+    vector<uint16_t> &contamination = ((Counts*)data)->contamination;
+    size_t readsPerBatch = 30000;
 
     while (true) {
         //
@@ -105,7 +155,7 @@ void CountWords(void *data) {
         sem_wait(semreader);
 
         if ((*in).good() == false) {
-            cout << "Finished at read index " << readNumber << endl;
+            cerr << "Finished at read index " << readNumber << endl;
             sem_post(semreader);
             return;
         }
@@ -113,32 +163,23 @@ void CountWords(void *data) {
 
         string title, title1, seq, seq1, qualtitle, qualtitle1, qual, qual1;
         size_t readn = 0;
-        vector<string> seqs(300000);
+        vector<string> seqs(readsPerBatch);
 
         if (interleaved) {
-            while (readn < 300000 and (*in)) {
+            while (readn < readsPerBatch and (*in)) {
                 getline(*in, title);
-                //getline(*in, seqs[readn++]);
                 getline(*in, seq);
-                getline(*in, qualtitle);
-                getline(*in, qual);
                 getline(*in, title1);
-                //getline(*in, seqs[readn++]);
                 getline(*in, seq1);
-                getline(*in, qualtitle1);
-                getline(*in, qual1);
 
                 seqs[readn++] = seq;
                 seqs[readn++] = seq1;
 
-
-                //seqs.push_back(seq.substr(start, len));
-                //seqs.push_back(seq1.substr(start1, len1));
                 readNumber += 2;
             }
         }
-        else {
-            while (readn < 300000 and (*in)) {
+        else { // deprecated, no qual info
+            while (readn < readsPerBatch and (*in)) {
                 getline(*in, title);
                 getline(*in, seq);
                 getline(*in, qualtitle);
@@ -170,38 +211,28 @@ void CountWords(void *data) {
                 string& seq = seqs[seqi++];
                 string& seq1 = seqs[seqi++];
 
-                uint16_t start = 0;
-                uint16_t len = seq.size();
-                while (qual[start] == '#' and len >= k) { start++; len--; }  // quick quality check based on '#', might change in the future
-                while (qual[start + len - 1] == '#' and len >= k) { len--; }
-                if (len < k) { continue; }
+                kmerCount_umap kmers; 
+                buildNuKmers(kmers, seq, k);
+                buildNuKmers(kmers, seq1, k);
 
-                uint16_t start1 = 0;
-                uint16_t len1 = seq1.size();
-                while (qual1[start1] == '#' and len1 >= k) { start1++; len1--; }
-                while (qual1[start1 + len1 - 1] == '#' and len1 >= k) { len1--; }
-                if (len1 < k) { continue; }
-
-
-                kmerCount_dict kmers; 
-                buildNuKmers(kmers, seq, k, start, seq.size()-start-len);
-                buildNuKmers(kmers, seq1, k, start1, seq.size()-start1-len1);
-                uint16_t ind = countHit(kmers, kmerDBi, nloci, Cthreshold, Rthreshold);
+                uint16_t ind;
+                if (bait) {
+                    ind = countHit(kmers, kmerDBi, nloci, Cthreshold, Rthreshold, contamination);
+                } else {
+                    ind = countHit(kmers, kmerDBi, nloci, Cthreshold, Rthreshold);
+                }
 
                 if (ind == nloci) { continue; }
                 else {
-                    kmerCount_dict &trKmers = trResults[ind];
-                    kmerCount_dict &lntrKmers = lntrResults[ind];
-                    kmerCount_dict &rntrKmers = rntrResults[ind];
+                    kmerCount_umap &trKmers = trResults[ind];
+                    //cerr << "thread "  << threadIndex << ": ";
                     for (auto &p : kmers) {
                         if (trKmers.count(p.first) == 1) {
                             trKmers[p.first] += p.second;
-                        } else if (lntrKmers.count(p.first) == 1) { // this will exclude shared kmers btw trKmers and ntrKmers
-                            lntrKmers[p.first] += p.second;
-                        } else if (rntrKmers.count(p.first) == 1) { // this will exclude shared kmers btw lntrKmers and rntrKmers
-                            rntrKmers[p.first] += p.second;
+                            //if (trKmers[p.first]) { cerr << trKmers[p.first] << ' '; }
                         }
                     }
+                    //cerr << endl;
                 }
             }
         }
@@ -217,67 +248,197 @@ void CountWords(void *data) {
                 if (len < k) { continue; }
 
 
-                kmerCount_dict kmers;
+                kmerCount_umap kmers;
                 buildNuKmers(kmers, seq, k, start, seq.size()-start-len);
                 uint16_t ind = countHit(kmers, kmerDBi, nloci, Cthreshold, Rthreshold);
 
                 if (ind == nloci) { continue; }
                 else {
-                    kmerCount_dict &trKmers = trResults[ind];
-                    kmerCount_dict &lntrKmers = lntrResults[ind];
-                    kmerCount_dict &rntrKmers = rntrResults[ind];
+                    kmerCount_umap &trKmers = trResults[ind];
                     for (auto &p : kmers) {
                         if (trKmers.count(p.first) == 1) {
                             trKmers[p.first] += p.second;
-                        } else if (lntrKmers.count(p.first) == 1) { // this will exclude shared kmers btw trKmers and ntrKmers
-                            lntrKmers[p.first] += p.second;
-                        } else if (rntrKmers.count(p.first) == 1) { // this will exclude shared kmers btw lntrKmers and rntrKmers
-                            rntrKmers[p.first] += p.second;
                         }
                     }
                 }
             }
         }
-        cout << "Batch query in " << (time(nullptr) - time2) << " sec." << endl;
+        cerr << "Batch query in " << (time(nullptr) - time2) << " sec." << endl;
     }
 }
+
+void ExtractFasta(void *data) {
+    kmeruIndex_umap& kmerDBi = *((Counts*)data)->kmerDBi;
+    ifstream *in = ((Counts*)data)->in;
+    bool interleaved = ((Counts*)data)->interleaved;
+    bool isFasta = ((Counts*)data)->isFasta;
+    size_t &readNumber = *((Counts*)data)->readIndex;
+    uint16_t k = ((Counts*)data)->k;
+    size_t threadIndex = ((Counts*)data)->threadIndex;
+    uint16_t nloci = ((Counts*)data)->nloci;
+    uint16_t Cthreshold = ((Counts*)data)->Cthreshold;
+    float Rthreshold = ((Counts*)data)->Rthreshold;
+    // ExtractFasta only
+    size_t target = ((Counts*)data)->target;
+    size_t& nMappedReads = *((Counts*)data)->nMappedReads;
+    size_t readsPerBatch = 300000;
+
+    while (true) {
+        //
+        // begin thread locking
+        //
+        sem_wait(semreader);
+
+        if ((*in).good() == false) {
+            cerr << "Finished at read index " << readNumber << endl;
+            sem_post(semreader);
+            return;
+        }
+        assert((*in).good() == true);
+
+        string title, title1, seq, seq1, qualtitle, qualtitle1, qual, qual1;
+        size_t readn = 0;
+        vector<string> seqs(readsPerBatch);
+
+        if (interleaved) {
+            if (isFasta) {
+                while (readn < readsPerBatch and (*in)) {
+                    getline(*in, title);
+                    getline(*in, seq);
+                    getline(*in, title1);
+                    getline(*in, seq1);
+
+                    seqs[readn++] = seq;
+                    seqs[readn++] = seq1;
+
+                    readNumber += 2;
+                }
+            }
+            else {
+                while (readn < readsPerBatch and (*in)) {
+                    getline(*in, title);
+                    getline(*in, seq);
+                    getline(*in, qualtitle);
+                    getline(*in, qual);
+                    getline(*in, title1);
+                    getline(*in, seq1);
+                    getline(*in, qualtitle1);
+                    getline(*in, qual1);
+
+                    // quick quality check based on '#', might change in the future
+                    uint8_t start = 0, start1 = 0;
+                    uint8_t len = seq.size(), len1 = seq1.size();
+                    while (qual[start] == '#' and len >= k) { start++; len--; }
+                    while (qual[start + len - 1] == '#' and len >= k) { len--; }
+                    while (qual1[start1] == '#' and len1 >= k) { start1++; len1--; }
+                    while (qual1[start1 + len1 - 1] == '#' and len1 >= k) { len1--; }
+                    if (len + len1 < Cthreshold) { continue; }
+
+                    seqs[readn++] = seq.substr(start, len);
+                    seqs[readn++] = seq1.substr(start1, len1);
+
+                    readNumber += 2;
+                }
+            }
+        }
+        cerr << "Buffered reading " << readn << "\t" << readNumber << endl;
+
+        //
+        // All done reading, release the thread lock.
+        //
+        sem_post(semreader);
+
+        time_t time2 = time(nullptr);
+        if (interleaved) {
+            size_t seqi = 0;
+            vector<string> mappedReads;
+
+            while (seqi < seqs.size()) {
+
+                string& seq = seqs[seqi++];
+                string& seq1 = seqs[seqi++];
+
+                kmerCount_umap kmers;
+                buildNuKmers(kmers, seq, k);
+                buildNuKmers(kmers, seq1, k);
+                uint16_t ind = countHit(kmers, kmerDBi, nloci, Cthreshold);
+
+                if (ind == nloci) { continue; }
+                else {
+                    mappedReads.push_back(seq);  // extractFasta only
+                    mappedReads.push_back(seq1); // extractFasta only
+                }
+            }
+
+            if (mappedReads.size()) {
+
+                //-----LOCKING-----
+                sem_wait(semwriter);
+
+                size_t ind = 0;
+                while (ind < mappedReads.size()) {
+                    cout << ">read " << to_string(ind/2 + nMappedReads) << "_0\n";
+                    cout << mappedReads[ind++] << '\n';
+                    cout << ">read " << to_string(ind/2 + nMappedReads) << "_1\n";
+                    cout << mappedReads[ind++] << '\n';
+                }
+                nMappedReads += (ind/2);
+
+                sem_post(semwriter);
+                //-----RELEASE----
+            }   
+        }
+        cerr << "Batch query in " << (time(nullptr) - time2) << " sec." << endl;
+    }
+}
+
 
 int main(int argc, char* argv[]) {
 
     if (argc < 4) {
-        cout << endl;
-        cout << "Usage: nuQueryFasta [-b] -k <-q | -qs> <-fs | -fi> -o -p -th " << endl;
-        cout << "  e.g. zcat ERR899717_1.fastq.gz | nuQueryFasta -k 21 -q PanGenomeGenotyping.21.kmers -fs /dev/stdin -o ERR899717_1.fastq.21 8 5" << endl;
-        cout << "  e.g. paste <(zcat HG00514.ERR899717_1.fastq.gz | paste - - - -) <(zcat HG00514.ERR899717_2.fastq.gz | paste - - - -) | tr '\\t' '\\n' | nuQueryFasta -k 21 -qs <*.tr.kmers> <*.ntr.kmers> -fi /dev/stdin -o <*.kmers> -p 8 -th 20" << endl;
+        cerr << endl;
+        cerr << "Usage: nuQueryFasta [-b] -k <-q | -qs> <-fq | -fqi> -o -p -cth -rth" << endl;
+        cerr << "  e.g. zcat ERR899717_1.fastq.gz | nuQueryFasta -k 21 -q PanGenomeGenotyping.21.kmers -fq /dev/stdin -o ERR899717_1.fastq.21 8 5" << endl;
+        cerr << "  e.g. paste <(zcat HG00514.ERR899717_1.fastq.gz | paste - - - -) <(zcat HG00514.ERR899717_2.fastq.gz | paste - - - -) | tr '\\t' '\\n' | nuQueryFasta -b -k 21 -qs <*.tr.kmers> <*.ntr.kmers> -fqi /dev/stdin -o <*.kmers> -p 32 -cth 150 -rth 0.55" << endl;
 
-        cout << "Options:" << endl;
-        cout << "  -b     use baitDB to decrease ambiguous mapping" << endl;
-        cout << "  -k     kmer size" << endl;
-        cout << "  -q     *.kmers file to be queried" << endl;
-        cout << "  -qs    prefix for *.tr.kmers, *.lntr.kmers, *.rntr.kmers and *.fr.kmers files" << endl;
-        cout << "  -fs    single end fastq file" << endl;
-        cout << "  -fi    interleaved pair-end fastq file" << endl;
-        cout << "  -o     output prefix" << endl;
-        cout << "  -p     Use n threads." << endl;
-        cout << "  -cth   Discard reads with maxhit below this threshold" << endl;
-        cout << "  -rth   Discard reads with maxhit/(maxhit+secondhit) below this threshold." << endl;
-        cout << "         Range [0.5, 1]. 1: does not allow noise. 0.5: no filtering." << endl;
-        cout << "  -th1   Discard ntr kmers with maxhit below this threshold" << endl << endl;
+        cerr << "Options:" << endl;
+        cerr << "  -b     Use baitDB to decrease ambiguous mapping" << endl;
+        cerr << "  -e     Extract mapped fastq reads to speed up subsequent queries" << endl;
+        cerr << "         Only goes with -qs option" << endl;
+        cerr << "  -k     Kmer size" << endl;
+        cerr << "  -q     *.kmers file to be queried" << endl;
+        cerr << "  -qs    Prefix for *.tr.kmers, *.lntr.kmers, *.rntr.kmers and *.fr.kmers files" << endl;
+        cerr << "  -fq    Unpaired fastq file" << endl;
+        cerr << "  -fqi   Interleaved pair-end fastq file" << endl; // deprecated
+        cerr << "  -fai   interleaved pair-end fasta file" << endl;
+        cerr << "  -o     Output prefix" << endl;
+        cerr << "  -p     Use n threads." << endl;
+        cerr << "  -cth   Discard reads with maxhit below this threshold" << endl;
+        cerr << "  -rth   Discard reads with maxhit/(maxhit+secondhit) below this threshold." << endl;
+        cerr << "         Range [0.5, 1]. 1: does not allow noise. 0.5: no filtering." << endl;
+        cerr << "  -th1   Discard ntr kmers with maxhit below this threshold" << endl << endl;
         exit(0);
     }
    
     vector<string> args(argv, argv+argc);
     vector<string>::iterator it_b = find(args.begin(), args.begin()+argc, "-b");
+    vector<string>::iterator it_e = find(args.begin(), args.begin()+argc, "-e");
     vector<string>::iterator it_k = find(args.begin(), args.begin()+argc, "-k") + 1;
     vector<string>::iterator it_q = find(args.begin(), args.begin()+argc, "-q");
     vector<string>::iterator it_qs = find(args.begin(), args.begin()+argc, "-qs");
-    size_t ind_fs = distance(args.begin(), find(args.begin(), args.begin()+argc, "-fs"));
-    size_t ind_fi = distance(args.begin(), find(args.begin(), args.begin()+argc, "-fi"));
+    size_t ind_fq = distance(args.begin(), find(args.begin(), args.begin()+argc, "-fq")); // -fs >> -fq
+    size_t ind_fqi = distance(args.begin(), find(args.begin(), args.begin()+argc, "-fqi")); // -fi >> -fqi
+    size_t ind_fai = distance(args.begin(), find(args.begin(), args.begin()+argc, "-fai"));
     vector<string>::iterator it_o = find(args.begin(), args.begin()+argc, "-o") + 1;
     vector<string>::iterator it_p = find(args.begin(), args.begin()+argc, "-p") + 1;
     vector<string>::iterator it_cth = find(args.begin(), args.begin()+argc, "-cth") + 1;
     vector<string>::iterator it_rth = find(args.begin(), args.begin()+argc, "-rth") + 1;
     vector<string>::iterator it_th1 = find(args.begin(), args.begin()+argc, "-th1");
+    assert(it_k != args.end()+1);
+    assert(it_p != args.end()+1);
+    assert(it_cth != args.end()+1);
+    assert(it_rth != args.end()+1);
+
 
     // initialize paramters
     uint16_t k = stoi(*it_k);
@@ -288,116 +449,134 @@ int main(int argc, char* argv[]) {
     if (it_th1 != args.end()) {
         NTRthreshold = stoi(*(it_th1+1));
     }
+    assert(Rthreshold <= 1 and Rthreshold >= 0.5);
 
 
     // check IO
-    bool interleaved, multiKmerFile;
-    size_t ind_f = min(ind_fs, ind_fi) + 1;
+    bool interleaved, multiKmerFile, extractFasta, bait, isFasta;
+    size_t ind_f = min( {ind_fq, ind_fqi, ind_fai} ) + 1;
     ifstream fastqFile(args[ind_f]);
     assert(fastqFile);
-    if (ind_f == ind_fs) {
-        interleaved = false;
-    } else {
-        interleaved = true;
-    }
+    interleaved = (ind_f == ind_fq+1 ? false : true);
+    isFasta = (ind_f == ind_fai+1 ? true : false);
 
     ifstream trFile, lntrFile, rntrFile, ntrfrFile;
     if (it_q != args.end()) { 
-        trFile.open(*(it_q+1)); 
+        trFile.open(*(it_q+1)+".kmers"); 
         multiKmerFile = false;
+        extractFasta = false;
     } else { 
         trFile.open(*(it_qs+1)+".tr.kmers");
         lntrFile.open(*(it_qs+1)+".lntr.kmers");
         rntrFile.open(*(it_qs+1)+".rntr.kmers");
-        ntrfrFile.open(*(it_qs+1)+".ntrfr.kmers");
-        assert(lntrFile and rntrFile and ntrfrFile);
+        assert(lntrFile and rntrFile);
+        lntrFile.close();
+        rntrFile.close();
         multiKmerFile = true;
+        extractFasta = (it_e != args.end() ? true : false);
     }
     assert(trFile);
+    trFile.close();
 
-    assert(it_o != args.end() + 1);
-    ofstream outfile((*it_o)+".tr.kmers");
-    assert(outfile);
-    outfile.close();
+    ofstream outfile;
+    if (not extractFasta) {
+        assert(it_o != args.end() + 1);
+        outfile.open((*it_o)+".tr.kmers");
+        assert(outfile);
+        outfile.close();
+    }
 
     ifstream baitFile;
+    ofstream baitOut;
     if (it_b != args.end()) {
         baitFile.open("baitDB.kmers");
         assert(baitFile);
         baitFile.close();
+        baitOut.open((*it_o)+".cntm");
+        assert(baitOut);
+        bait = true;
+    } else {
+        bait = false;
     }
 
 
     // report parameters
-    cout << "k: " << k << endl;
-    cout << "Cthreshold: " << Cthreshold << endl;
-    cout << "Rthreshold: " << Rthreshold << endl;
-    cout << "interleaved: " << interleaved << endl;
-    cout << "fastq: " << args[ind_f] << endl;
-    cout << "multiKmerFile: " << multiKmerFile << endl;
-    cout << "query: ";
+    cerr << "Use baitDB: " << bait << endl;
+    cerr << "Extract fasta: " << extractFasta << endl;
+    cerr << "k: " << k << endl;
+    cerr << "Cthreshold: " << Cthreshold << endl;
+    cerr << "Rthreshold: " << Rthreshold << endl;
+    cerr << "interleaved: " << interleaved << endl;
+    cerr << "isFasta: " << isFasta << endl;
+    cerr << "fastx: " << args[ind_f] << endl;
+    cerr << "multiKmerFile: " << multiKmerFile << endl;
+    cerr << "query: ";
     if (multiKmerFile) {
-        cout << *(it_qs+1)+".(tr/lntr/rntr/ntrfr).kmers" << endl;
+        cerr << *(it_qs+1)+".(tr/lntr/rntr).kmers" << endl;
     } else {
-        cout << *(it_q+1) << endl;
+        cerr << *(it_q+1)+".kmers" << endl;
     } 
    
-    cout << "total number of loci: ";
+    cerr << "total number of loci: ";
     time_t time1 = time(nullptr);
-    uint16_t nloci = countLoci(*(it_qs+1)+".tr.kmers");
-    cout << nloci << endl;
+    uint16_t nloci = (multiKmerFile ? countLoci(*(it_qs+1)+".tr.kmers") : countLoci(*(it_q+1)+".kmers"));
+    cerr << nloci << endl;
 
 
     // read input files
-    vector<kmerCount_dict> trKmerDB(nloci);
-    kmerIndex_dict kmerDBi;
-    readKmersFile(trKmerDB, kmerDBi, *(it_qs+1)+".tr.kmers", 0, false); // start from index 0, do not count
-    cout << "# unique kmers in trKmerDB: " << kmerDBi.size() << '\n';
-
-    vector<kmerCount_dict> lntrKmerDB(nloci), rntrKmerDB(nloci);
+    vector<kmerCount_umap> trKmerDB(nloci);
+    kmeruIndex_umap kmerDBi;
     if (multiKmerFile) {
-        readKmersFile(lntrKmerDB, kmerDBi, *(it_qs+1)+".lntr.kmers", 0, false); // start from index 0, do not count
-        readKmersFile(rntrKmerDB, kmerDBi, *(it_qs+1)+".rntr.kmers", 0, false); // start from index 0, do not count
-        cout << "# unique kmers in tr/ntrKmerDB: " << kmerDBi.size() << '\n';
-
-        readKmersFile(kmerDBi, *(it_qs+1)+".ntrfr.kmers", 0); // start from index 0
-        cout << "# unique kmers in tr/ntr/ntrfrKmerDB: " << kmerDBi.size() << '\n';
+        readKmersFile(trKmerDB, kmerDBi, *(it_qs+1)+".tr.kmers", 0, false); // start from index 0, do not count
+    } else {
+        readKmersFile(trKmerDB, kmerDBi, *(it_q+1)+".kmers", 0, false); // start from index 0, do not count
     }
-    cout << "read *.kmers file in " << (time(nullptr) - time1) << " sec." << endl;
+    cerr << "# unique kmers in trKmerDB: " << kmerDBi.size() << '\n';
+
+
+    if (multiKmerFile) {
+        readKmersFile(kmerDBi, *(it_qs+1)+".lntr.kmers", 0, false); // start from index 0, do not count
+        readKmersFile(kmerDBi, *(it_qs+1)+".rntr.kmers", 0, false); // start from index 0, do not count
+        cerr << "# unique kmers in tr/ntrKmerDB: " << kmerDBi.size() << '\n';
+    }
+    cerr << "read *.kmers file in " << (time(nullptr) - time1) << " sec." << endl;
 
     if (it_b != args.end()) {
         readKmersFile(kmerDBi, "baitDB.kmers", nloci, false); // record kmerDBi only, start from index nloci, do not count
     }
 
+
     // create data for each process
-    cout << "create data for each process..." << endl;
+    cerr << "create data for each process..." << endl;
     time1 = time(nullptr);
     Threads threaddata(nproc, nloci);
-    cout << "initialization" << endl;
+    size_t nMappedReads = 0;
+    cerr << "initialization" << endl;
     for (size_t i = 0; i < nproc; i++) {
         Counts &counts = threaddata.counts[i];
- 
-        for (size_t j = 0; j < nloci; j++) {
-            counts.trResults[j] = trKmerDB[j];
-            if (multiKmerFile) {
-                counts.lntrResults[j] = lntrKmerDB[j];
-                counts.rntrResults[j] = rntrKmerDB[j];
+        counts.threadIndex = i;
+
+        counts.in = &fastqFile;
+        if (not extractFasta) {
+            for (size_t j = 0; j < nloci; j++) {
+                counts.trResults[j] = trKmerDB[j];
             }
         }
-        counts.in = &fastqFile;
-        counts.interleaved = interleaved;
-        counts.kmerDBi = &kmerDBi;
+        counts.nMappedReads = &nMappedReads;
         counts.readIndex = &readNumber;
-        counts.threadIndex = i;
+
+        counts.interleaved = interleaved;
+        counts.isFasta = isFasta;
+        counts.bait = bait;
+
         counts.k = k;
         counts.Cthreshold = Cthreshold;
         counts.Rthreshold = Rthreshold;
-        cout << "thread " << i << " done" << endl;
+        counts.kmerDBi = &kmerDBi;
+        cerr << "thread " << i << " done" << endl;
     }
     trKmerDB.clear();
-    lntrKmerDB.clear();
-    rntrKmerDB.clear();
-    cout << "thread data preparation completed in " << (time(nullptr) - time1) << " sec." << endl;
+    cerr << "thread data preparation completed in " << (time(nullptr) - time1) << " sec." << endl;
 
     time1 = time(nullptr);
     const int idLen=10;
@@ -408,86 +587,88 @@ int main(int argc, char* argv[]) {
 
     string readerName = string("/semreader_") + string(id);
     string countName  = string("/semcount_") + string(id);
-    string semfastqwriterName = string("/semfastqwriter_") + string(id);
+    string semwriterName = string("/semwriter_") + string(id);
 
     semreader = sem_open(readerName.c_str(), O_CREAT, 0644, 1);
     if (semreader == NULL) {
-        cout << "ERROR opening semaphore. ERRNO " << errno << " " << readerName << endl;
+        cerr << "ERROR opening semaphore. ERRNO " << errno << " " << readerName << endl;
         exit(1);
     }
     semcount = sem_open(countName.c_str(), O_CREAT, 0644, 1);
     if (semreader == NULL) {
-        cout << "ERROR opening semaphore. ERRNO " << errno << " " << countName << endl;
+        cerr << "ERROR opening semaphore. ERRNO " << errno << " " << countName << endl;
         exit(1);
     }
-    semfastqwriter = sem_open(semfastqwriterName.c_str(), O_CREAT, 0644, 1);
-    if (semfastqwriter == NULL) {
-        cout << "ERROR opening semaphore. ERRNO " << errno << " " << semfastqwriterName << endl;
+    semwriter = sem_open(semwriterName.c_str(), O_CREAT, 0644, 1);
+    if (semwriter == NULL) {
+        cerr << "ERROR opening semaphore. ERRNO " << errno << " " << semwriterName << endl;
         exit(1);
     }
 
-    cout << "initializing semaphore..." << endl;
+    cerr << "initializing semaphore..." << endl;
     sem_init(semreader, 1, 1);
     sem_init(semcount, 1, 1);
     sem_init(semcount, 1, 1);
 
     pthread_attr_t *threadAttr = new pthread_attr_t[nproc];
-    int t;	
 
-    for (t = 0; t < nproc; t++ ) {
+    for (size_t t = 0; t < nproc; t++ ) {
         pthread_attr_init(&threadAttr[t]);
     }
     pthread_t *threads = new pthread_t[nproc];
 
-    for (t = 0; t < nproc; t++) {
-        cout << "starting thread " << t << endl;
-        pthread_create(&threads[t], &threadAttr[t], (void* (*)(void*))CountWords, &threaddata.counts[t]);
+
+    // start computing
+    for (size_t t = 0; t < nproc; t++) {
+        if (extractFasta) {
+            pthread_create(&threads[t], &threadAttr[t], (void* (*)(void*))ExtractFasta, &threaddata.counts[t]);
+        } else {
+            pthread_create(&threads[t], &threadAttr[t], (void* (*)(void*))CountWords, &threaddata.counts[t]);
+        }
     }
-    cout << "threads created" << endl;
+    cerr << "threads created" << endl;
  
-    for (t = 0; t < nproc; t++) {
+    for (size_t t = 0; t < nproc; t++) {
         pthread_join(threads[t], NULL);
     }
-    cout << "parallel query completed in " << (time(nullptr) - time1) << " sec." << endl;
+    cerr << "parallel query completed in " << (time(nullptr) - time1) << " sec." << endl;
+    fastqFile.close();
 
-    cout << "combining restuls..." << endl;
-    vector<kmerCount_dict> combinedTrResults(nloci), combinedlNtrResults(nloci), combinedrNtrResults(nloci);
-    for (size_t i = 0; i < nproc; i++) {
-        Counts &counts = threaddata.counts[i];
-        for (uint16_t locus = 0; locus < nloci; locus++) {
-            for (auto &p : counts.trResults[locus]) {
-                combinedTrResults[locus][p.first] += p.second;
-            }
-            if (multiKmerFile) {
-                for (auto &p : counts.lntrResults[locus]) {
-                    combinedlNtrResults[locus][p.first] += p.second;
+    // write outputs
+    if (not extractFasta) {
+        cerr << "combining restuls..." << endl;
+        vector<kmerCount_umap> combinedTrResults(nloci), combinedlNtrResults(nloci), combinedrNtrResults(nloci);
+        vector<uint16_t> combinedContamination(nloci, 0);
+
+        for (size_t i = 0; i < nproc; i++) {
+            Counts &counts = threaddata.counts[i];
+            //cerr << "thread: " << i << ' ';
+            for (uint16_t locus = 0; locus < nloci; locus++) {
+                for (auto &p : counts.trResults[locus]) {
+                    combinedTrResults[locus][p.first] += p.second;
+                    if (combinedTrResults[locus][p.first]) {
+                        //cerr << combinedTrResults[locus][p.first] << ' ';
+                    }
                 }
-                for (auto &p : counts.rntrResults[locus]) {
-                    combinedrNtrResults[locus][p.first] += p.second;
-                }
+                if (bait) { combinedContamination[locus] += counts.contamination[locus]; }
             }
+            //cerr << endl;
+        }
+
+        cerr << "writing kmers..." << endl;
+        if (multiKmerFile) { writeKmers(*it_o + ".tr", combinedTrResults); } 
+        else { writeKmers(*it_o, combinedTrResults); }
+
+        cerr << "writing contamination..." << endl;
+        if (bait) {
+            //for (size_t i = 0; i < nloci; i++) { cerr << i << ' ' << combinedContamination[i] << '\t'; }
+            //cerr << endl;
+            for (size_t i = 0; i < nloci; i++) { baitOut << combinedContamination[i] << '\n'; }
+            baitOut.close();
         }
     }
 
-    cout << "averaging duplicate kmers in lNTR and rNTR" << endl;
-    for (size_t i = 0; i < nloci; i++) {
-        for (auto &p : combinedlNtrResults[i]) {
-            if (combinedrNtrResults[i].count(p.first) == 1) {
-                uint16_t tmp = (combinedlNtrResults[i][p.first] + combinedlNtrResults[i][p.first] ) / 2;
-                combinedlNtrResults[i][p.first] = tmp;
-                combinedrNtrResults[i][p.first] = tmp;
-            }
-        }
-    }
-
-    cout << "writing outputs..." << endl;
-    if (multiKmerFile) {
-        writeKmers(*it_o + ".tr", combinedTrResults);
-        writeKmers(*it_o + ".lntr", combinedlNtrResults);
-        writeKmers(*it_o + ".rntr", combinedrNtrResults);
-    } else {
-        writeKmers(*it_o, combinedTrResults);
-    }
+    cerr << "all done!" << endl;
 
     return 0;
 }
