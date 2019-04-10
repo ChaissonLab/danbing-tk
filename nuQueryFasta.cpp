@@ -20,6 +20,8 @@ using namespace std;
 sem_t *semreader;
 sem_t *semcount;
 sem_t *semwriter;
+bool testmode;
+
 
 void rand_str(char *dest, size_t length) {
     char charset[] = "0123456789"
@@ -109,7 +111,7 @@ uint16_t countHit(kmerCount_umap& kmers, kmeruIndex_umap& kmerDBi, uint16_t nloc
 class Counts {
 public:
     ifstream *in;
-    bool interleaved, isFasta;
+    bool interleaved, isFasta, isFastq;
     kmeruIndex_umap* kmerDBi;
     size_t *readIndex;
     size_t threadIndex;
@@ -272,6 +274,7 @@ void ExtractFasta(void *data) {
     ifstream *in = ((Counts*)data)->in;
     bool interleaved = ((Counts*)data)->interleaved;
     bool isFasta = ((Counts*)data)->isFasta;
+    bool isFastq = ((Counts*)data)->isFastq;
     size_t &readNumber = *((Counts*)data)->readIndex;
     uint16_t k = ((Counts*)data)->k;
     size_t threadIndex = ((Counts*)data)->threadIndex;
@@ -299,6 +302,7 @@ void ExtractFasta(void *data) {
         string title, title1, seq, seq1, qualtitle, qualtitle1, qual, qual1;
         size_t readn = 0;
         vector<string> seqs(readsPerBatch);
+        vector<uint8_t> starts(readsPerBatch, 0), lens(readsPerBatch, 0);
 
         if (interleaved) {
             if (isFasta) {
@@ -314,7 +318,7 @@ void ExtractFasta(void *data) {
                     readNumber += 2;
                 }
             }
-            else {
+            else if (isFastq) {
                 while (readn < readsPerBatch and (*in)) {
                     getline(*in, title);
                     getline(*in, seq);
@@ -334,10 +338,35 @@ void ExtractFasta(void *data) {
                     while (qual1[start1 + len1 - 1] == '#' and len1 >= k) { len1--; }
                     if (len + len1 < Cthreshold) { continue; }
 
-                    seqs[readn++] = seq.substr(start, len);
-                    seqs[readn++] = seq1.substr(start1, len1);
+                    seqs[readn] = seq;
+                    starts[readn] = start;
+                    lens[readn++] = len;
+                    seqs[readn] = seq1;
+                    starts[readn] = start1;
+                    lens[readn++] = len1;
 
                     readNumber += 2;
+                }
+            }
+            else { // srt.aln.bam format: name . . . . . . . . seq qual . . . . ? ? RG
+                while (readn < readsPerBatch and (*in)) {
+                    string tmp;
+                    getline(*in, title, '\t');
+                    for (size_t i = 0; i < 8; i++) { getline(*in, tmp, '\t'); } // discard info of length pos etc.
+                    getline(*in, seq, '\t');
+                    getline(*in, qual, '\t');
+                    getline(*in, tmp);
+
+                    uint8_t start = 0;
+                    uint8_t len = seq.size();
+                    while (qual[start] == '#' and len >= k) { start++; len--; }
+                    while (qual[start + len - 1] == '#' and len >= k) { len--; }
+
+                    seqs[readn] = seq;
+                    starts[readn] = start;
+                    lens[readn++] = len;
+
+                    readNumber++;
                 }
             }
         }
@@ -351,38 +380,48 @@ void ExtractFasta(void *data) {
         time_t time2 = time(nullptr);
         if (interleaved) {
             size_t seqi = 0;
-            vector<string> mappedReads;
+            vector<size_t> mappedseqi;
 
             while (seqi < seqs.size()) {
-
-                string& seq = seqs[seqi++];
-                string& seq1 = seqs[seqi++];
-
+                uint8_t start, len;
                 kmerCount_umap kmers;
-                buildNuKmers(kmers, seq, k);
-                buildNuKmers(kmers, seq1, k);
-                uint16_t ind = countHit(kmers, kmerDBi, nloci, Cthreshold);
 
+                start = starts[seqi];
+                len = lens[seqi];
+                string& seq = seqs[seqi++];
+                buildNuKmers(kmers, seq, k, start, seq.size()-start-len);
+
+                start = starts[seqi];
+                len = lens[seqi];
+                string& seq1 = seqs[seqi++];
+                buildNuKmers(kmers, seq1, k, start, seq1.size()-start-len);
+
+                uint16_t ind = countHit(kmers, kmerDBi, nloci, Cthreshold);
                 if (ind == nloci) { continue; }
                 else {
-                    mappedReads.push_back(seq);  // extractFasta only
-                    mappedReads.push_back(seq1); // extractFasta only
+                    mappedseqi.push_back(seqi); // index points to the next read
                 }
             }
 
-            if (mappedReads.size()) {
+            if (mappedseqi.size()) {
 
                 //-----LOCKING-----
                 sem_wait(semwriter);
 
-                size_t ind = 0;
-                while (ind < mappedReads.size()) {
-                    cout << ">read " << to_string(ind/2 + nMappedReads) << "_0\n";
-                    cout << mappedReads[ind++] << '\n';
-                    cout << ">read " << to_string(ind/2 + nMappedReads) << "_1\n";
-                    cout << mappedReads[ind++] << '\n';
+                for (size_t ind = 0; ind < mappedseqi.size(); ind++) {
+                    uint8_t start, len;
+                    size_t seqi = mappedseqi[ind];
+
+                    start = starts[--seqi]; // make seqi point to the 2nd paired read
+                    len = lens[seqi];
+                    cout << ">read " << to_string(nMappedReads) << "_0\n";
+                    cout << seqs[seqi].substr(start, len) << '\n';
+
+                    start = starts[--seqi]; // make seqi point to the 1st paired read
+                    len = lens[seqi];
+                    cout << ">read " << to_string(nMappedReads++) << "_1\n";
+                    cout << seqs[seqi].substr(start, len) << '\n';
                 }
-                nMappedReads += (ind/2);
 
                 sem_post(semwriter);
                 //-----RELEASE----
@@ -397,7 +436,7 @@ int main(int argc, char* argv[]) {
 
     if (argc < 4) {
         cerr << endl;
-        cerr << "Usage: nuQueryFasta [-b] -k <-q | -qs> <-fq | -fqi> -o -p -cth -rth" << endl;
+        cerr << "Usage: nuQueryFasta [-b] [-e] -k <-q | -qs> [-t] <-fq | -fqi> -o -p -cth -rth" << endl;
         cerr << "  e.g. zcat ERR899717_1.fastq.gz | nuQueryFasta -k 21 -q PanGenomeGenotyping.21.kmers -fq /dev/stdin -o ERR899717_1.fastq.21 8 5" << endl;
         cerr << "  e.g. paste <(zcat HG00514.ERR899717_1.fastq.gz | paste - - - -) <(zcat HG00514.ERR899717_2.fastq.gz | paste - - - -) | tr '\\t' '\\n' | nuQueryFasta -b -k 21 -qs <*.tr.kmers> <*.ntr.kmers> -fqi /dev/stdin -o <*.kmers> -p 32 -cth 150 -rth 0.55" << endl;
 
@@ -408,9 +447,11 @@ int main(int argc, char* argv[]) {
         cerr << "  -k     Kmer size" << endl;
         cerr << "  -q     *.kmers file to be queried" << endl;
         cerr << "  -qs    Prefix for *.tr.kmers, *.lntr.kmers, *.rntr.kmers and *.fr.kmers files" << endl;
+        cerr << "  -t     Used trimmed pangenome graph e.g. \"-t 1\" for pan.*.trim1.kmers" << endl;
         cerr << "  -fq    Unpaired fastq file" << endl;
         cerr << "  -fqi   Interleaved pair-end fastq file" << endl; // deprecated
         cerr << "  -fai   interleaved pair-end fasta file" << endl;
+        cerr << "  -fb    Unpaired srt.aln.bam file" << endl;
         cerr << "  -o     Output prefix" << endl;
         cerr << "  -p     Use n threads." << endl;
         cerr << "  -cth   Discard reads with maxhit below this threshold" << endl;
@@ -426,19 +467,24 @@ int main(int argc, char* argv[]) {
     vector<string>::iterator it_k = find(args.begin(), args.begin()+argc, "-k") + 1;
     vector<string>::iterator it_q = find(args.begin(), args.begin()+argc, "-q");
     vector<string>::iterator it_qs = find(args.begin(), args.begin()+argc, "-qs");
+    vector<string>::iterator it_t = find(args.begin(), args.begin()+argc, "-t");
     size_t ind_fq = distance(args.begin(), find(args.begin(), args.begin()+argc, "-fq")); // -fs >> -fq
     size_t ind_fqi = distance(args.begin(), find(args.begin(), args.begin()+argc, "-fqi")); // -fi >> -fqi
     size_t ind_fai = distance(args.begin(), find(args.begin(), args.begin()+argc, "-fai"));
+    size_t ind_fb = distance(args.begin(), find(args.begin(), args.begin()+argc, "-fb"));
     vector<string>::iterator it_o = find(args.begin(), args.begin()+argc, "-o") + 1;
     vector<string>::iterator it_p = find(args.begin(), args.begin()+argc, "-p") + 1;
     vector<string>::iterator it_cth = find(args.begin(), args.begin()+argc, "-cth") + 1;
     vector<string>::iterator it_rth = find(args.begin(), args.begin()+argc, "-rth") + 1;
     vector<string>::iterator it_th1 = find(args.begin(), args.begin()+argc, "-th1");
+    vector<string>::iterator it_test = find(args.begin(), args.begin()+argc, "-test");
     assert(it_k != args.end()+1);
     assert(it_p != args.end()+1);
     assert(it_cth != args.end()+1);
     assert(it_rth != args.end()+1);
 
+    // test mode
+    testmode = (it_test != args.end() ? true : false);
 
     // initialize paramters
     uint16_t k = stoi(*it_k);
@@ -453,20 +499,25 @@ int main(int argc, char* argv[]) {
 
 
     // check IO
-    bool interleaved, multiKmerFile, extractFasta, bait, isFasta;
-    size_t ind_f = min( {ind_fq, ind_fqi, ind_fai} ) + 1;
+    bool interleaved, multiKmerFile, extractFasta, bait, isFasta, isFastq, trim;
+    size_t ind_f = min( {ind_fq, ind_fqi, ind_fai, ind_fb} ) + 1;
+    string trFname;
     ifstream fastqFile(args[ind_f]);
     assert(fastqFile);
-    interleaved = (ind_f == ind_fq+1 ? false : true);
+    interleaved = (ind_f == ind_fqi+1 or ind_f == ind_fai+1? true : false);
     isFasta = (ind_f == ind_fai+1 ? true : false);
+    isFastq = (ind_f == ind_fq+1 or ind_f == ind_fqi+1 ? true : false);
+    trim = (it_t != args.end() ? true : false);
 
     ifstream trFile, lntrFile, rntrFile, ntrfrFile;
-    if (it_q != args.end()) { 
+    if (it_q != args.end()) { // deprecated
         trFile.open(*(it_q+1)+".kmers"); 
         multiKmerFile = false;
         extractFasta = false;
     } else { 
-        trFile.open(*(it_qs+1)+".tr.kmers");
+        if (trim) { trFname = *(it_qs+1)+".tr.trim"+*(it_t+1)+".kmers"; }
+        else { trFname = *(it_qs+1)+".tr.kmers"; }
+        trFile.open(trFname);
         lntrFile.open(*(it_qs+1)+".lntr.kmers");
         rntrFile.open(*(it_qs+1)+".rntr.kmers");
         assert(lntrFile and rntrFile);
@@ -508,6 +559,7 @@ int main(int argc, char* argv[]) {
     cerr << "Rthreshold: " << Rthreshold << endl;
     cerr << "interleaved: " << interleaved << endl;
     cerr << "isFasta: " << isFasta << endl;
+    cerr << "isFastq: " << isFastq << endl;
     cerr << "fastx: " << args[ind_f] << endl;
     cerr << "multiKmerFile: " << multiKmerFile << endl;
     cerr << "query: ";
@@ -519,7 +571,7 @@ int main(int argc, char* argv[]) {
    
     cerr << "total number of loci: ";
     time_t time1 = time(nullptr);
-    uint16_t nloci = (multiKmerFile ? countLoci(*(it_qs+1)+".tr.kmers") : countLoci(*(it_q+1)+".kmers"));
+    uint16_t nloci = (multiKmerFile ? countLoci(trFname) : countLoci(*(it_q+1)+".kmers"));
     cerr << nloci << endl;
 
 
@@ -527,7 +579,7 @@ int main(int argc, char* argv[]) {
     vector<kmerCount_umap> trKmerDB(nloci);
     kmeruIndex_umap kmerDBi;
     if (multiKmerFile) {
-        readKmersFile(trKmerDB, kmerDBi, *(it_qs+1)+".tr.kmers", 0, false); // start from index 0, do not count
+        readKmersFile(trKmerDB, kmerDBi, trFname, 0, false); // start from index 0, do not count
     } else {
         readKmersFile(trKmerDB, kmerDBi, *(it_q+1)+".kmers", 0, false); // start from index 0, do not count
     }
@@ -547,7 +599,7 @@ int main(int argc, char* argv[]) {
 
 
     // create data for each process
-    cerr << "create data for each process..." << endl;
+    cerr << "creating data for each process..." << endl;
     time1 = time(nullptr);
     Threads threaddata(nproc, nloci);
     size_t nMappedReads = 0;
@@ -567,6 +619,7 @@ int main(int argc, char* argv[]) {
 
         counts.interleaved = interleaved;
         counts.isFasta = isFasta;
+        counts.isFastq = isFastq;
         counts.bait = bait;
 
         counts.k = k;

@@ -75,6 +75,15 @@ def encodeString(string):
         numericString = (numericString<<2) + base[string[i]]
     return numericString
 
+def string2CaKmer(string):
+    k = len(string)
+    for i in range(k):
+        if base[string[i]] > 3 - base[string[k-i-1]]:
+            return encodeString(string)
+        elif base[string[i]] < 3 - base[string[k-i-1]]:
+            return getRCkmer(encodeString(string), k)
+    return encodeString(string)
+
 def decodeNumericString(num, k):
     string = ""
     for i in range(k):
@@ -108,7 +117,7 @@ def getNextKmer(beg, seq, k):
             validlen += 1
     return beg, encodeString(seq[beg:beg+k])
 
-def seq2KmerQual(kmerCov, hap, seq, k, flanksize=0):
+def seq2KmerQual(kmerCov, seq, k, flanksize=0, trimmed=False):
     if not kmerCov or not seq:
         return np.array([]), 0
     #if not any(kmerCov):
@@ -122,8 +131,17 @@ def seq2KmerQual(kmerCov, hap, seq, k, flanksize=0):
     it = iter(range(len(seq) - k - beg - flanksize + 1))
     for i in it:
         canonicalkmer = kmer if kmer <= rckmer else rckmer
-        assert canonicalkmer in kmerCov, print(seq, "\npos", i, len(seq), canonicalkmer, kmer, rckmer, decodeNumericString(kmer, k), decodeNumericString(rckmer, k),)
-        seqQual[i + beg] = kmerCov[canonicalkmer][hap]
+        if not trimmed:
+            assert canonicalkmer in kmerCov, print(seq, "\npos", i, len(seq), 
+                                                   canonicalkmer, kmer, rckmer, decodeNumericString(kmer, k), decodeNumericString(rckmer, k),)
+        # assign quality score
+        if canonicalkmer in kmerCov:
+            seqQual[i + beg] = kmerCov[canonicalkmer]
+        else:
+            seqQual[i + beg] = -10 ## trimmed kmers has quality -10
+            loss += 1
+
+        # get next kmer and check whether to terminate
         if i + beg + k == len(seq): return seqQual, loss
         if seq[i + beg + k] not in base:
             nbeg, kmer = getNextKmer(i + beg + k + 1, seq, k)
@@ -136,7 +154,12 @@ def seq2KmerQual(kmerCov, hap, seq, k, flanksize=0):
             kmer = ((kmer & mask) << 2) + base[seq[i + beg + k]]
             rckmer = (rckmer >> 2) + ((3-base[seq[i + beg + k]]) << (2*(k-1)))
 
-def writeKmers(fname, kmerDB):
+def writeKmerTable(fname, kmerDB):
+    """
+    Arguments:
+        - fname:    file prefix for *.kmers
+        - kmerDB:   a dictionary mapping locus to its kmer table; each kmer table has (kmer, count) columns
+    """
     keys = np.zeros(len(kmerDB))
     ind = 0
     for k in kmerDB:
@@ -150,6 +173,27 @@ def writeKmers(fname, kmerDB):
                 assert kmerDB[k].shape[1] == 2, "table does not contain 2 columns (kmer, count)"
                 for i in range(kmerDB[k].shape[0]):
                     f.write("%-21.0f\t%.0f\n" % (kmerDB[k][i,0], kmerDB[k][i,1]))
+            else:
+                continue
+
+def writeKmerDict(fname, kmerDB, writeCount=True):
+    """
+    Argument:
+        - fname:        file prefix for *.kmers
+        - kmerDB:       array of kmer dictionary mapping each kmer to its count
+        - writeCount:   write kmer count; otherwise always write 0 count
+    """
+    nloci = len(kmerDB)
+    with open(fname+".kmers", 'w') as f:
+        for locus in range(nloci):
+            f.write(">locus\t{}\n".format(locus))
+            if kmerDB[locus]:
+                if writeCount == False:
+                    for kmer in kmerDB[locus]:
+                        f.write("{:<21.0f}\t0\n".format(kmer))
+                else:
+                    for kmer, count in kmerDB[locus].items():
+                        f.write("{:<21.0f}\t{:.0f}\n".format(kmer, count))
             else:
                 continue
 
@@ -191,6 +235,7 @@ def assignKmerTable(kmerDB, locus, table, sort, kmerName, threshold):
         assignNewTable(kmerDB, locus, table, sort, kmerName, threshold)
 
 def readKmers(fname, kmerDB, end=999999, sort=True, kmerName=False, threshold=0):
+    """ read a kmer file as a table"""
     with open(fname) as f:
         table = []
         locus = 0
@@ -206,23 +251,31 @@ def readKmers(fname, kmerDB, end=999999, sort=True, kmerName=False, threshold=0)
         else:
             assignKmerTable(kmerDB, locus, table, sort, kmerName, threshold)
 
-def readKmerDict(fname, kmerDB, threshold=0):
+def readKmerDict(fname, nloci, kmerDB=None, threshold=0):
+    """ read a kmer file as a dictionary """
+    hasInput = True
+    if kmerDB is None:
+        kmerDB = np.empty(nloci, dtype=object)
+        hasInput = False
+
     with open(fname) as f:
-        kmers = {}
         locus = 0
+        if kmerDB[locus] is None:
+            kmerDB[locus] = {}
         f.readline()
         for line in f:
             if line[0] == ">":
-                kmerDB[locus] = kmers
-                kmers = {}
                 locus += 1
+                if kmerDB[locus] is None:
+                    kmerDB[locus] = {}
             else:
                 vals = [int(v) for v in line.split()]
                 if vals[1] < threshold: 
                     continue
-                kmers[vals[0]] = vals[1]
-        else:
-            kmerDB[locus] = kmers
+                kmerDB[locus][vals[0]] = vals[1]
+
+    if not hasInput:
+        return kmerDB
 
 def countLoci(fname):
     with open(fname) as f:
@@ -287,9 +340,11 @@ def RejectOutlier(x, y, rule):
 #               "strict":           remove NaN, INF and recursively remove outliers based on linear fit
 #               "positive":         remove zeros, NaN, INF
 #               "strict_positive":  remove zeros, NaN, INF and recursively remove outliers based on linear fit
-def PlotRegression(x, y, xlabel="data_X", ylabel="data_Y", title="", fname="", outlier="strict_positive", pred=False, plot=True):
+def PlotRegression(x, y, xlabel="data_X", ylabel="data_Y", title="", fname="", outlier="strict_positive", pred=False, plot=True, fit_intercept=False):
     if title == "":
         title = xlabel + "." + ylabel
+    if not fname:
+        fname = title
     if outlier == "invalid":
         outlierRule = 0
     else:
@@ -312,8 +367,8 @@ def PlotRegression(x, y, xlabel="data_X", ylabel="data_Y", title="", fname="", o
             return 0, 0, 0, 0
         else:
             return 0, 0, 0
-    reg = LinearRegression(fit_intercept=False).fit(x1, y1)
-    a, b = np.asscalar(reg.coef_), reg.intercept_
+    reg = LinearRegression(fit_intercept=fit_intercept).fit(x1, y1)
+    a, b = np.asscalar(reg.coef_), np.asscalar(reg.intercept_) if fit_intercept else reg.intercept_
     rsquare = reg.score(x1, y1)
     if pred:
         y1_proj = np.sum(y1) / a
@@ -328,7 +383,7 @@ def PlotRegression(x, y, xlabel="data_X", ylabel="data_Y", title="", fname="", o
         text = "y = "+f'{a:.2f}'+"x"+f'{b:+.2f}'+"\n"+"$R^2$ = "+f'{rsquare:.4f}'+"\n#sample: "+f'{x1.size:.0f}'
         fig = plt.gcf()
         fig.text(0.25, 0.75, text)
-        plt.savefig(fname+"."+outlier+".reg.png", dpi=150, bbox_inches='tight')
+        plt.savefig(fname+"."+outlier+".reg.png", bbox_inches='tight')
         plt.close()
 
     if pred:
