@@ -1,46 +1,43 @@
-#!/usr/bin/env python3
-
-import numpy as np
-import matplotlib as mpl
+import numpy as np, matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 import pandas as pd
 
-base = {'A':0 ,'C':1 ,'G':2 ,'T':3 }
+base = {'A':0, 'C':1,  'G':2,  'T':3}
 baseinv = ['A', 'C', 'G', 'T']
 baseNumConversion = [
-  'A','C','G','T',127,127,127,127,
-  127,127,127,127,127,127,127,127,
-  127,127,127,127,127,127,127,127,
-  127,127,127,127,127,127,127,127,
-  127,127,127,127,127,127,127,127,
-  127,127,127,127,127,127,127,127,
-  127,127,127,127,127,127,127,127,
-  127,127,127,127,127,127,127,127,
-  127, 0 ,127, 1 ,127,127,127, 2 ,
-  127,127,127,127,127,127,127,127,
-  127,127,127,127, 3 ,127,127,127,
-  127,127,127,127,127,127,127,127,
-  127, 0 ,127, 1 ,127,127,127, 2 ,
-  127,127,127,127,127,127,127,127,
-  127,127,127,127, 3 ,127,127,127]
+ 'A', 'C', 'G', 'T', 127, 127, 127, 127,
+ 127, 127, 127, 127, 127, 127, 127, 127,
+ 127, 127, 127, 127, 127, 127, 127, 127,
+ 127, 127, 127, 127, 127, 127, 127, 127,
+ 127, 127, 127, 127, 127, 127, 127, 127,
+ 127, 127, 127, 127, 127, 127, 127, 127,
+ 127, 127, 127, 127, 127, 127, 127, 127,
+ 127, 127, 127, 127, 127, 127, 127, 127,
+ 127,   0, 127,   1, 127, 127, 127,   2,
+ 127, 127, 127, 127, 127, 127, 127, 127,
+ 127, 127, 127, 127,   3, 127, 127, 127,
+ 127, 127, 127, 127, 127, 127, 127, 127,
+ 127,   0, 127,   1, 127, 127, 127,   2,
+ 127, 127, 127, 127, 127, 127, 127, 127,
+ 127, 127, 127, 127,   3, 127, 127, 127]
 baseComplement = [
-    3,  2,  1,  0,127,127,127,127,
-  127,127,127,127,127,127,127,127,
-  127,127,127,127,127,127,127,127,
-  127,127,127,127,127,127,127,127,
-  127,127,127,127,127,127,127,127,
-  127,127,127,127,127,127,127,127,
-  127,127,127,127,127,127,127,127,
-  127,127,127,127,127,127,127,127,
-  127,'T',127,'G',127,127,127,'C',
-  127,127,127,127,127,127,'N',127,
-  127,127,127,127,'A',127,127,127,
-  127,127,127,127,127,127,127,127,
-  127,'t',127,'g',127,127,127,'c',
-  127,127,127,127,127,127,'n',127,
-  127,127,127,127,'a',127,127,127]
+   3,   2,   1,   0, 127, 127, 127, 127,
+ 127, 127, 127, 127, 127, 127, 127, 127,
+ 127, 127, 127, 127, 127, 127, 127, 127,
+ 127, 127, 127, 127, 127, 127, 127, 127,
+ 127, 127, 127, 127, 127, 127, 127, 127,
+ 127, 127, 127, 127, 127, 127, 127, 127,
+ 127, 127, 127, 127, 127, 127, 127, 127,
+ 127, 127, 127, 127, 127, 127, 127, 127,
+ 127, 'T', 127, 'G', 127, 127, 127, 'C',
+ 127, 127, 127, 127, 127, 127, 'N', 127,
+ 127, 127, 127, 127, 'A', 127, 127, 127,
+ 127, 127, 127, 127, 127, 127, 127, 127,
+ 127, 't', 127, 'g', 127, 127, 127, 'c',
+ 127, 127, 127, 127, 127, 127, 'n', 127,
+ 127, 127, 127, 127, 'a', 127, 127, 127]
 byteRC = [
  255, 191, 127,  63, 239, 175, 111,  47, 223, 159,
   95,  31, 207, 143,  79,  15, 251, 187, 123,  59,
@@ -72,184 +69,178 @@ byteRC = [
 def encodeString(string):
     numericString = 0
     for i in range(len(string)):
-        numericString = (numericString<<2) + base[string[i]]
+        numericString = (numericString << 2) + base[string[i]]
+
     return numericString
+
 
 def string2CaKmer(string):
     k = len(string)
     for i in range(k):
-        if base[string[i]] > 3 - base[string[k-i-1]]:
+        if base[string[i]] > 3 - base[string[(k - i - 1)]]:
             return encodeString(string)
-        elif base[string[i]] < 3 - base[string[k-i-1]]:
+        if base[string[i]] < 3 - base[string[(k - i - 1)]]:
             return getRCkmer(encodeString(string), k)
+
     return encodeString(string)
 
+
 def decodeNumericString(num, k):
-    string = ""
+    string = ''
     for i in range(k):
-        string = baseinv[num%4] + string
+        string = baseinv[(num % 4)] + string
         num >>= 2
+
     return string
+
 
 def getRCkmer(kmer, k):
     rckmer = 0
-    while k >= 4:
-        rckmer <<= 8
-        rckmer += byteRC[kmer & 0xff]
-        kmer >>= 8
-        k -= 4
+    while 1:
+        if k >= 4:
+            rckmer <<= 8
+            rckmer += byteRC[(kmer & 255)]
+            kmer >>= 8
+            k -= 4
+
     if k > 0:
-        rckmer <<= (k<<1)
-        rckmer += (byteRC[kmer] >> ((4-k)<<1))
+        rckmer <<= k << 1
+        rckmer += byteRC[kmer] >> (4 - k << 1)
     return rckmer
+
 
 def getNextKmer(beg, seq, k):
     if beg + k >= len(seq):
-        return len(seq), 0
-    validlen = 0
-    while validlen != k:
-        if beg + k >= len(seq):
-            return len(seq), 0
-        if seq[beg + validlen] not in base:
-            beg = beg + validlen + 1
-            validlen = 0
-        else:
-            validlen += 1
-    return beg, encodeString(seq[beg:beg+k])
+        return (len(seq), 0)
+    else:
+        validlen = 0
+        while 1:
+            if validlen != k:
+                if beg + k >= len(seq):
+                    return (len(seq), 0)
+                if seq[(beg + validlen)] not in base:
+                    beg = beg + validlen + 1
+                    validlen = 0
+                else:
+                    validlen += 1
+
+        return (
+         beg, encodeString(seq[beg:beg + k]))
+
 
 def seq2KmerQual(kmerCov, seq, k, flanksize=0, trimmed=False):
     if not kmerCov or not seq:
-        return np.array([]), 0
-    #if not any(kmerCov):
-    #    return np.array([]), 0
-    seqQual = np.zeros(len(seq)-k+1) - 20 ## distinguish low quality kmers for plotting
+        return (np.array([]), 0)
+    seqQual = np.zeros(len(seq) - k + 1) - 20
     beg, kmer = getNextKmer(flanksize, seq, k)
     loss = beg
-    if beg == len(seq): return seqQual, loss
+    if beg == len(seq):
+        return (
+         seqQual, loss)
     rckmer = getRCkmer(kmer, k)
-    mask = (1 << 2*(k-1)) - 1
+    mask = (1 << 2 * (k - 1)) - 1
     it = iter(range(len(seq) - k - beg - flanksize + 1))
     for i in it:
         canonicalkmer = kmer if kmer <= rckmer else rckmer
         if not trimmed:
-            assert canonicalkmer in kmerCov, print(seq, "\npos", i, len(seq), 
-                                                   canonicalkmer, kmer, rckmer, decodeNumericString(kmer, k), decodeNumericString(rckmer, k),)
-        # assign quality score
+            if not canonicalkmer in kmerCov:
+                raise AssertionError(print(seq, '\npos', i, len(seq), canonicalkmer, kmer, rckmer, decodeNumericString(kmer, k), decodeNumericString(rckmer, k)))
         if canonicalkmer in kmerCov:
             seqQual[i + beg] = kmerCov[canonicalkmer]
         else:
-            seqQual[i + beg] = -10 ## trimmed kmers has quality -10
+            seqQual[i + beg] = -10
             loss += 1
-
-        # get next kmer and check whether to terminate
-        if i + beg + k == len(seq): return seqQual, loss
-        if seq[i + beg + k] not in base:
+        if i + beg + k == len(seq):
+            return (
+             seqQual, loss)
+        if seq[(i + beg + k)] not in base:
             nbeg, kmer = getNextKmer(i + beg + k + 1, seq, k)
-            if nbeg == len(seq): return seqQual, loss
+            if nbeg == len(seq):
+                return (
+                 seqQual, loss)
             rckmer = getRCkmer(kmer, k)
             loss += nbeg - (i + beg + 1)
             for j in range(nbeg - (i + beg + 1)):
                 next(it, None)
+
         else:
-            kmer = ((kmer & mask) << 2) + base[seq[i + beg + k]]
-            rckmer = (rckmer >> 2) + ((3-base[seq[i + beg + k]]) << (2*(k-1)))
+            kmer = ((kmer & mask) << 2) + base[seq[(i + beg + k)]]
+            rckmer = (rckmer >> 2) + (3 - base[seq[(i + beg + k)]] << 2 * (k - 1))
 
-def writeKmerTable(fname, kmerDB):
-    """
-    Arguments:
-        - fname:    file prefix for *.kmers
-        - kmerDB:   a dictionary mapping locus to its kmer table; each kmer table has (kmer, count) columns
-    """
-    keys = np.zeros(len(kmerDB))
-    ind = 0
-    for k in kmerDB:
-        keys[ind] = k
-        ind += 1
-    keys = keys[keys.argsort()]
-    with open(fname+".kmers", 'w') as f:
-        for k in keys:
-            f.write(">locus\t%.0f\n" % (k))
-            if kmerDB[k].size:
-                assert kmerDB[k].shape[1] == 2, "table does not contain 2 columns (kmer, count)"
-                for i in range(kmerDB[k].shape[0]):
-                    f.write("%-21.0f\t%.0f\n" % (kmerDB[k][i,0], kmerDB[k][i,1]))
-            else:
-                continue
 
-def writeKmerDict(fname, kmerDB, writeCount=True):
-    """
-    Argument:
-        - fname:        file prefix for *.kmers
-        - kmerDB:       array of kmer dictionary mapping each kmer to its count
-        - writeCount:   write kmer count; otherwise always write 0 count
-    """
-    nloci = len(kmerDB)
+#def writeKmerTable??
+
+def writeKmerDict(fname, kmerDB, precision=0):
     with open(fname+".kmers", 'w') as f:
-        for locus in range(nloci):
+        for locus, kmers in enumerate(kmerDB):
             f.write(">locus\t{}\n".format(locus))
-            if kmerDB[locus]:
-                if writeCount == False:
-                    for kmer in kmerDB[locus]:
-                        f.write("{:<21.0f}\t0\n".format(kmer))
-                else:
-                    for kmer, count in kmerDB[locus].items():
-                        f.write("{:<21.0f}\t{:.0f}\n".format(kmer, count))
-            else:
-                continue
+            for kmer, count in kmers.items():
+                f.write("{:<21.0f}\t{:.{prec}f}\n".format(kmer, count, prec=precision))
+
 
 def checkTable(table):
-    return table.size and np.any(table[:,1])
+    return table.size and np.any(table[:, 1])
+
 
 def assignNewTable(kmerDB, locus, table, sort, kmerName, threshold):
     if checkTable(table):
-        table = table[table[:,1] >= threshold]
+        table = table[(table[:, 1] >= threshold)]
         if sort:
-            table = table[table[:,0].argsort()]
+            table = table[table[:, 0].argsort]
         if kmerName:
             kmerDB[locus] = table
         else:
-            kmerDB[locus] = table[:,1]
+            kmerDB[locus] = table[:, 1]
     else:
         kmerDB[locus] = np.array([])
 
+
 def IncrementKmerCount(kmerDB, locus, table, sort, kmerName):
-    if checkTable(table): # table is valid
-        assert sort, "invalid argument: {'sort': False}"
-        assert table.size == kmerDB[locus].size, "inconsistent table size"
-        table = table[table[:,0].argsort()]
+    if checkTable(table):
+        if not sort:
+            raise AssertionError("invalid argument: {'sort': False}")
+        if not table.size == kmerDB[locus].size:
+            raise AssertionError('inconsistent table size')
+        table = table[table[:, 0].argsort]
         if kmerName:
-            kmerDB[locus][:,1] += table[:,1]
+            kmerDB[locus][:, 1] += table[:, 1]
         else:
-            kmerDB[locus] += table[:,1]
+            kmerDB[locus] += table[:, 1]
     else:
         return
+
 
 def assignKmerTable(kmerDB, locus, table, sort, kmerName, threshold):
     table = np.array(table, dtype=int)
     if locus not in kmerDB:
         assignNewTable(kmerDB, locus, table, sort, kmerName, threshold)
-    elif kmerDB[locus].size:
-        assert threshold == 0, "filtering while incrementing counts!"
-        IncrementKmerCount(kmerDB, locus, table, sort, kmerName)
     else:
-        assignNewTable(kmerDB, locus, table, sort, kmerName, threshold)
+        if kmerDB[locus].size:
+            if not threshold == 0:
+                raise AssertionError('filtering while incrementing counts!')
+            IncrementKmerCount(kmerDB, locus, table, sort, kmerName)
+        else:
+            assignNewTable(kmerDB, locus, table, sort, kmerName, threshold)
+
 
 def readKmers(fname, kmerDB, end=999999, sort=True, kmerName=False, threshold=0):
     """ read a kmer file as a table"""
-    with open(fname) as f:
+    with open(fname) as (f):
         table = []
         locus = 0
-        f.readline()
+        f.readline
         for line in f:
-            if line[0] == ">":
+            if line[0] == '>':
                 assignKmerTable(kmerDB, locus, table, sort, kmerName, threshold)
                 table = []
-                locus = int(line.split()[1])
-                if locus >= end: break
+                locus = int(line.split[1])
+                if locus >= end:
+                    break
             else:
-                table.append(line.split())
+                table.append(line.split)
         else:
             assignKmerTable(kmerDB, locus, table, sort, kmerName, threshold)
+
 
 def readKmerDict(fname, nloci, kmerDB=None, threshold=0):
     """ read a kmer file as a dictionary """
@@ -257,144 +248,416 @@ def readKmerDict(fname, nloci, kmerDB=None, threshold=0):
     if kmerDB is None:
         kmerDB = np.empty(nloci, dtype=object)
         hasInput = False
-
-    with open(fname) as f:
+    with open(fname) as (f):
         locus = 0
         if kmerDB[locus] is None:
             kmerDB[locus] = {}
-        f.readline()
+        f.readline
         for line in f:
-            if line[0] == ">":
+            if line[0] == '>':
                 locus += 1
                 if kmerDB[locus] is None:
                     kmerDB[locus] = {}
-            else:
-                vals = [int(v) for v in line.split()]
-                if vals[1] < threshold: 
-                    continue
-                kmerDB[locus][vals[0]] = vals[1]
+                else:
+                    vals = [int(v) for v in line.split]
+                    if vals[1] < threshold:
+                        pass
+                    else:
+                        kmerDB[locus][vals[0]] = vals[1]
 
     if not hasInput:
         return kmerDB
 
+
 def countLoci(fname):
-    with open(fname) as f:
+    with open(fname) as (f):
         nloci = 0
         for line in f:
-            if line[0] == ">":
+            if line[0] == '>':
                 nloci += 1
+
     return nloci
+
 
 def readFasta(fname, nloci=0):
     if nloci == 0:
         nloci = countLoci(fname)
     seqDB = np.empty(nloci, dtype=object)
-    with open(fname) as f:
+    with open(fname) as (f):
         locus = 0
-        seq = ""
-        f.readline()
+        seq = ''
+        f.readline
         for line in f:
-            if line[0] == ">":
+            if line[0] == '>':
                 seqDB[locus] = seq
-                seq = ""
+                seq = ''
                 locus += 1
             else:
-                seq = line.rstrip()
+                seq = line.rstrip
         else:
             seqDB[locus] = seq
+
     return seqDB
 
+
 def RecursiveRejection(x, y):
-    reg = LinearRegression(fit_intercept=False).fit(x, y)
+    reg = (LinearRegression(fit_intercept=False)).fit(x, y)
     res = y - reg.predict(x)
     m = np.mean(res)
     s = np.std(res)
-    logic = (np.abs(res - m) < 10 * s)[:,0]     ### set threshold = 10; empirical value
+    logic = (np.abs(res - m) < 10 * s)[:, 0]
     if np.sum(logic) == 0:
-        print("all entries are rejected")
-        return x[logic], y[logic]
-    if not np.all(logic):
+        print('all entries are rejected')
+        return (
+         x[logic], y[logic])
+    elif not np.all(logic):
         return RecursiveRejection(x[logic], y[logic])
     else:
-        return x, y
+        return (
+         x, y)
+
 
 def RejectOutlier(x, y, rule):
-    logic = ~np.isnan(x)[:,0]
-    logic = ~np.isnan(y)[:,0]
-    logic = np.logical_and(logic, np.isfinite(x)[:,0])
-    logic = np.logical_and(logic, np.isfinite(y)[:,0])
-    if rule == 0: # rule=invalid; remove NaN, INF only
-        return x[logic], y[logic], 0
-    if rule == 1 or rule == 2: # rule=(positive or strict_positive); remove zeros
-        logic = np.logical_and(logic, (x != 0)[:,0])
-        logic = np.logical_and(logic, (y != 0)[:,0])
-        if rule == 1: # rule=positive
-            return x[logic], y[logic], 0
-    if rule == 2 or rule == 3: # rule=(strict or strict_positive); recursively remove outliers
+    logic = np.logical_and(np.isfinite(x)[:, 0], np.isfinite(y)[:, 0])
+    if rule == 0:
+        return (x[logic], y[logic], 0)
+    if rule == 1 or rule == 2:
+        logic = np.logical_and(logic, (x != 0)[:, 0])
+        logic = np.logical_and(logic, (y != 0)[:, 0])
+        return rule == 1 and (
+         x[logic], y[logic], 0)
+    if rule == 2 or rule == 3:
         x, y = x[logic], y[logic]
         x0, y0 = RecursiveRejection(x, y)
-        return x0, y0, x.size - x0.size
+        return (
+         x0, y0, x.size - x0.size)
 
-# options:
-#   outlier:    "invalid":          remove NaN, INF
-#               "strict":           remove NaN, INF and recursively remove outliers based on linear fit
-#               "positive":         remove zeros, NaN, INF
-#               "strict_positive":  remove zeros, NaN, INF and recursively remove outliers based on linear fit
-def PlotRegression(x, y, xlabel="data_X", ylabel="data_Y", title="", fname="", outlier="strict_positive", pred=False, plot=True, fit_intercept=False):
-    if title == "":
-        title = xlabel + "." + ylabel
+
+def PlotRegression(x, y, xlabel='data_X', ylabel='data_Y', title='', fname='', outlier='strict_positive', pred=False, plot=True, fit_intercept=False):
+    if title == '':
+        title = xlabel + '.' + ylabel
     if not fname:
         fname = title
-    if outlier == "invalid":
+    if outlier == 'invalid':
         outlierRule = 0
     else:
         outlierRule = outlier.split('_')
-        if "positive" in outlierRule:
-            if "strict" in outlierRule:
+        if 'positive' in outlierRule:
+            if 'strict' in outlierRule:
                 outlierRule = 2
             else:
                 outlierRule = 1
         else:
             outlierRule = 3
-
     x1, y1, nOut = RejectOutlier(x, y, outlierRule)
     if nOut:
-        print("# of non-trivial outliers in", title, nOut)
+        print('# of non-trivial outliers in', title, nOut)
     if not x1.size or not y1.size:
-        x1, y1, nOut = RejectOutlier(x, y, 1) # use rule "positive" rule to do mild data cleaning
+        x1, y1, nOut = RejectOutlier(x, y, 1)
     if not x1.size or not y1.size:
         if pred:
-            return 0, 0, 0, 0
-        else:
-            return 0, 0, 0
-    reg = LinearRegression(fit_intercept=fit_intercept).fit(x1, y1)
+            return (0, 0, 0, 0)
+        return (0, 0, 0)
+    reg = (LinearRegression(fit_intercept=fit_intercept)).fit(x1, y1)
     a, b = np.asscalar(reg.coef_), np.asscalar(reg.intercept_) if fit_intercept else reg.intercept_
     rsquare = reg.score(x1, y1)
     if pred:
         y1_proj = np.sum(y1) / a
-
     if plot:
-        xp = np.arange(0, x1.max(), 2).reshape(-1,1)
+        xp = np.arange(0, x1.max, 2).reshape(-1, 1)
         plt.plot(x1, y1, '.', color='C0')
         plt.plot(xp, reg.predict(xp), '-', color='C0')
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
         plt.title(title)
-        text = "y = "+f'{a:.2f}'+"x"+f'{b:+.2f}'+"\n"+"$R^2$ = "+f'{rsquare:.4f}'+"\n#sample: "+f'{x1.size:.0f}'
-        fig = plt.gcf()
+        text = 'y = ' + f'''{a}''' + 'x' + f'''{b}''' + '\n' + '$R^2$ = ' + f'''{rsquare}''' + '\n#sample: ' + f'''{(x1.size)}'''
+        fig = plt.gcf
         fig.text(0.25, 0.75, text)
-        plt.savefig(fname+"."+outlier+".reg.png", bbox_inches='tight')
-        plt.close()
-
+        plt.savefig(fname + '.' + outlier + '.reg.png', bbox_inches='tight')
+        plt.close
     if pred:
-        return a, b, rsquare, y1_proj
+        return (a, b, rsquare, y1_proj)
     else:
-        return a, b, rsquare
+        return (
+         a, b, rsquare)
 
 
+def PlotKmcq(ILkmerFname, PBkmerDB, nloci, ksize, seqs0, seqs1, flankTable0, flankTable1, targetLoci=None, trimmed=False, plot=True, verbose=False):
+    ksize2 = ksize // 2
+    if verbose:
+        print('reading ', ILkmerFname)
+    ILkmerDB = readKmerDict(ILkmerFname, nloci)
+    if verbose:
+        print('measuring quality')
+    kmerCovDB = np.empty(nloci, dtype=object)
+    kmerCovs = np.zeros(nloci)
+    ILkmerSum = np.zeros(nloci, dtype=int)
+    contamination = np.zeros(nloci, dtype=int)
+    seq0QualDB = np.empty(nloci, dtype=object)
+    seq1QualDB = np.empty(nloci, dtype=object)
+    if targetLoci is None:
+        loci = list(range(nloci))
+    else:
+        loci = targetLoci
+    for i in loci:
+        seq0QualDB[i] = np.array([])
+        seq1QualDB[i] = np.array([])
+        if PBkmerDB[i] and ILkmerDB[i]:
+            kmerCovDB[i] = {}
+            PBkmc, ILkmc, loss0, loss1 = (0, 0, 0, 0)
+            for k, v in PBkmerDB[i].items:
+                vIL = ILkmerDB[i][k]
+                PBkmc += v
+                ILkmc += vIL
+                ILkmerSum[i] += vIL
+                if not v and not vIL:
+                    continue
+                if not v and vIL:
+                    contamination[i] += vIL
+                else:
+                    kmerCovDB[i][k] = vIL / v
+
+            if seqs0[i] and flankTable0[(i, 1)]:
+                if len(seqs0[i]) == np.sum(flankTable0[i, :]):
+                    lTRflanksize0 = flankTable0[(i, 0)]
+                    TRsize0 = flankTable0[(i, 1)]
+                    tr = seqs0[i][lTRflanksize0 - ksize2:lTRflanksize0 + TRsize0 + ksize2]
+                    seq0QualDB[i], loss0 = seq2KmerQual(kmerCovDB[i], tr, ksize, trimmed=trimmed)
+                else:
+                    print('locus', i, 'seq len', len(seqs0[i]), '!= len sum in flankTable', flankTable0[i, :])
+            if seqs1[i] and flankTable1[(i, 1)]:
+                if len(seqs1[i]) == np.sum(flankTable1[i, :]):
+                    lTRflanksize1 = flankTable1[(i, 0)]
+                    TRsize1 = flankTable1[(i, 1)]
+                    tr = seqs1[i][lTRflanksize1 - ksize2:lTRflanksize1 + TRsize1 + ksize2]
+                    seq1QualDB[i], loss1 = seq2KmerQual(kmerCovDB[i], tr, ksize, trimmed=trimmed)
+                else:
+                    print('locus', i, 'seq len', len(seqs1[i]), '!= len sum in flankTable', flankTable1[i, :])
+            if flankTable0[(i, 1)] and flankTable1[(i, 1)] and seq0QualDB[i].size and seq1QualDB[i].size and i not in (260,
+                                                                                                                       63,
+                                                                                                                       394):
+                if not PBkmc + loss0 + loss1 == seq0QualDB[i].size + seq1QualDB[i].size:
+                    raise AssertionError(print(('locus {} size {} {}: kmc {} + loss {} + {} != seq0 {} + seq1 {}').format(i, TRsize0, TRsize1, PBkmc, loss0, loss1, seq0QualDB[i].size, seq1QualDB[i].size)))
+        kmerCovs[i] = ILkmerSum[i] / (seq0QualDB[i].size + seq1QualDB[i].size)
+
+    means = np.zeros(nloci)
+    variances = np.zeros(nloci)
+    for i in loci:
+        if seq0QualDB[i].size and seq1QualDB[i].size:
+            cov = np.concatenate((seq0QualDB[i][(seq0QualDB[i] >= 0)], seq1QualDB[i][(seq1QualDB[i] >= 0)]))
+        else:
+            if seq0QualDB[i].size:
+                cov = seq0QualDB[i][(seq0QualDB[i] >= 0)]
+            else:
+                if seq1QualDB[i].size:
+                    cov = seq1QualDB[i][(seq1QualDB[i] >= 0)]
+                else:
+                    continue
+                means[i] = np.mean(cov)
+                variances[i] = np.var(cov)
+
+    if plot:
+        if targetLoci is None:
+            targetLoci = list(range(nloci))
+        for i in targetLoci:
+            nsubplot = 0
+            ymax = 0
+            figwidth = max(seq0QualDB[i].size, seq1QualDB[i].size) * 0.008
+            plt.figure(figsize=(figwidth, 4))
+            if seq0QualDB[i].size:
+                x0 = np.argwhere(np.greater_equal(seq0QualDB[i], 0))
+                y0 = seq0QualDB[i][x0]
+                x1 = np.argwhere(np.less(seq0QualDB[i], 0))
+                y1 = seq0QualDB[i][x1]
+                ymax = max(np.max(seq0QualDB[i]), ymax)
+                plt.subplot(2, 1, 1)
+                plt.scatter(x0, y0, s=30, edgecolors='blue', facecolors='none', linewidth=0.5, alpha=0.5)
+                plt.scatter(x1, y1, s=30, edgecolors='black', facecolors='none', linewidth=0.5, alpha=0.5)
+                plt.ylabel('h0 coverage')
+                nsubplot += 1
+            if seq1QualDB[i].size:
+                x0 = np.argwhere(np.greater_equal(seq1QualDB[i], 0))
+                y0 = seq1QualDB[i][x0]
+                x1 = np.argwhere(np.less(seq1QualDB[i], 0))
+                y1 = seq1QualDB[i][x1]
+                ymax = max(np.max(seq1QualDB[i]), ymax)
+                plt.subplot(2, 1, 2)
+                plt.scatter(x0, y0, s=30, edgecolors='red', facecolors='none', linewidth=0.5, alpha=0.5)
+                plt.scatter(x1, y1, s=30, edgecolors='black', facecolors='none', linewidth=0.5, alpha=0.5)
+                plt.ylabel('h1 coverage')
+                nsubplot += 1
+            if nsubplot:
+                loss = np.sum(np.equal(seq0QualDB[i], 0)) + np.sum(np.equal(seq1QualDB[i], 0))
+                plt.subplot(2, 1, 1)
+                plt.ylim((-max(ymax * 0.1, 25), ymax * 1.1))
+                plt.title(('.').join(['locus', str(i), 'kmer_sum', str(ILkmerSum[i]), 'contamination',
+                 ('{:.1f}%').format(contamination[i] * 100 / ILkmerSum[i]), 'loss', str(loss)]))
+                plt.subplot(2, 1, 2)
+                plt.ylim((-max(ymax * 0.1, 25), ymax * 1.1))
+                plt.xlabel('seq pos')
+                print('locus', i, 'plotted')
+                plt.show
+                plt.close
+
+    return (kmerCovs, contamination, ILkmerSum, means, variances, seq0QualDB, seq1QualDB)
 
 
+class VNTRs:
+
+    def __init__(self, genome, fasta, config, bed, ksize=21, verbose=False):
+        self.verbose = verbose
+        self.ksize = ksize
+        self.loadConfig(genome, config)
+        self.seqs0, self.seqs1 = self.loadFasta(genome, fasta)
+        self.tr0 = TRs(self.seqs0, self.flankTable0, ksize)
+        self.tr1 = TRs(self.seqs1, self.flankTable1, ksize)
+        self.getNameLocusLookup(genome, bed)
+
+    def loadConfig(self, genome, config):
+        if self.verbose:
+            print('reading ', genome + '.h*.' + config)
+        self.flankTable0 = (np.loadtxt(genome + '.h0.' + config, skiprows=1, dtype=int))[:, 4:]
+        self.flankTable1 = (np.loadtxt(genome + '.h1.' + config, skiprows=1, dtype=int))[:, 4:]
+        self.nloci = self.flankTable0.shape[0]
+        if self.verbose:
+            print('number of loci: ', self.nloci)
+
+    def loadFasta(self, genome, fasta):
+        if self.verbose:
+            print('reading ', genome + '.h*.' + fasta)
+        return (readFasta(genome + '.h0.' + fasta, self.nloci), readFasta(genome + '.h1.' + fasta, self.nloci))
+
+    def getNameLocusLookup(self, genome, bed):
+        if self.verbose:
+            print('reading ', genome + '.h*.' + bed)
+        bed = pd.read_csv(genome + '.h0.' + bed, header=None, usecols=[3, 4, 5], sep='\t')
+        self.name2ind = {}
+        self.ind2name = np.empty(self.nloci, dtype=object)
+        for ind, row in bed.iterrows:
+            name = ('/').join([str(v) for v in row])
+            self.name2ind[name] = ind
+            self.ind2name[ind] = name
+
+    def getSize(self, i):
+        trSize, nhap = (0, 0)
+        trlen0 = self.tr0.getSize(i)
+        trlen1 = self.tr1.getSize(i)
+        if trlen0 or trlen1:
+            if trlen0:
+                trSize += trlen0
+                nhap += 1
+            if trlen1:
+                trSize += trlen1
+                nhap += 1
+            trSize /= nhap
+            return trSize
+        else:
+            return
+
+    def getGC(self, i):
+        GC = []
+        GC0 = self.tr0.getGC(i)
+        GC1 = self.tr1.getGC(i)
+        if GC0:
+            GC.append(GC0)
+        if GC1:
+            GC.append(GC1)
+        if GC:
+            return sum(GC) / len(GC)
+        else:
+            return
+
+    def getMotifFrequency(self, motifs, i):
+        counts = np.zeros(len(motifs))
+        c0, flag0 = self.tr0.getMotifFrequency(motifs, i)
+        c1, flag1 = self.tr1.getMotifFrequency(motifs, i)
+        if flag0 or flag1:
+            if flag0:
+                counts += c0
+            if flag1:
+                counts += c1
+            return counts / (flag0 + flag1)
+        else:
+            return
 
 
+class TRs:
 
+    def __init__(self, seqs, flankTable, ksize):
+        self.ksize = ksize
+        self.ksize2 = ksize // 2
+        self.seqs = seqs
+        self.flankTable = flankTable
+        self.badloci = set
 
+    def __getitem__(self, i):
+        if self.seqs[i] and self.flankTable[(i, 1)]:
+            if len(self.seqs[i]) == np.sum(self.flankTable[i, :]):
+                lTRflanksize = self.flankTable[(i, 0)]
+                TRsize = self.flankTable[(i, 1)]
+                return self.seqs[i][lTRflanksize - self.ksize2:lTRflanksize + TRsize + self.ksize2]
+            if i not in self.badloci:
+                self.badloci.add(i)
+                print('locus', i, 'seq len', len(self.seqs[i]), '!= len sum in flankTable', self.flankTable[i, :])
+            return
+        else:
+            return
+
+    def getSize(self, i):
+        if self.seqs[i] and self.flankTable[(i, 1)]:
+            if len(self.seqs[i]) == np.sum(self.flankTable[i, :]):
+                return self.flankTable[(i, 1)]
+            if i not in self.badloci:
+                self.badloci.add(i)
+                print('locus', i, 'seq len', len(self.seqs[i]), '!= len sum in flankTable', self.flankTable[i, :])
+            return
+        else:
+            return
+
+    def getGC(self, i):
+        if self.seqs[i] and self.flankTable[(i, 1)]:
+            if len(self.seqs[i]) == np.sum(self.flankTable[i, :]):
+                lTRflanksize = self.flankTable[(i, 0)]
+                TRsize = self.flankTable[(i, 1)]
+                start = lTRflanksize - self.ksize2
+                end = lTRflanksize + TRsize + self.ksize2
+                count = 0
+                GC = ['G', 'C']
+                for j in range(start, end):
+                    if self.seqs[i][j] in GC:
+                        count += 1
+
+                return count / (end - start)
+            if i not in self.badloci:
+                self.badloci.add(i)
+                print('locus', i, 'seq len', len(self.seqs[i]), '!= len sum in flankTable', self.flankTable[i, :])
+            return
+        else:
+            return
+
+    def getMotifFrequency(self, motifs, i):
+        motif_ind = {}
+        for ind, v in enumerate(motifs):
+            motif_ind[v] = ind
+
+        if self.seqs[i] and self.flankTable[(i, 1)]:
+            if len(self.seqs[i]) == np.sum(self.flankTable[i, :]):
+                lTRflanksize = self.flankTable[(i, 0)]
+                TRsize = self.flankTable[(i, 1)]
+                start = lTRflanksize - self.ksize2
+                end = lTRflanksize + TRsize + self.ksize2
+                counts = np.zeros(len(motifs))
+                for j in range(start, end - 2):
+                    kmer = self.seqs[i][j:j + 3]
+                    if kmer in motif_ind:
+                        counts[motif_ind[kmer]] += 1
+
+                counts /= end - start - 2
+                return (
+                 counts, True)
+            if i not in self.badloci:
+                self.badloci.add(i)
+                print('locus', i, 'seq len', len(self.seqs[i]), '!= len sum in flankTable', self.flankTable[i, :])
+            return (None, False)
+        else:
+            return (None, False)
