@@ -17,7 +17,7 @@ ap.add_argument("out", help="output file prefix")
 ap.add_argument("--combine", help="combine multiple IL.kmers when multiple IL.kmers are provided; will not perform regression. Default: False", action='store_true')
 ap.add_argument("--plot", help="plot regression results of each locus. Default: no output", action='store_true')
 ap.add_argument("--threshold", help="rejecting outliers locating threshold*std away from the mean. Default: 10", type=int, nargs='?', const=10, default=10)
-ap.add_argument("--R2threshold", help="plot summary report for loci with R^2 >= threshold. Default: -1", type=float, nargs='?', const=-1, default=-1)
+ap.add_argument("--R2threshold", help="plot summary report for loci with R^2 > threshold. Default: -1", type=float, nargs='?', const=-1, default=-1)
 args = ap.parse_args()
 print(args)
 threshold = args.threshold
