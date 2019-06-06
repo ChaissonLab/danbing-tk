@@ -34,75 +34,78 @@ void rand_str(char *dest, size_t length) {
     *dest = '\0';
 }
 
-// used for extractFasta, no filtering by Rthreshold
-uint16_t countHit(kmerCount_umap& kmers, kmeruIndex_umap& kmerDBi, uint16_t nloci, uint16_t Cthreshold, float Rthreshold = 0.5) {
-    vector<uint16_t> totalHits(nloci+1, 0); // one extra element for baitDB
-    size_t score1 = 0, score2 = 0;
-    int ind1 = -1;
+struct statStruct {
+    int ind1, ind2; // should be initialzed as negative value
+    vector<size_t> scores; // [top_score_pe_read1, top_score_pe_read2, second_score_pe_read1, second_score_pe_read2] should be initialized as zeros
 
-    for (auto &p : kmers) {
+    statStruct() : ind1(-1), ind2(-1), scores(4,0) {}
+};
+
+void _countHit(kmerCount_umap& kmers1, kmerCount_umap& kmers2, kmeruIndex_umap& kmerDBi, size_t nloci, statStruct& out) {
+    // TODO potential bug using uint16_t if kmercount > 65535
+    vector<uint16_t> totalHits1(nloci+1, 0), totalHits2(nloci+1, 0); // one extra element for baitDB
+
+    for (auto &p : kmers1) {
         if (kmerDBi.count(p.first) == 1) {
-            for (uint16_t i : kmerDBi[p.first]) {
-                totalHits[i] += p.second;
-                if (totalHits[i] > score1) {
-                    if (ind1 != i) { // top scoring locus is different from the current one
-                        score2 = score1;
-                        score1 = totalHits[i];
-                        ind1 = i;
-                    } else { // top scoring locus is the same
-                        score1 = totalHits[i];
-                    }
-                }
-                else if (totalHits[i] > score2) { // second scoring locus
-                    score2 = totalHits[i];
-                }
-            }
+            for (uint16_t i : kmerDBi[p.first]) { totalHits1[i] += p.second; }
         }
     }
-    
-    if (score1 >= Cthreshold and float(score1) / (score1+score2) >= Rthreshold) {
-        return ind1;
-    } else {
-        return nloci;
+    for (auto &p : kmers2) {
+        if (kmerDBi.count(p.first) == 1) {
+            for (uint16_t i : kmerDBi[p.first]) { totalHits2[i] += p.second; }
+        }
+    }
+
+    for (size_t i = 0; i <= nloci; i++) {
+        size_t hits = totalHits1[i] + totalHits2[i]; // current score
+        size_t score1 = out.scores[0] + out.scores[1]; // top_score
+        size_t score2 = out.scores[2] + out.scores[3]; // second_score
+        if (hits > score1) {
+            if (out.ind1 != i) { // top scoring locus is different from the current one
+                out.scores[2] = out.scores[0];
+                out.scores[3] = out.scores[1];
+                out.scores[0] = totalHits1[i];
+                out.scores[1] = totalHits2[i];
+                out.ind2 = out.ind1;
+                out.ind1 = i;
+            } else { // top scoring locus is the same
+                out.scores[0] = totalHits1[i];
+                out.scores[1] = totalHits2[i];
+            }
+        }
+        else if (hits > score2) { // second scoring locus
+            out.scores[2] = totalHits1[i];
+            out.scores[3] = totalHits2[i];
+            out.ind2 = i;
+        }
     }
 }
 
-// used for CountWords, record contamination
-uint16_t countHit(kmerCount_umap& kmers, kmeruIndex_umap& kmerDBi, uint16_t nloci, uint16_t Cthreshold, float Rthreshold, vector<uint16_t>& contamination) {
-    vector<uint16_t> totalHits(nloci+1, 0); // one extra element for baitDB
-    size_t score1 = 0, score2 = 0;
-    int ind1 = -1, ind2 = -1;
+// used for extractFasta, no filtering by Rthreshold // TODO: test balanced cth
+size_t countHit(kmerCount_umap& kmers1, kmerCount_umap& kmers2, kmeruIndex_umap& kmerDBi, size_t nloci, uint16_t Cthreshold, float Rthreshold = 0.5) {
+    statStruct stat;
+    _countHit(kmers1, kmers2, kmerDBi, nloci, stat);
 
-    for (auto &p : kmers) {
-        if (kmerDBi.count(p.first) == 1) {
-            for (uint16_t i : kmerDBi[p.first]) {
-                totalHits[i] += p.second;
-                if (totalHits[i] > score1) {
-                    if (ind1 != i) { // top scoring locus is different from the current one
-                        score2 = score1;
-                        score1 = totalHits[i];
-                        ind2 = ind1;
-                        ind1 = i;
-                    } else { // top scoring locus is the same
-                        score1 = totalHits[i];
-                    }
-                }
-                else if (totalHits[i] > score2) { // second scoring locus
-                    score2 = totalHits[i];
-                    ind2 = i;
-                }
-                assert(not(ind1 == ind2 and ind1 == nloci));
-            }	
-        }
+    size_t score1 = stat.scores[0] + stat.scores[1];
+    size_t score2 = stat.scores[2] + stat.scores[3];
+    if (stat.scores[0] >= Cthreshold and stat.scores[1] >= Cthreshold and float(score1) / (score1+score2) >= Rthreshold and stat.ind1 != -1) {
+        return stat.ind1;
     }
+    return nloci;
+}
 
-    // only report bait-trapped kmer counts
-    // kmer counts too close to bait's or other locus' and filtered by Rthreshold are not reported in this implementation
-    if (score1 >= Cthreshold and float(score1) / (score1+score2) >= Rthreshold and ind1 != -1) {
-        if (ind1 != nloci) {
-            return ind1;
+// used for CountWords, record contamination // TODO: test balanced cth
+size_t countHit(kmerCount_umap& kmers1, kmerCount_umap& kmers2, kmeruIndex_umap& kmerDBi, size_t nloci, uint16_t Cthreshold, float Rthreshold, vector<uint16_t>& contamination) {
+    statStruct stat;
+    _countHit(kmers1, kmers2, kmerDBi, nloci, stat);
+
+    size_t score1 = stat.scores[0] + stat.scores[1];
+    size_t score2 = stat.scores[2] + stat.scores[3];
+    if (stat.scores[0] >= Cthreshold and stat.scores[1] >= Cthreshold and stat.ind1 != -1 and stat.ind1 != nloci) {
+        if (float(score1) / (score1+score2) >= Rthreshold) {
+            return stat.ind1;
         } else {
-            contamination[ind2] += score2;
+            contamination[stat.ind1] += score2; // target locus is contaminated by either bait or other similar loci
         }
     }
     return nloci;
@@ -114,8 +117,8 @@ public:
     bool interleaved, isFasta, isFastq;
     kmeruIndex_umap* kmerDBi;
     size_t *readIndex;
-    size_t threadIndex;
-    uint16_t k, nloci, Cthreshold;
+    size_t threadIndex, nloci;
+    uint16_t k, Cthreshold;
     float Rthreshold;
     vector<kmerCount_umap> trResults;
     // extractFasta only
@@ -124,13 +127,13 @@ public:
     vector<uint16_t> contamination;
     bool bait;
 
-    Counts(uint16_t nloci_) : trResults(nloci_), contamination(nloci_, 0), nloci(nloci_) {}
+    Counts(size_t nloci_) : trResults(nloci_), contamination(nloci_, 0), nloci(nloci_) {}
 };
 
 class Threads {
 public:
     vector<Counts> counts;
-    Threads(size_t nproc, uint16_t nloci) : counts(nproc, Counts(nloci)) {}
+    Threads(size_t nproc, size_t nloci) : counts(nproc, Counts(nloci)) {}
 };
 
 size_t readNumber = 0;
@@ -143,12 +146,12 @@ void CountWords(void *data) {
     size_t &readNumber = *((Counts*)data)->readIndex;
     uint16_t k = ((Counts*)data)->k;
     size_t threadIndex = ((Counts*)data)->threadIndex;
-    uint16_t nloci = ((Counts*)data)->nloci;
+    size_t nloci = ((Counts*)data)->nloci;
     uint16_t Cthreshold = ((Counts*)data)->Cthreshold;
     float Rthreshold = ((Counts*)data)->Rthreshold;
     bool bait = ((Counts*)data)->bait;
     vector<uint16_t> &contamination = ((Counts*)data)->contamination;
-    size_t readsPerBatch = 30000;
+    size_t readsPerBatch = 300000;
 
     while (true) {
         //
@@ -180,24 +183,6 @@ void CountWords(void *data) {
                 readNumber += 2;
             }
         }
-        else { // deprecated, no qual info
-            while (readn < readsPerBatch and (*in)) {
-                getline(*in, title);
-                getline(*in, seq);
-                getline(*in, qualtitle);
-                getline(*in, qual);
-
-                uint16_t start = 0;
-                uint16_t len = seq.size();
-                while (qual[start] == '#' and len > 0) { start++; len--; }  // quick quality check based on '#', might change in the future
-                while (qual[start + len - 1] == '#' and len > 0) { len--; }
-                if (len < k) { continue; }
-
-                seqs.push_back(seq.substr(start, len));
-                readn++;
-                readNumber++;
-            }
-        }
         cerr << "Buffered reading " << readn << "\t" << readNumber << endl;
 
         //
@@ -206,61 +191,32 @@ void CountWords(void *data) {
         sem_post(semreader);
 
         time_t time2 = time(nullptr);
-        if (interleaved) {
+        if (interleaved) { // TODO: test balanced cth
             size_t seqi = 0;
             while (seqi < seqs.size()) {
 
                 string& seq = seqs[seqi++];
                 string& seq1 = seqs[seqi++];
 
-                kmerCount_umap kmers; 
-                buildNuKmers(kmers, seq, k);
-                buildNuKmers(kmers, seq1, k);
+                kmerCount_umap kmers1, kmers2; 
+                buildNuKmers(kmers1, seq, k);
+                buildNuKmers(kmers2, seq1, k);
 
-                uint16_t ind;
+                size_t ind;
                 if (bait) {
-                    ind = countHit(kmers, kmerDBi, nloci, Cthreshold, Rthreshold, contamination);
+                    ind = countHit(kmers1, kmers2, kmerDBi, nloci, Cthreshold, Rthreshold, contamination);
                 } else {
-                    ind = countHit(kmers, kmerDBi, nloci, Cthreshold, Rthreshold);
+                    ind = countHit(kmers1, kmers2, kmerDBi, nloci, Cthreshold, Rthreshold);
                 }
 
                 if (ind == nloci) { continue; }
                 else {
                     kmerCount_umap &trKmers = trResults[ind];
-                    //cerr << "thread "  << threadIndex << ": ";
-                    for (auto &p : kmers) {
-                        if (trKmers.count(p.first) == 1) {
-                            trKmers[p.first] += p.second;
-                            //if (trKmers[p.first]) { cerr << trKmers[p.first] << ' '; }
-                        }
+                    for (auto &p : kmers1) {
+                        if (trKmers.count(p.first) == 1) { trKmers[p.first] += p.second; }
                     }
-                    //cerr << endl;
-                }
-            }
-        }
-        else { // thresholdNTR not implemented yet; deprecated
-            for (size_t seqi = 0; seqi < seqs.size(); ++seqi) {
-
-                string& seq = seqs[seqi];
-
-                uint16_t start = 0;
-                uint16_t len = seq.size();
-                while (qual[start] == '#' and len >= k) { start++; len--; }  // quick quality check based on '#', might change in the future
-                while (qual[start + len - 1] == '#' and len >= k) { len--; }
-                if (len < k) { continue; }
-
-
-                kmerCount_umap kmers;
-                buildNuKmers(kmers, seq, k, start, seq.size()-start-len);
-                uint16_t ind = countHit(kmers, kmerDBi, nloci, Cthreshold, Rthreshold);
-
-                if (ind == nloci) { continue; }
-                else {
-                    kmerCount_umap &trKmers = trResults[ind];
-                    for (auto &p : kmers) {
-                        if (trKmers.count(p.first) == 1) {
-                            trKmers[p.first] += p.second;
-                        }
+                    for (auto &p : kmers2) {
+                        if (trKmers.count(p.first) == 1) { trKmers[p.first] += p.second; }
                     }
                 }
             }
@@ -278,7 +234,7 @@ void ExtractFasta(void *data) {
     size_t &readNumber = *((Counts*)data)->readIndex;
     uint16_t k = ((Counts*)data)->k;
     size_t threadIndex = ((Counts*)data)->threadIndex;
-    uint16_t nloci = ((Counts*)data)->nloci;
+    size_t nloci = ((Counts*)data)->nloci;
     uint16_t Cthreshold = ((Counts*)data)->Cthreshold;
     float Rthreshold = ((Counts*)data)->Rthreshold;
     // ExtractFasta only
@@ -348,27 +304,6 @@ void ExtractFasta(void *data) {
                     readNumber += 2;
                 }
             }
-            else { // srt.aln.bam format: name . . . . . . . . seq qual . . . . ? ? RG
-                while (readn < readsPerBatch and (*in)) {
-                    string tmp;
-                    getline(*in, title, '\t');
-                    for (size_t i = 0; i < 8; i++) { getline(*in, tmp, '\t'); } // discard info of length pos etc.
-                    getline(*in, seq, '\t');
-                    getline(*in, qual, '\t');
-                    getline(*in, tmp);
-
-                    uint8_t start = 0;
-                    uint8_t len = seq.size();
-                    while (qual[start] == '#' and len >= k) { start++; len--; }
-                    while (qual[start + len - 1] == '#' and len >= k) { len--; }
-
-                    seqs[readn] = seq;
-                    starts[readn] = start;
-                    lens[readn++] = len;
-
-                    readNumber++;
-                }
-            }
         }
         cerr << "Buffered reading " << readn << "\t" << readNumber << endl;
 
@@ -382,24 +317,42 @@ void ExtractFasta(void *data) {
             size_t seqi = 0;
             vector<size_t> mappedseqi;
 
-            while (seqi < seqs.size()) {
-                uint8_t start, len;
-                kmerCount_umap kmers;
+            if (isFastq) { // TODO: test balanced cth
+                while (seqi < seqs.size()) {
+                    uint8_t start, len;
+                    kmerCount_umap kmers1, kmers2;
 
-                start = starts[seqi];
-                len = lens[seqi];
-                string& seq = seqs[seqi++];
-                buildNuKmers(kmers, seq, k, start, seq.size()-start-len);
+                    start = starts[seqi];
+                    len = lens[seqi];
+                    string& seq = seqs[seqi++];
+                    buildNuKmers(kmers1, seq, k, start, seq.size()-start-len);
 
-                start = starts[seqi];
-                len = lens[seqi];
-                string& seq1 = seqs[seqi++];
-                buildNuKmers(kmers, seq1, k, start, seq1.size()-start-len);
+                    start = starts[seqi];
+                    len = lens[seqi];
+                    string& seq1 = seqs[seqi++];
+                    buildNuKmers(kmers2, seq1, k, start, seq1.size()-start-len);
 
-                uint16_t ind = countHit(kmers, kmerDBi, nloci, Cthreshold);
-                if (ind == nloci) { continue; }
-                else {
-                    mappedseqi.push_back(seqi); // index points to the next read
+                    size_t ind = countHit(kmers1, kmers2, kmerDBi, nloci, Cthreshold);
+                    if (ind == nloci) { continue; }
+                    else {
+                        mappedseqi.push_back(seqi); // index points to the next read
+                    }
+                }
+            }
+            else if (isFasta) { // TODO: test balanced cth
+                while (seqi < seqs.size()) {
+                    kmerCount_umap kmers1, kmers2;
+
+                    string& seq = seqs[seqi++];
+                    string& seq1 = seqs[seqi++];
+                    buildNuKmers(kmers1, seq, k);
+                    buildNuKmers(kmers2, seq1, k);
+
+                    size_t ind = countHit(kmers1, kmers2, kmerDBi, nloci, Cthreshold);
+                    if (ind == nloci) { continue; }
+                    else {
+                        mappedseqi.push_back(seqi); // index points to the next read
+                    }
                 }
             }
 
@@ -408,19 +361,32 @@ void ExtractFasta(void *data) {
                 //-----LOCKING-----
                 sem_wait(semwriter);
 
-                for (size_t ind = 0; ind < mappedseqi.size(); ind++) {
-                    uint8_t start, len;
-                    size_t seqi = mappedseqi[ind];
+                if (isFastq) {
+                    for (size_t ind = 0; ind < mappedseqi.size(); ind++) {
+                        uint8_t start, len;
+                        size_t seqi = mappedseqi[ind];
 
-                    start = starts[--seqi]; // make seqi point to the 2nd paired read
-                    len = lens[seqi];
-                    cout << ">read " << to_string(nMappedReads) << "_0\n";
-                    cout << seqs[seqi].substr(start, len) << '\n';
+                        start = starts[--seqi]; // make seqi point to the 2nd paired read
+                        len = lens[seqi];
+                        cout << ">read " << to_string(nMappedReads) << "_0\n";
+                        cout << seqs[seqi].substr(start, len) << '\n';
 
-                    start = starts[--seqi]; // make seqi point to the 1st paired read
-                    len = lens[seqi];
-                    cout << ">read " << to_string(nMappedReads++) << "_1\n";
-                    cout << seqs[seqi].substr(start, len) << '\n';
+                        start = starts[--seqi]; // make seqi point to the 1st paired read
+                        len = lens[seqi];
+                        cout << ">read " << to_string(nMappedReads++) << "_1\n";
+                        cout << seqs[seqi].substr(start, len) << '\n';
+                    }
+                }
+                else if (isFasta) {
+                    for (size_t ind = 0; ind < mappedseqi.size(); ind++) {
+                        size_t seqi = mappedseqi[ind];
+
+                        cout << ">read " << to_string(nMappedReads) << "_0\n";
+                        cout << seqs[--seqi] << '\n';  // make seqi point to the 2nd paired read
+
+                        cout << ">read " << to_string(nMappedReads++) << "_1\n";
+                        cout << seqs[--seqi] << '\n';  // make seqi point to the 1st paired read
+                    }
                 }
 
                 sem_post(semwriter);
@@ -436,7 +402,7 @@ int main(int argc, char* argv[]) {
 
     if (argc < 4) {
         cerr << endl;
-        cerr << "Usage: nuQueryFasta [-b] [-e] -k <-q | -qs> [-t] <-fq | -fqi> -o -p -cth -rth" << endl;
+        cerr << "Usage: nuQueryFasta [-b] [-e] -k <-q | -qs> [-t] <-fq | -fqi | fai> -o -p -cth -rth" << endl;
         cerr << "  e.g. zcat ERR899717_1.fastq.gz | nuQueryFasta -k 21 -q PanGenomeGenotyping.21.kmers -fq /dev/stdin -o ERR899717_1.fastq.21 8 5" << endl;
         cerr << "  e.g. paste <(zcat HG00514.ERR899717_1.fastq.gz | paste - - - -) <(zcat HG00514.ERR899717_2.fastq.gz | paste - - - -) | tr '\\t' '\\n' | nuQueryFasta -b -k 21 -qs <*.tr.kmers> <*.ntr.kmers> -fqi /dev/stdin -o <*.kmers> -p 32 -cth 150 -rth 0.55" << endl;
 
@@ -454,7 +420,7 @@ int main(int argc, char* argv[]) {
         cerr << "  -fb    Unpaired srt.aln.bam file" << endl;
         cerr << "  -o     Output prefix" << endl;
         cerr << "  -p     Use n threads." << endl;
-        cerr << "  -cth   Discard reads with maxhit below this threshold" << endl;
+        cerr << "  -cth   Discard both pe reads if maxhit of one pe read is below this threshold" << endl;
         cerr << "  -rth   Discard reads with maxhit/(maxhit+secondhit) below this threshold." << endl;
         cerr << "         Range [0.5, 1]. 1: does not allow noise. 0.5: no filtering." << endl;
         cerr << "  -th1   Discard ntr kmers with maxhit below this threshold" << endl << endl;
@@ -569,9 +535,9 @@ int main(int argc, char* argv[]) {
         cerr << *(it_q+1)+".kmers" << endl;
     } 
    
-    cerr << "total number of loci: ";
+    cerr << "total number of loci in " << trFname << ": ";
     time_t time1 = time(nullptr);
-    uint16_t nloci = (multiKmerFile ? countLoci(trFname) : countLoci(*(it_q+1)+".kmers"));
+    size_t nloci = (multiKmerFile ? countLoci(trFname) : countLoci(*(it_q+1)+".kmers"));
     cerr << nloci << endl;
 
 
@@ -696,7 +662,7 @@ int main(int argc, char* argv[]) {
         for (size_t i = 0; i < nproc; i++) {
             Counts &counts = threaddata.counts[i];
             //cerr << "thread: " << i << ' ';
-            for (uint16_t locus = 0; locus < nloci; locus++) {
+            for (size_t locus = 0; locus < nloci; locus++) {
                 for (auto &p : counts.trResults[locus]) {
                     combinedTrResults[locus][p.first] += p.second;
                     if (combinedTrResults[locus][p.first]) {
