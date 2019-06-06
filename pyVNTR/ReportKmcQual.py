@@ -97,11 +97,13 @@ for i in range(nloci):
 
 for i in range(50):
     nsubplot = 0
+    ymax = 0
     if seq0QualDB[i].size:
         x0 = np.argwhere(np.greater_equal(seq0QualDB[i], 0))
         y0 = seq0QualDB[i][x0]
         x1 = np.argwhere(np.less(seq0QualDB[i], 0))
         y1 = seq0QualDB[i][x1]
+        ymax = max(np.max(seq0QualDB[i]), ymax)
         plt.subplot(2,1,1)
         plt.scatter(x0, y0, s=30, edgecolors='blue', facecolors='none', linewidth=0.5, alpha=0.5)
         plt.scatter(x1, y1, s=30, edgecolors='black', facecolors='none', linewidth=0.5, alpha=0.5)
@@ -112,16 +114,20 @@ for i in range(50):
         y0 = seq1QualDB[i][x0]
         x1 = np.argwhere(np.less(seq1QualDB[i], 0))
         y1 = seq1QualDB[i][x1]
+        ymax = max(np.max(seq1QualDB[i]), ymax)
         plt.subplot(2,1,2)
         plt.scatter(x0, y0, s=30, edgecolors='red', facecolors='none', linewidth=0.5, alpha=0.5)
         plt.scatter(x1, y1, s=30, edgecolors='black', facecolors='none', linewidth=0.5, alpha=0.5)
         plt.ylabel("h1 coverage")
+        plt.ylim((-20,100))
         nsubplot += 1
     if nsubplot:
         loss = np.sum(np.equal(seq0QualDB[i], 0)) + np.sum(np.equal(seq1QualDB[i], 0))
         plt.subplot(2,1,1)
+        plt.ylim((-ymax*0.1,ymax*1.1))
         plt.title('.'.join([hap, "locus", str(i), "kmer_sum", str(ILkmerSum[i]), "contamination", str(contamination[i]), "loss", str(loss)]))
         plt.subplot(2,1,2)
+        plt.ylim((-ymax*0.1,ymax*1.1))
         plt.xlabel("seq pos")
         plt.savefig('.'.join([hap, "locus", str(i), "kmerq.png"]), dpi=300)
         print("locus", i, "plotted")
