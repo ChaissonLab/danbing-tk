@@ -22,6 +22,7 @@ sem_t *semcount;
 sem_t *semwriter;
 bool testmode;
 
+typedef unordered_map<size_t, vector<size_t>> msa_umap;
 
 void rand_str(char *dest, size_t length) {
     char charset[] = "0123456789"
@@ -34,67 +35,109 @@ void rand_str(char *dest, size_t length) {
     *dest = '\0';
 }
 
-struct statStruct {
+struct statStruct { // for forward + reverse strand (paired-end)
     int ind1, ind2; // should be initialzed as negative value
     vector<size_t> scores; // [top_score_pe_read1, top_score_pe_read2, second_score_pe_read1, second_score_pe_read2] should be initialized as zeros
-
+ 
     statStruct() : ind1(-1), ind2(-1), scores(4,0) {}
 };
 
-void _countHit(kmerCount_umap& kmers1, kmerCount_umap& kmers2, kmeruIndex_umap& kmerDBi, size_t nloci, statStruct& out) {
-    // TODO potential bug using uint16_t if kmercount > 65535
-    vector<uint16_t> totalHits1(nloci+1, 0), totalHits2(nloci+1, 0); // one extra element for baitDB
+struct _statStruct { // for forward strand only
+    int ind1, ind2;
+    vector<size_t> scores; // [top_score_pe_read1, second_score_pe_read1]
 
-    for (auto &p : kmers1) {
-        if (kmerDBi.count(p.first) == 1) {
-            for (uint16_t i : kmerDBi[p.first]) { totalHits1[i] += p.second; }
+    _statStruct() : ind1(-1), ind2(-1), scores(2,0) {}
+};
+
+void updatetop2(size_t ind, size_t count, _statStruct& out_f) { // for forward strand
+    if (count > out_f.scores[0]) {
+        if (out_f.ind1 != ind) {
+            out_f.ind2 = out_f.ind1;
+            out_f.scores[1] = out_f.scores[0];
+            out_f.ind1 = ind;
+            out_f.scores[0] = count;
+        } else {
+            out_f.scores[0] = count;
         }
     }
-    for (auto &p : kmers2) {
-        if (kmerDBi.count(p.first) == 1) {
-            for (uint16_t i : kmerDBi[p.first]) { totalHits2[i] += p.second; }
-        }
-    }
-
-    for (size_t i = 0; i <= nloci; i++) {
-        size_t hits = totalHits1[i] + totalHits2[i]; // current score
-        size_t score1 = out.scores[0] + out.scores[1]; // top_score
-        size_t score2 = out.scores[2] + out.scores[3]; // second_score
-        if (hits > score1) {
-            if (out.ind1 != i) { // top scoring locus is different from the current one
-                out.scores[2] = out.scores[0];
-                out.scores[3] = out.scores[1];
-                out.scores[0] = totalHits1[i];
-                out.scores[1] = totalHits2[i];
-                out.ind2 = out.ind1;
-                out.ind1 = i;
-            } else { // top scoring locus is the same
-                out.scores[0] = totalHits1[i];
-                out.scores[1] = totalHits2[i];
-            }
-        }
-        else if (hits > score2) { // second scoring locus
-            out.scores[2] = totalHits1[i];
-            out.scores[3] = totalHits2[i];
-            out.ind2 = i;
+    else if (count > out_f.scores[1]) {
+        if (out_f.ind2 != ind) {
+            out_f.ind2 = ind;
+            out_f.scores[1] = count;
+        } else {
+            out_f.scores[1] = count;
         }
     }
 }
 
-// used for extractFasta, no filtering by Rthreshold // TODO: test balanced cth
+void updatetop2(size_t count_f, size_t ind, size_t count, statStruct& out_r) { // for reverse strand
+    if (count_f + count > out_r.scores[0] + out_r.scores[1]) {
+        if (out_r.ind1 != ind) {
+            out_r.ind2 = out_r.ind1;
+            out_r.scores[2] = out_r.scores[0];
+            out_r.scores[3] = out_r.scores[1];
+            out_r.ind1 = ind;
+            out_r.scores[0] = count_f;
+            out_r.scores[1] = count;
+        } else {
+            out_r.scores[1] = count;
+        }
+    }
+    else if (count_f + count > out_r.scores[2] + out_r.scores[3]) {
+        if (out_r.ind2 != ind) {
+            out_r.ind2 = ind;
+            out_r.scores[2] = count_f;
+            out_r.scores[3] = count;
+        } else {
+            out_r.scores[3] = count;
+        }
+    }
+}
+
+void _countHit(kmerCount_umap& kmers1, kmerCount_umap& kmers2, kmeruIndex_umap& kmerDBi, size_t nloci, statStruct& out) {
+    // TODO potential bug using uint16_t if kmercount > 65535
+    vector<uint16_t> totalHits1(nloci+1, 0), totalHits2(nloci+1, 0); // one extra element for baitDB
+    _statStruct out_f; // indices and scores of top and second hits in forward strand
+
+    for (auto &p : kmers1) {
+        if (kmerDBi.count(p.first) == 1) {
+            for (uint16_t i : kmerDBi[p.first]) {
+                totalHits1[i] += p.second;
+                updatetop2(i, totalHits1[i], out_f);
+            }
+        }
+    }
+
+    out.scores[0] = out_f.scores[0];
+    out.scores[2] = out_f.scores[1];
+    out.ind1 = out_f.ind1;
+    out.ind2 = out_f.ind2;
+
+    for (auto &p : kmers2) {
+        if (kmerDBi.count(p.first) == 1) {
+            for (uint16_t i : kmerDBi[p.first]) {
+                totalHits2[i] += p.second;
+                updatetop2(totalHits1[i], i, totalHits2[i], out);
+            }
+        }
+    }
+}
+
+// used when no baitDB // TODO: test balanced cth
 size_t countHit(kmerCount_umap& kmers1, kmerCount_umap& kmers2, kmeruIndex_umap& kmerDBi, size_t nloci, uint16_t Cthreshold, float Rthreshold = 0.5) {
     statStruct stat;
     _countHit(kmers1, kmers2, kmerDBi, nloci, stat);
 
     size_t score1 = stat.scores[0] + stat.scores[1];
     size_t score2 = stat.scores[2] + stat.scores[3];
+
     if (stat.scores[0] >= Cthreshold and stat.scores[1] >= Cthreshold and float(score1) / (score1+score2) >= Rthreshold and stat.ind1 != -1) {
         return stat.ind1;
     }
     return nloci;
 }
 
-// used for CountWords, record contamination // TODO: test balanced cth
+// used when baitDB is provided, record contamination // TODO: test balanced cth
 size_t countHit(kmerCount_umap& kmers1, kmerCount_umap& kmers2, kmeruIndex_umap& kmerDBi, size_t nloci, uint16_t Cthreshold, float Rthreshold, vector<uint16_t>& contamination) {
     statStruct stat;
     _countHit(kmers1, kmers2, kmerDBi, nloci, stat);
@@ -125,7 +168,8 @@ public:
     size_t target;
     size_t *nMappedReads;
     vector<uint16_t> contamination;
-    bool bait;
+    bool bait, simmode;
+    bool *firstoutput;
 
     Counts(size_t nloci_) : trResults(nloci_), contamination(nloci_, 0), nloci(nloci_) {}
 };
@@ -137,6 +181,7 @@ public:
 };
 
 size_t readNumber = 0;
+bool firstoutput = true;
 
 void CountWords(void *data) {
     kmeruIndex_umap& kmerDBi = *((Counts*)data)->kmerDBi;
@@ -150,25 +195,54 @@ void CountWords(void *data) {
     uint16_t Cthreshold = ((Counts*)data)->Cthreshold;
     float Rthreshold = ((Counts*)data)->Rthreshold;
     bool bait = ((Counts*)data)->bait;
+    bool simmode = ((Counts*)data)->simmode;
     vector<uint16_t> &contamination = ((Counts*)data)->contamination;
     size_t readsPerBatch = 300000;
+    // simmode only
+    vector<size_t> loci;
+    vector<msa_umap> msa;
+    bool &firstoutput = *((Counts*)data)->firstoutput;
 
     while (true) {
+
+        string title, title1, seq, seq1, qualtitle, qualtitle1, qual, qual1;
+        size_t readn = 0;
+        vector<string> seqs(readsPerBatch);
+        // for simmode only
+        // loci: loci that are processed in this batch
+        // locusReadInd: map locus to readn. 0th item = number of reads for 0th item in loci; last item = readn; has same length as loci
+        vector<size_t> locusReadInd;
+        size_t startpos;
+        string sep = "_";
+
         //
         // begin thread locking
         //
         sem_wait(semreader);
+
+        if (loci.size() != 0) {
+            for (size_t i = 0; i < msa.size(); i++) {
+                if (firstoutput) {
+                    cout << loci[i];
+                    firstoutput = false;
+                }
+                else { cout << '\n' << loci[i]; }
+                for (auto& e : msa[i]) {
+                    cout << '\t' << e.first;
+                    for (size_t pos : msa[i][e.first]) {
+                        cout << ',' << pos;
+                    }
+                }
+            }
+            loci.clear();
+            msa.clear();
+        }
 
         if ((*in).good() == false) {
             cerr << "Finished at read index " << readNumber << endl;
             sem_post(semreader);
             return;
         }
-        assert((*in).good() == true);
-
-        string title, title1, seq, seq1, qualtitle, qualtitle1, qual, qual1;
-        size_t readn = 0;
-        vector<string> seqs(readsPerBatch);
 
         if (interleaved) {
             while (readn < readsPerBatch and (*in)) {
@@ -177,10 +251,28 @@ void CountWords(void *data) {
                 getline(*in, title1);
                 getline(*in, seq1);
 
+                // get locus and read index
+                if (simmode) {
+                    size_t first = title1.find(sep);
+                    size_t newLocus = stoi(title1.substr(1, first)); // skip the 1st '>' char
+                    if (readn == 0) {
+                        loci.push_back(newLocus);
+                        startpos = stoi(title1.substr(first+1, title1.find(sep, first+1)));
+                    }
+                    else if (newLocus != loci.back()) {
+                        loci.push_back(newLocus);
+                        locusReadInd.push_back(readn);
+                    }
+                }
+
                 seqs[readn++] = seq;
                 seqs[readn++] = seq1;
 
-                readNumber += 2;
+            }
+            readNumber += readn;
+            if (simmode) {
+                locusReadInd.push_back(readn);
+                msa.resize(loci.size());
             }
         }
         cerr << "Buffered reading " << readn << "\t" << readNumber << endl;
@@ -193,7 +285,25 @@ void CountWords(void *data) {
         time_t time2 = time(nullptr);
         if (interleaved) { // TODO: test balanced cth
             size_t seqi = 0;
+            // simmode only
+            size_t i = 0, pos = 0;
+            size_t currentLocus = loci[i];
+
             while (seqi < seqs.size()) {
+
+                if (simmode) {
+                    if (seqi == 0) { 
+                        pos = startpos; }
+                    else {
+                        if (seqi >= locusReadInd[i]) {
+                            i++;
+                            currentLocus = loci[i];
+                            pos = 0;
+                        } else {
+                            pos += 1;
+                        }
+                    }
+                }
 
                 string& seq = seqs[seqi++];
                 string& seq1 = seqs[seqi++];
@@ -218,6 +328,8 @@ void CountWords(void *data) {
                     for (auto &p : kmers2) {
                         if (trKmers.count(p.first) == 1) { trKmers[p.first] += p.second; }
                     }
+
+                    if (simmode and currentLocus != ind) { msa[i][ind].push_back(pos); }
                 }
             }
         }
@@ -423,7 +535,8 @@ int main(int argc, char* argv[]) {
         cerr << "  -cth   Discard both pe reads if maxhit of one pe read is below this threshold" << endl;
         cerr << "  -rth   Discard reads with maxhit/(maxhit+secondhit) below this threshold." << endl;
         cerr << "         Range [0.5, 1]. 1: does not allow noise. 0.5: no filtering." << endl;
-        cerr << "  -th1   Discard ntr kmers with maxhit below this threshold" << endl << endl;
+        cerr << "  -th1   Discard ntr kmers with maxhit below this threshold" << endl;
+        cerr << "  -s     Run in simulation mode to write the origin and destination of mis-assigned reads to STDOUT" << endl << endl;
         exit(0);
     }
    
@@ -443,7 +556,9 @@ int main(int argc, char* argv[]) {
     vector<string>::iterator it_cth = find(args.begin(), args.begin()+argc, "-cth") + 1;
     vector<string>::iterator it_rth = find(args.begin(), args.begin()+argc, "-rth") + 1;
     vector<string>::iterator it_th1 = find(args.begin(), args.begin()+argc, "-th1");
+    vector<string>::iterator it_s = find(args.begin(), args.begin()+argc, "-s");
     vector<string>::iterator it_test = find(args.begin(), args.begin()+argc, "-test");
+
     assert(it_k != args.end()+1);
     assert(it_p != args.end()+1);
     assert(it_cth != args.end()+1);
@@ -462,7 +577,7 @@ int main(int argc, char* argv[]) {
         NTRthreshold = stoi(*(it_th1+1));
     }
     assert(Rthreshold <= 1 and Rthreshold >= 0.5);
-
+    bool simmode = (it_s != args.end() ? true : false);
 
     // check IO
     bool interleaved, multiKmerFile, extractFasta, bait, isFasta, isFastq, trim;
@@ -523,6 +638,7 @@ int main(int argc, char* argv[]) {
     cerr << "k: " << k << endl;
     cerr << "Cthreshold: " << Cthreshold << endl;
     cerr << "Rthreshold: " << Rthreshold << endl;
+    cerr << "sim mode: " << simmode << endl;
     cerr << "interleaved: " << interleaved << endl;
     cerr << "isFasta: " << isFasta << endl;
     cerr << "isFastq: " << isFastq << endl;
@@ -587,6 +703,8 @@ int main(int argc, char* argv[]) {
         counts.isFasta = isFasta;
         counts.isFastq = isFastq;
         counts.bait = bait;
+        counts.simmode = simmode;
+        counts.firstoutput = &firstoutput;
 
         counts.k = k;
         counts.Cthreshold = Cthreshold;
