@@ -361,7 +361,7 @@ def RejectOutlier(x, y, rule):
         return (x0, y0, x.size - x0.size)
 
 
-def PlotRegression(x, y, xlabel='data_X', ylabel='data_Y', title='', fname='', outlier='strict_positive', pred=False, plot=True, fit_intercept=False):
+def PlotRegression(x, y, xlabel='data_X', ylabel='data_Y', title='', fname='', outlier='invalid', pred=False, plot=True, fit_intercept=False):
     if title == '':
         title = xlabel + '.' + ylabel
     if not fname:
@@ -392,7 +392,7 @@ def PlotRegression(x, y, xlabel='data_X', ylabel='data_Y', title='', fname='', o
     if pred:
         y1_proj = np.sum(y1) / a
     if plot:
-        xp = np.arange(0, np.max(x1), 2).reshape(-1, 1)
+        xp = np.linspace(0, np.max(x1), 2).reshape(-1, 1)
         plt.plot(x1, y1, '.', color='C0')
         plt.plot(xp, reg.predict(xp), '-', color='C0')
         plt.xlabel(xlabel)
