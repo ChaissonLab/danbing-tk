@@ -158,34 +158,39 @@ size_t countHit(kmerCount_umap& kmers1, kmerCount_umap& kmers2, kmeruIndex_umap&
     return nloci;
 }
 
+// simmode = 1; simmulated reads from TR only
 template <typename ValueType>
-void parseReadName(int simmode, string& title, size_t readn, size_t& startpos, vector<ValueType>& loci, vector<size_t>& locusReadInd) {
+void parseReadName(string& title, size_t readn, size_t& startpos, vector<ValueType>& loci, vector<size_t>& locusReadInd) {
     string sep = "_";
-    if (simmode == 1) { // simmulated reads from TR only
-        size_t first = title.find(sep);
-        size_t newLocus = stoi(title.substr(1, first)); // skip the 1st '>' char
-        if (readn == 0) {
-            loci.push_back(newLocus);
-            startpos = stoi(title.substr(first+1, title.find(sep, first+1)));
-        }
-        else if (newLocus != loci.back()) {
-            loci.push_back(newLocus);
-            locusReadInd.push_back(readn);
-        }
+    size_t first = title.find(sep);
+    size_t newLocus = stoul(title.substr(1, first)); // skip the 1st '>' char
+    if (readn == 0) {
+        loci.push_back(newLocus);
+        startpos = stoul(title.substr(first+1, title.find(sep, first+1)));
     }
-    else if (simmode == 2) {
-        size_t first = title.find(sep);
-        size_t second = title.find(sep, first+1);
-        float newLocus = stof(title.substr(first+1, second));
-        if (readn == 0) {
-            //size_t hap = stoi(title.substr(1, first)); // skip the 1st '>' char
-            loci.push_back(newLocus);
-            startpos = stoi(title.substr(second+1, title.find(sep, second+1)));
-        }
-        else if (newLocus != loci.back()) {
-            loci.push_back(newLocus);
-            locusReadInd.push_back(readn);
-        }
+    else if (newLocus != loci.back()) {
+        loci.push_back(newLocus);
+        locusReadInd.push_back(readn);
+    }
+    else { assert(false); }
+}
+
+// simmode = 2; simmulated reads from whole genome
+template <typename ValueType>
+void parseReadName(string& title, size_t readn, vector<size_t>& poss, vector<ValueType>& loci, vector<size_t>& locusReadInd) {
+    string sep = "_";
+    size_t first = title.find(sep);
+    size_t second = title.find(sep, first+1);
+    float newLocus = stof(title.substr(first+1, second));
+    if (readn == 0) {
+        //size_t hap = stoi(title.substr(1, first)); // skip the 1st '>' char
+        loci.push_back(newLocus);
+        poss.push_back(stoul(title.substr(second+1, title.find(sep, second+1))));
+    }
+    else if (newLocus != loci.back()) {
+        loci.push_back(newLocus);
+        poss.push_back(stoul(title.substr(second+1, title.find(sep, second+1))));
+        locusReadInd.push_back(readn);
     }
     else { assert(false); }
 }
@@ -236,6 +241,7 @@ void CountWords(void *data) {
     // simmode only
     // loci: loci that are processed in this batch
     vector<ValueType> loci;
+    vector<size_t> poss;
     vector<msa_umap> msa;
     bool &firstoutput = *((Counts*)data)->firstoutput;
 
@@ -285,7 +291,8 @@ void CountWords(void *data) {
                 getline(*in, title1);
                 getline(*in, seq1);
 
-                if (simmode) { parseReadName(simmode, title, readn, startpos, loci, locusReadInd); }
+                if (simmode == 1) { parseReadName(title, readn, startpos, loci, locusReadInd); }
+                else if (simmode == 2) { parseReadName(title, readn, poss, loci, locusReadInd); }
 
                 seqs[readn++] = seq;
                 seqs[readn++] = seq1;
@@ -308,12 +315,13 @@ void CountWords(void *data) {
         if (interleaved) {
             size_t seqi = 0;
             // simmode only
-            size_t i = 0, pos = 0;
+            size_t i = 0;
+            size_t pos = poss[i];
             ValueType currentLocus = loci[i];
 
             while (seqi < seqs.size()) {
 
-                if (simmode) {
+                if (simmode == 1) {
                     if (seqi == 0) { 
                         pos = startpos; }
                     else {
@@ -324,6 +332,15 @@ void CountWords(void *data) {
                         } else {
                             pos++;
                         }
+                    }
+                }
+                else if (simmode == 2) {
+                    if (seqi >= locusReadInd[i]) {
+                        i++;
+                        currentLocus = loci[i];
+                        pos = poss[i];
+                    } else {
+                        pos++;
                     }
                 }
 
