@@ -179,7 +179,7 @@ void parseReadName(int simmode, string& title, size_t readn, size_t& startpos, v
         float newLocus = stof(title.substr(first+1, second));
         if (readn == 0) {
             //size_t hap = stoi(title.substr(1, first)); // skip the 1st '>' char
-                          loci.push_back(newLocus);
+            loci.push_back(newLocus);
             startpos = stoi(title.substr(second+1, title.find(sep, second+1)));
         }
         else if (newLocus != loci.back()) {
