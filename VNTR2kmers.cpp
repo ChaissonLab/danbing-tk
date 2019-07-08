@@ -40,11 +40,11 @@ void getflanks(flankStruct& out, vector<vector<size_t>>& sizeTable, size_t i, si
         rNTRflanksize = fs - NTRsize;
     }
 
-    out.tr_l = (lTRflanksize >= k/2 ? lTRflanksize - k/2 : 0);
-    out.tr_r = (rTRflanksize >= k/2 ? rTRflanksize - k/2 : 0);
-    out.lntr_l = (lNTRflanksize+1 >= k ? lNTRflanksize - k + 1 : 0);
-    out.lntr_r = (rlen+1 >= lTRflanksize + (k+1)/2 ? rlen - lTRflanksize - (k+1)/2 + 1 : 0);
-    out.rntr_l = (rlen+1 >= rTRflanksize + (k+1)/2 ? rlen - rTRflanksize - (k+1)/2 + 1 : 0);
+    out.tr_l = lTRflanksize;
+    out.tr_r = rTRflanksize;
+    out.lntr_l = lNTRflanksize;
+    out.lntr_r = rlen - lTRflanksize;
+    out.rntr_l = rlen - rTRflanksize;
     out.rntr_r = rNTRflanksize;
 }
 
@@ -150,7 +150,7 @@ int main(int argc, const char * argv[]) {
     if (it_fs != args.end()) {
         fs = stoi(*(it_fs+1));
     }
-    assert(fs > NTRsize);
+    assert(fs >= NTRsize);
 
     size_t threshold = 0;
     if (it_th != args.end()) {
