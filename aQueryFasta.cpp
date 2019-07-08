@@ -172,7 +172,6 @@ void parseReadName(string& title, size_t readn, size_t& startpos, vector<ValueTy
         loci.push_back(newLocus);
         locusReadInd.push_back(readn);
     }
-    else { assert(false); }
 }
 
 // simmode = 2; simmulated reads from whole genome
@@ -192,7 +191,6 @@ void parseReadName(string& title, size_t readn, vector<size_t>& poss, vector<Val
         poss.push_back(stoul(title.substr(second+1, title.find(sep, second+1))));
         locusReadInd.push_back(readn);
     }
-    else { assert(false); }
 }
 
 class Counts {
