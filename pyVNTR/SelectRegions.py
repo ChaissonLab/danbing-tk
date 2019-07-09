@@ -4,20 +4,16 @@ import sys
 
 bedFile=open(sys.argv[1])
 #asmFile=open(sys.argv[2])
+asm = pysam.FastaFile(sys.argv[2])
 outFile=open(sys.argv[3],'w')
 
 
-asm = pysam.FastaFile(sys.argv[2])
 for line in bedFile:
     vals = line.split()
     outFile.write(">"+"/".join(vals[3:])+"\n")
-    #if vals[0] == "NA":
-    #    continue
-    if vals[0] == "NA" or len(vals) < 6:
-        if len(vals) < 6:
-            print(vals)
+    if vals[0] == "NA": # NF does not have to be 6
         continue
-    elif int(vals[1]) > int(vals[2]):
+    elif int(vals[1]) > int(vals[2]) or int(vals[1]) < 0 or int(vals[2]) < 0:
         print("valError:\t", vals)
         continue
     else:
