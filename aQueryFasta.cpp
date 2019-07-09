@@ -226,6 +226,8 @@ void CountWords(void *data) {
     vector<kmer_aCount_umap>& trResults = *((Counts*)data)->trResults;
     ifstream *in = ((Counts*)data)->in;
     bool interleaved = ((Counts*)data)->interleaved;
+    bool isFasta = ((Counts*)data)->isFasta;
+    bool isFastq = ((Counts*)data)->isFastq;
     size_t &readNumber = *((Counts*)data)->readIndex;
     uint16_t k = ((Counts*)data)->k;
     size_t threadIndex = ((Counts*)data)->threadIndex;
@@ -284,18 +286,30 @@ void CountWords(void *data) {
 
         if (interleaved) {
             while (readn < readsPerBatch and in->peek() != EOF) {
-                getline(*in, title);
-                getline(*in, seq);
-                getline(*in, title1);
-                getline(*in, seq1);
+                if (isFasta) {
+                    getline(*in, title);
+                    getline(*in, seq);
+                    getline(*in, title1);
+                    getline(*in, seq1);
+                }
+                else if (isFastq) { // no quality check
+                    getline(*in, title);
+                    getline(*in, seq);
+                    getline(*in, qualtitle);
+                    getline(*in, qual);
+                    getline(*in, title1);
+                    getline(*in, seq1);
+                    getline(*in, qualtitle1);
+                    getline(*in, qual1);
+                }
 
                 if (simmode == 1) { parseReadName(title, readn, startpos, loci, locusReadInd); }
                 else if (simmode == 2) { parseReadName(title, readn, poss, loci, locusReadInd); }
 
                 seqs[readn++] = seq;
                 seqs[readn++] = seq1;
-
             } 
+
             readNumber += readn;
             if (simmode) {
                 locusReadInd.push_back(readn);
@@ -313,9 +327,13 @@ void CountWords(void *data) {
         if (interleaved) {
             size_t seqi = 0;
             // simmode only
-            size_t i = 0;
-            size_t pos = poss[i];
-            ValueType currentLocus = loci[i];
+            size_t i, pos;
+            ValueType currentLocus;
+            if (simmode) {
+                i = 0;
+                pos = poss[i];
+                currentLocus = loci[i];
+            }
 
             while (seqi < seqs.size()) {
 
@@ -366,7 +384,7 @@ void CountWords(void *data) {
                         if (trKmers.count(p.first) == 1) { trKmers[p.first] += p.second; }
                     }
 
-                    if (simmode and currentLocus != ind) { msa[i][ind].push_back(pos); }
+                    if (simmode) { if (currentLocus != ind) { msa[i][ind].push_back(pos); } }
                 }
             }
         }
