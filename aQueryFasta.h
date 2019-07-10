@@ -226,6 +226,31 @@ void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t
     }
 }
 
+void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0) {
+    const size_t rlen = read.length();
+    const size_t mask = (1ULL << 2*(k-1)) - 1;
+    size_t beg, nbeg, canonicalkmer, kmer, rckmer;
+
+    beg = getNextKmer(kmer, leftflank, read, k);
+    if (beg == rlen){ return; }
+    rckmer = getNuRC(kmer, k);
+
+    for (size_t i = beg; i < rlen - k - rightflank + 1; i++){
+        canonicalkmer = (kmer > rckmer ? rckmer : kmer);
+        kmers.push_back(canonicalkmer);
+
+        if (std::find(alphabet, alphabet+4, read[i + k]) == alphabet+4){
+            nbeg = getNextKmer(kmer, i+k+1, read, k);
+            if (nbeg == rlen) { return; }
+            rckmer = getNuRC(kmer, k);
+            i = nbeg - 1;
+        } else {
+            kmer = ( (kmer & mask) << 2 ) + baseNumConversion[read[i + k]];
+            rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] * 1ULL) << (2*(k-1)));
+        }
+    }
+}
+
 size_t countLoci(string fname) {
     ifstream inf(fname);
     assert(inf);

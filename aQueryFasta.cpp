@@ -24,6 +24,8 @@ sem_t *semwriter;
 bool testmode;
 size_t readNumber = 0;
 bool firstoutput = true;
+uint64_t NAN64 = 0xFFFFFFFFFFFFFFFF;
+uint32_t NAN32 = 0xFFFFFFFF;
 
 typedef unordered_map<size_t, vector<size_t>> msa_umap;
 
@@ -38,125 +40,183 @@ void rand_str(char *dest, size_t length) {
     *dest = '\0';
 }
 
+typedef std::pair<uint8_t, uint8_t> PE_KMC; // pair-end kmer count
+
 struct statStruct { // for forward + reverse strand (paired-end)
-    uint32_t ind1 = 0xFFFFFFFF;
-    uint32_t ind2 = 0xFFFFFFFF;
-    vector<size_t> scores; // [top_score_pe_read1, top_score_pe_read2, second_score_pe_read1, second_score_pe_read2] should be initialized as zeros
- 
-    statStruct() : scores(4,0) {}
+    uint32_t ind1 = NAN32;
+    uint32_t ind2 = NAN32;
+    vector<PE_KMC> scores; // [(top_score_pe_read1, top_score_pe_read2), (second_score_pe_read1, second_score_pe_read2)] initialized as zeros
+
+    statStruct() : scores(2) {}
 };
 
-struct _statStruct { // for forward strand only
-    uint32_t ind1 = 0xFFFFFFFF;
-    uint32_t ind2 = 0xFFFFFFFF;
-    vector<size_t> scores; // [top_score_pe_read1, second_score_pe_read1]
-
-    _statStruct() : scores(2,0) {}
-};
-
-void updatetop2(size_t ind, size_t count, _statStruct& out_f) { // for forward strand
-    if (count > out_f.scores[0]) {
-        if (out_f.ind1 != ind) {
-            out_f.ind2 = out_f.ind1;
-            out_f.scores[1] = out_f.scores[0];
-            out_f.ind1 = ind;
-            out_f.scores[0] = count;
-        } else {
-            out_f.scores[0] = count;
+void updatetop2(size_t count_f, size_t ind, size_t count_r, statStruct& out) { // for sorted_query algo
+    if (count_f + count_r > out.scores[0].first + out.scores[0].second) {
+        if (out.ind1 != ind) {
+            out.ind2 = out.ind1;
+            out.scores[1] = out.scores[0];
+            out.ind1 = ind;
         }
+        out.scores[0] = std::make_pair(count_f, count_r);
     }
-    else if (count > out_f.scores[1]) {
-        if (out_f.ind2 != ind) {
-            out_f.ind2 = ind;
-            out_f.scores[1] = count;
-        } else {
-            out_f.scores[1] = count;
+    else if (count_f + count_r > out.scores[1].first + out.scores[1].second) {
+        if (out.ind2 != ind) {
+            out.ind2 = ind;
         }
+        out.scores[1] = std::make_pair(count_f, count_r);
     }
 }
 
-void updatetop2(size_t count_f, size_t ind, size_t count, statStruct& out_r) { // for reverse strand
-    if (count_f + count > out_r.scores[0] + out_r.scores[1]) {
-        if (out_r.ind1 != ind) {
-            out_r.ind2 = out_r.ind1;
-            out_r.scores[2] = out_r.scores[0];
-            out_r.scores[3] = out_r.scores[1];
-            out_r.ind1 = ind;
-            out_r.scores[0] = count_f;
-            out_r.scores[1] = count;
-        } else {
-            out_r.scores[1] = count;
-        }
+template <typename T>
+void mergeVec(vector<T>& dest, vector<T>& src) {
+    dest.insert(dest.end(),
+                std::make_move_iterator(src.begin()),
+                std::make_move_iterator(src.end()));
+}
+
+vector<size_t> getSortedIndex(vector<size_t>& data) {
+    vector<size_t> indices(data.size());
+    std::iota(data.begin(), data.end(), 0);
+    std::sort(indices.begin(), indices.end(), [&data](size_t ind1, size_t ind2) { return data[ind1] < data[ind2]; });
+    return std::move(indices);
+}
+
+void countDupRemove(vector<size_t>& kmers, vector<size_t>& kmers_other, vector<PE_KMC>& dup) {
+    vector<bool> orient(kmers.size(), 0);
+    orient.resize(kmers.size() + kmers_other.size(), 1);
+    mergeVec(kmers, kmers_other);
+
+    vector<size_t> indorder = getSortedIndex(kmers);
+    // sort kmers and orient
+    vector<size_t> old_kmers = kmers;
+    vector<bool> old_orient = orient;
+    for (size_t i = 0; i < kmers.size(); ++i) {
+        kmers[i] = old_kmers[indorder[i]];
+        orient[i] = old_orient[indorder[i]];
     }
-    else if (count_f + count > out_r.scores[2] + out_r.scores[3]) {
-        if (out_r.ind2 != ind) {
-            out_r.ind2 = ind;
-            out_r.scores[2] = count_f;
-            out_r.scores[3] = count;
-        } else {
-            out_r.scores[3] = count;
+
+    // not need to find end pos; all numeric kmers are valid
+    // size_t endpos = *(std::lower_bound(kmers.begin(), kmers.end(), NAN64)); // index of the first occurrence of invalid kmer
+
+    // iterate through kmers and count the occurrence in each read
+    size_t last = kmers[0], it = 1;
+    PE_KMC pe_kmc(0,0);
+    (orient[0] ? ++pe_kmc.second : ++pe_kmc.first);
+    for (size_t i = 1; i < kmers.size(); ++i) {
+        if (last != kmers[i]) { 
+            dup.push_back(pe_kmc);
+            pe_kmc = std::make_pair(0,0);
+            kmers[it] = kmers[i];
+            last = kmers[i];
+            ++it;
         }
+        (orient[i] ? ++pe_kmc.second : ++pe_kmc.first); 
+    }
+    dup.push_back(pe_kmc);
+    kmers.resize(it);
+    assert(dup.size() == kmers.size()); // TODO
+}
+
+void countRemain(vector<PE_KMC>& dup, vector<size_t>& remain) {
+    remain.resize(dup.size(), 0);
+    size_t dupsum = std::accumulate(dup.begin(), dup.end(), 0, 
+                                    [](size_t partialSum, PE_KMC pe_kmc) { return partialSum + pe_kmc.first + pe_kmc.second; });
+    remain[0] = dupsum - dup[0].first - dup[0].second;
+    for (size_t i = 1; i < remain.size()-1; ++i) {
+        remain[i] = remain[i-1] - dup[i].first - dup[i].second;
     }
 }
 
-void _countHit(kmerCount_umap& kmers1, kmerCount_umap& kmers2, kmeruIndex_umap& kmerDBi, size_t nloci, statStruct& out) {
+// TODO might not need to input nmappedloci , not used later
+void fillstats(vector<size_t>& kmers, vector<size_t>& kmers_other, kmeruIndex_umap& kmerDBi, vector<PE_KMC>& dup, vector<size_t>& remain) {
+    countDupRemove(kmers, kmers_other, dup); // count the occurrence of kmers in each read
+
+    // get # of mapped loci for each kmer
+    size_t nkmers = kmers.size();
+    vector<size_t> nmappedloci(nkmers, 0);
+    for (size_t i = 0; i < nkmers; ++i) {
+        if (kmerDBi.count(kmers[i])) {
+            nmappedloci[i] = kmerDBi[kmers[i]].size();
+        }
+        else {
+            nmappedloci[i] = NAN64;
+        }
+    }
+
+    // sort kemrs dup w.r.t. nmappedloci; remove entries w/o mapped locus
+    vector<size_t> indorder = getSortedIndex(nmappedloci);
+    vector<size_t> old_kmers = kmers, old_nmappedloci = nmappedloci;
+    vector<PE_KMC> old_dup = dup;
+    for (size_t i = 0; i < nkmers; ++i) {
+        if (old_nmappedloci[indorder[i]] == NAN64) {
+            kmers.resize(i);
+            dup.resize(i);
+            nmappedloci.resize(i);
+            break;
+        }
+        kmers[i] = old_kmers[indorder[i]];
+        dup[i] = old_dup[indorder[i]];
+        nmappedloci[i] = old_nmappedloci[indorder[i]];
+    }
+
+    countRemain(dup, remain);
+}
+
+// XXX optimization
+void _countHit(vector<size_t>& kmers1, vector<size_t>& kmers2, kmeruIndex_umap& kmerDBi, vector<PE_KMC>& dup, size_t nloci, statStruct& out) {
+    vector<size_t> remain;
+    fillstats(kmers1, kmers2, kmerDBi, dup, remain);
+
     vector<uint32_t> totalHits1(nloci+1, 0), totalHits2(nloci+1, 0); // one extra element for baitDB
-    _statStruct out_f; // indices and scores of top and second hits in forward strand
+    //_statStruct out_f; // indices and scores of top and second hits in forward strand
 
-    for (auto &p : kmers1) {
-        if (kmerDBi.count(p.first) == 1) {
-            for (uint32_t i : kmerDBi[p.first]) {
-                totalHits1[i] += p.second;
-                updatetop2(i, totalHits1[i], out_f);
-            }
+    // for each kmer, increment counts of the mapped loci for each read
+    // use "remain" to achieve early stopping
+    for (size_t i = 0; i < kmers1.size(); ++i) {
+        for (auto locus : kmerDBi[kmers1[i]]) {
+            totalHits1[locus] += dup[i].first;
+            totalHits2[locus] += dup[i].second;
+            updatetop2(totalHits1[locus], locus, totalHits2[locus], out);
         }
-    }
-
-    out.scores[0] = out_f.scores[0];
-    out.scores[2] = out_f.scores[1];
-    out.ind1 = out_f.ind1;
-    out.ind2 = out_f.ind2;
-
-    for (auto &p : kmers2) {
-        if (kmerDBi.count(p.first) == 1) {
-            for (uint32_t i : kmerDBi[p.first]) {
-                totalHits2[i] += p.second;
-                updatetop2(totalHits1[i], i, totalHits2[i], out);
-            }
+        if (out.scores[0].first + out.scores[0].second - out.scores[1].first - out.scores[1].second >= remain[i]) { // will stop if tie
+            break;
         }
     }
 }
 
-// used when no baitDB
-size_t countHit(kmerCount_umap& kmers1, kmerCount_umap& kmers2, kmeruIndex_umap& kmerDBi, size_t nloci, uint16_t Cthreshold, float Rthreshold = 0.5) {
+// used when no baitDB; XXX optimization
+size_t countHit(vector<size_t>& kmers1, vector<size_t>& kmers2, kmeruIndex_umap& kmerDBi, vector<PE_KMC>& dup, 
+                size_t nloci, uint16_t Cthreshold, float Rthreshold = 0.5) {
     statStruct stat;
-    _countHit(kmers1, kmers2, kmerDBi, nloci, stat);
+    _countHit(kmers1, kmers2, kmerDBi, dup, nloci, stat);
 
-    size_t score1 = stat.scores[0] + stat.scores[1];
-    size_t score2 = stat.scores[2] + stat.scores[3];
+    size_t score1 = stat.scores[0].first + stat.scores[0].second;
+    size_t score2 = stat.scores[1].first + stat.scores[1].second;
 
-    if (stat.scores[0] >= Cthreshold and stat.scores[1] >= Cthreshold and float(score1) / (score1+score2) >= Rthreshold and stat.ind1 != 0xFFFFFFFF) {
+    if (stat.scores[0].first >= Cthreshold and stat.scores[1].second >= Cthreshold and 
+        float(score1) / (score1+score2) >= Rthreshold and stat.ind1 != NAN32) {
+
         return stat.ind1;
     }
     return nloci;
 }
 
-// used when baitDB is provided, record contamination
-size_t countHit(kmerCount_umap& kmers1, kmerCount_umap& kmers2, kmeruIndex_umap& kmerDBi, size_t nloci, uint16_t Cthreshold, float Rthreshold, vector<uint16_t>& contamination) {
-    statStruct stat;
-    _countHit(kmers1, kmers2, kmerDBi, nloci, stat);
-
-    size_t score1 = stat.scores[0] + stat.scores[1];
-    size_t score2 = stat.scores[2] + stat.scores[3];
-    if (stat.scores[0] >= Cthreshold and stat.scores[1] >= Cthreshold and stat.ind1 != 0xFFFFFFFF and stat.ind1 != nloci) {
-        if (float(score1) / (score1+score2) >= Rthreshold) {
-            return stat.ind1;
-        } else {
-            contamination[stat.ind1] += score2; // target locus is contaminated by either bait or other similar loci
-        }
-    }
-    return nloci;
-}
+// used when baitDB is provided, record contamination // TODO deprecated
+//size_t countHit(kmerCount_umap& kmers1, kmerCount_umap& kmers2, kmeruIndex_umap& kmerDBi, size_t nloci, uint16_t Cthreshold, float Rthreshold, vector<uint16_t>& contamination) {
+//    statStruct stat;
+//    _countHit(kmers1, kmers2, kmerDBi, nloci, stat);
+//
+//    size_t score1 = stat.scores[0] + stat.scores[1];
+//    size_t score2 = stat.scores[2] + stat.scores[3];
+//    if (stat.scores[0] >= Cthreshold and stat.scores[1] >= Cthreshold and stat.ind1 != NAN32 and stat.ind1 != nloci) {
+//        if (float(score1) / (score1+score2) >= Rthreshold) {
+//            return stat.ind1;
+//        } else {
+//            contamination[stat.ind1] += score2; // target locus is contaminated by either bait or other similar loci
+//        }
+//    }
+//    return nloci;
+//}
 
 // simmode = 1; simmulated reads from TR only
 template <typename ValueType>
@@ -261,7 +321,7 @@ void CountWords(void *data) {
         sem_wait(semreader);
 
         if (simmode and loci.size() != 0) {
-            for (size_t i = 0; i < msa.size(); i++) {
+            for (size_t i = 0; i < msa.size(); ++i) {
                 if (firstoutput) {
                     cout << loci[i];
                     firstoutput = false;
@@ -342,48 +402,44 @@ void CountWords(void *data) {
                         pos = startpos; }
                     else {
                         if (seqi >= locusReadInd[i]) {
-                            i++;
+                            ++i;
                             currentLocus = loci[i];
                             pos = 0;
                         } else {
-                            pos++;
+                            ++pos;
                         }
                     }
                 }
                 else if (simmode == 2) {
                     if (seqi >= locusReadInd[i]) {
-                        i++;
+                        ++i;
                         currentLocus = loci[i];
                         pos = poss[i];
                     } else {
-                        pos++;
+                        ++pos;
                     }
                 }
 
                 string& seq = seqs[seqi++];
                 string& seq1 = seqs[seqi++];
 
-                kmerCount_umap kmers1, kmers2; 
-                buildNuKmers(kmers1, seq, k);
-                buildNuKmers(kmers2, seq1, k);
+                vector<size_t> kmers1, kmers2;
+                vector<PE_KMC> dup;
+                read2kmers(kmers1, seq, k); // stores numeric kmers
+                read2kmers(kmers2, seq1, k);
 
                 size_t ind;
-                if (bait) {
-                    ind = countHit(kmers1, kmers2, kmerDBi, nloci, Cthreshold, Rthreshold, contamination);
-                } else {
-                    ind = countHit(kmers1, kmers2, kmerDBi, nloci, Cthreshold, Rthreshold);
-                }
+                ind = countHit(kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold, Rthreshold);
+                // if (bait) { ind = countHit(kmers1, kmers2, kmerDBi, nloci, Cthreshold, Rthreshold, contamination); } // TODO deprecated
 
                 if (ind == nloci) { continue; }
                 else {
                     kmer_aCount_umap &trKmers = trResults[ind];
-                    for (auto &p : kmers1) {
-                        if (trKmers.count(p.first) == 1) { trKmers[p.first] += p.second; }
+                    for (size_t i = 0; i < kmers1.size(); ++i) {
+                        if (trKmers.count(kmers1[i])) {
+                            trKmers[kmers1[i]] += (dup[i].first + dup[i].second);
+                        }
                     }
-                    for (auto &p : kmers2) {
-                        if (trKmers.count(p.first) == 1) { trKmers[p.first] += p.second; }
-                    }
-
                     if (simmode) { if (currentLocus != ind) { msa[i][ind].push_back(pos); } }
                 }
             }
@@ -392,7 +448,7 @@ void CountWords(void *data) {
     }
 }
 
-void ExtractFasta(void *data) {
+void ExtractFasta(void *data) { // TODO countHit deprecated
     kmeruIndex_umap& kmerDBi = *((Counts*)data)->kmerDBi;
     ifstream *in = ((Counts*)data)->in;
     bool interleaved = ((Counts*)data)->interleaved;
@@ -454,10 +510,10 @@ void ExtractFasta(void *data) {
                     // quick quality check based on '#', might change in the future
                     uint8_t start = 0, start1 = 0;
                     uint8_t len = seq.size(), len1 = seq1.size();
-                    while (qual[start] == '#' and len >= k) { start++; len--; }
-                    while (qual[start + len - 1] == '#' and len >= k) { len--; }
-                    while (qual1[start1] == '#' and len1 >= k) { start1++; len1--; }
-                    while (qual1[start1 + len1 - 1] == '#' and len1 >= k) { len1--; }
+                    while (qual[start] == '#' and len >= k) { ++start; --len; }
+                    while (qual[start + len - 1] == '#' and len >= k) { --len; }
+                    while (qual1[start1] == '#' and len1 >= k) { ++start1; --len1; }
+                    while (qual1[start1 + len1 - 1] == '#' and len1 >= k) { --len1; }
                     if (len + len1 < Cthreshold) { continue; }
 
                     seqs[readn] = seq;
@@ -486,19 +542,20 @@ void ExtractFasta(void *data) {
             if (isFastq) { // TODO: test balanced cth
                 while (seqi < seqs.size()) {
                     uint8_t start, len;
-                    kmerCount_umap kmers1, kmers2;
+                    vector<size_t> kmers1, kmers2;
+                    vector<PE_KMC> dup;
 
                     start = starts[seqi];
                     len = lens[seqi];
                     string& seq = seqs[seqi++];
-                    buildNuKmers(kmers1, seq, k, start, seq.size()-start-len);
+                    read2kmers(kmers1, seq, k, start, seq.size()-start-len); // stores numeric kmers
 
                     start = starts[seqi];
                     len = lens[seqi];
                     string& seq1 = seqs[seqi++];
-                    buildNuKmers(kmers2, seq1, k, start, seq1.size()-start-len);
+                    read2kmers(kmers2, seq1, k, start, seq1.size()-start-len);
 
-                    size_t ind = countHit(kmers1, kmers2, kmerDBi, nloci, Cthreshold);
+                    size_t ind = countHit(kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold);
                     if (ind == nloci) { continue; }
                     else {
                         mappedseqi.push_back(seqi); // index points to the next read
@@ -507,14 +564,15 @@ void ExtractFasta(void *data) {
             }
             else if (isFasta) { // TODO: test balanced cth
                 while (seqi < seqs.size()) {
-                    kmerCount_umap kmers1, kmers2;
+                    vector<size_t> kmers1, kmers2;
+                    vector<PE_KMC> dup;
 
                     string& seq = seqs[seqi++];
                     string& seq1 = seqs[seqi++];
-                    buildNuKmers(kmers1, seq, k);
-                    buildNuKmers(kmers2, seq1, k);
+                    read2kmers(kmers1, seq, k); // stores numeric kmers
+                    read2kmers(kmers2, seq1, k);
 
-                    size_t ind = countHit(kmers1, kmers2, kmerDBi, nloci, Cthreshold);
+                    size_t ind = countHit(kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold);
                     if (ind == nloci) { continue; }
                     else {
                         mappedseqi.push_back(seqi); // index points to the next read
@@ -528,7 +586,7 @@ void ExtractFasta(void *data) {
                 sem_wait(semwriter);
 
                 if (isFastq) {
-                    for (size_t ind = 0; ind < mappedseqi.size(); ind++) {
+                    for (size_t ind = 0; ind < mappedseqi.size(); ++ind) {
                         uint8_t start, len;
                         size_t seqi = mappedseqi[ind];
 
@@ -544,7 +602,7 @@ void ExtractFasta(void *data) {
                     }
                 }
                 else if (isFasta) {
-                    for (size_t ind = 0; ind < mappedseqi.size(); ind++) {
+                    for (size_t ind = 0; ind < mappedseqi.size(); ++ind) {
                         size_t seqi = mappedseqi[ind];
 
                         cout << ">read " << to_string(nMappedReads) << "_0\n";
@@ -739,7 +797,7 @@ int main(int argc, char* argv[]) {
     time1 = time(nullptr);
     Threads threaddata(nproc, nloci);
     size_t nMappedReads = 0;
-    for (size_t i = 0; i < nproc; i++) {
+    for (size_t i = 0; i < nproc; ++i) {
         Counts &counts = threaddata.counts[i];
         counts.threadIndex = i;
 
@@ -798,14 +856,14 @@ int main(int argc, char* argv[]) {
 
     pthread_attr_t *threadAttr = new pthread_attr_t[nproc];
 
-    for (size_t t = 0; t < nproc; t++ ) {
+    for (size_t t = 0; t < nproc; ++t) {
         pthread_attr_init(&threadAttr[t]);
     }
     pthread_t *threads = new pthread_t[nproc];
 
 
     // start computing
-    for (size_t t = 0; t < nproc; t++) {
+    for (size_t t = 0; t < nproc; ++t) {
         if (extractFasta) {
             pthread_create(&threads[t], &threadAttr[t], (void* (*)(void*))ExtractFasta, &threaddata.counts[t]);
         } else {
@@ -819,7 +877,7 @@ int main(int argc, char* argv[]) {
     }
     cerr << "threads created" << endl;
  
-    for (size_t t = 0; t < nproc; t++) {
+    for (size_t t = 0; t < nproc; ++t) {
         pthread_join(threads[t], NULL);
     }
     cerr << "parallel query completed in " << (time(nullptr) - time1) << " sec." << endl;
@@ -833,9 +891,9 @@ int main(int argc, char* argv[]) {
 
         //cerr << "writing contamination..." << endl;
         //if (bait) {
-        //    for (size_t i = 0; i < nloci; i++) { cerr << i << ' ' << combinedContamination[i] << '\t'; }
+        //    for (size_t i = 0; i < nloci; ++i) { cerr << i << ' ' << combinedContamination[i] << '\t'; }
         //    cerr << endl;
-        //    for (size_t i = 0; i < nloci; i++) { baitOut << combinedContamination[i] << '\n'; }
+        //    for (size_t i = 0; i < nloci; ++i) { baitOut << combinedContamination[i] << '\n'; }
         //    baitOut.close();
         //}
     }
