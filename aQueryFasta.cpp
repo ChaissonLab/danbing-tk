@@ -76,7 +76,7 @@ void mergeVec(vector<T>& dest, vector<T>& src) {
 
 vector<size_t> getSortedIndex(vector<size_t>& data) {
     vector<size_t> indices(data.size());
-    std::iota(data.begin(), data.end(), 0);
+    std::iota(indices.begin(), indices.end(), 0);
     std::sort(indices.begin(), indices.end(), [&data](size_t ind1, size_t ind2) { return data[ind1] < data[ind2]; });
     return std::move(indices);
 }
@@ -159,7 +159,7 @@ void fillstats(vector<size_t>& kmers, vector<size_t>& kmers_other, kmeruIndex_um
         nmappedloci[i] = old_nmappedloci[indorder[i]];
     }
 
-    countRemain(dup, remain);
+    if (dup.size()) { countRemain(dup, remain); }
 }
 
 // XXX optimization
