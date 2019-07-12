@@ -336,6 +336,7 @@ void CountWords(void *data) {
             }
             loci.clear();
             msa.clear();
+            poss.clear();
         }
 
         if (in->peek() == EOF) {
@@ -395,7 +396,7 @@ void CountWords(void *data) {
                 currentLocus = loci[i];
             }
 
-            while (seqi < seqs.size()) {
+            while (seqi < readn) {
 
                 if (simmode == 1) {
                     if (seqi == 0) { 
