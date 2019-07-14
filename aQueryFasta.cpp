@@ -99,6 +99,7 @@ void countDupRemove(vector<size_t>& kmers, vector<size_t>& kmers_other, vector<P
     // size_t endpos = *(std::lower_bound(kmers.begin(), kmers.end(), NAN64)); // index of the first occurrence of invalid kmer
 
     // iterate through kmers and count the occurrence in each read
+    assert(kmers.size()) // TODO
     size_t last = kmers[0], it = 1;
     PE_KMC pe_kmc(0,0);
     (orient[0] ? ++pe_kmc.second : ++pe_kmc.first);
@@ -114,7 +115,6 @@ void countDupRemove(vector<size_t>& kmers, vector<size_t>& kmers_other, vector<P
     }
     dup.push_back(pe_kmc);
     kmers.resize(it);
-    assert(dup.size() == kmers.size()); // TODO
 }
 
 void countRemain(vector<PE_KMC>& dup, vector<size_t>& remain) {
@@ -428,6 +428,7 @@ void CountWords(void *data) {
                 vector<PE_KMC> dup;
                 read2kmers(kmers1, seq, k); // stores numeric kmers
                 read2kmers(kmers2, seq1, k);
+                if (not kmers1.size() and not kmers2.size()) { continue; }
 
                 size_t ind;
                 ind = countHit(kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold, Rthreshold);
