@@ -2,6 +2,10 @@
 import pysam
 import sys
 
+if len(sys.argv) != 4:
+    print("usage: program region.bed fasta region.fasta")
+    sys.exit(1)
+
 bedFile=open(sys.argv[1])
 #asmFile=open(sys.argv[2])
 asm = pysam.FastaFile(sys.argv[2])
