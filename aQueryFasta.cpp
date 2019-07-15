@@ -99,7 +99,7 @@ void countDupRemove(vector<size_t>& kmers, vector<size_t>& kmers_other, vector<P
     // size_t endpos = *(std::lower_bound(kmers.begin(), kmers.end(), NAN64)); // index of the first occurrence of invalid kmer
 
     // iterate through kmers and count the occurrence in each read
-    assert(kmers.size()) // TODO
+    assert(kmers.size()); // TODO
     size_t last = kmers[0], it = 1;
     PE_KMC pe_kmc(0,0);
     (orient[0] ? ++pe_kmc.second : ++pe_kmc.first);
