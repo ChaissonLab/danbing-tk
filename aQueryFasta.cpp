@@ -193,7 +193,7 @@ size_t countHit(vector<size_t>& kmers1, vector<size_t>& kmers2, kmeruIndex_umap&
     size_t score1 = stat.scores[0].first + stat.scores[0].second;
     size_t score2 = stat.scores[1].first + stat.scores[1].second;
 
-    if (stat.scores[0].first >= Cthreshold and stat.scores[1].second >= Cthreshold and 
+    if (stat.scores[0].first >= Cthreshold and stat.scores[0].second >= Cthreshold and 
         float(score1) / (score1+score2) >= Rthreshold and stat.ind1 != NAN32) {
 
         return stat.ind1;
