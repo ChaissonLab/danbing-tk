@@ -133,36 +133,49 @@ def buildNuKmers(read, k, leftflank=0, rightflank=0, count=True):
     if beg == rlen: return kmers
     rckmer = getRCkmer(kmer, k)
 
-    if count:
-        it = iter(range(beg, rlen-k-rightflank+1))
-        for i in it:
-            canonicalkmer = rckmer if kmer > rckmer else kmer
-            kmers[canonicalkmer] = kmers[canonicalkmer]+1 if canonicalkmer in kmers else 1
+    it = iter(range(beg, rlen-k-rightflank+1))
+    for i in it:
+        canonicalkmer = rckmer if kmer > rckmer else kmer
+        if canonicalkmer not in kmers: kmers[canonicalkmer] = 0
+        kmers[canonicalkmer] += count
 
-            if i + k >= rlen: return kmers
-            if read[i + k] not in baseinv:
-                nbeg, kmer = getNextKmer(i+k+1, read, k)
-                rckmer = getRCkmer(kmer, k)
-                for j in range(nbeg-i-1):
-                    next(it, None)
-            else:
-                kmer = ((kmer & mask) << 2) + base[read[i + k]]
-                rckmer = (rckmer >> 2) + (3-base[read[i+k]] << 2*(k-1))
-    else:
-        it = iter(range(beg, rlen-k-rightflank+1))
-        for i in it:
-            canonicalkmer = rckmer if kmer > rckmer else kmer
-            if canonicalkmer not in kmers: kmers[canonicalkmer] = 0
+        if i + k >= rlen: return kmers
+        if read[i + k] not in baseinv:
+            nbeg, kmer = getNextKmer(i+k+1, read, k)
+            rckmer = getRCkmer(kmer, k)
+            for j in range(nbeg-i-1):
+                next(it, None)
+        else:
+            kmer = ((kmer & mask) << 2) + base[read[i + k]]
+            rckmer = (rckmer >> 2) + (3-base[read[i+k]] << 2*(k-1))
 
-            if i + k >= rlen: return kmers
-            if read[i + k] not in baseinv:
-                nbeg, kmer = getNextKmer(i+k+1, read, k)
-                rckmer = getRCkmer(kmer, k)
-                for j in range(nbeg-i-1):
-                    next(it, None)
-            else:
-                kmer = ((kmer & mask) << 2) + base[read[i + k]]
-                rckmer = (rckmer >> 2) + (3-base[read[i+k]] << 2*(k-1))
+    return kmers
+
+def read2kmers(read, k, leftflank=0, rightflank=0):
+    rlen = len(read)
+    mask = (1 << 2*(k-1)) - 1
+
+    beg, kmer = getNextKmer(leftflank, read, k)
+    if beg == rlen: return kmers
+    rckmer = getRCkmer(kmer, k)
+
+    kmers = np.zeros(rlen-beg-k-rightflank+1, dtype='uint64') - 1
+
+    it = iter(range(beg, rlen-k-rightflank+1))
+    for i in it:
+        canonicalkmer = rckmer if kmer > rckmer else kmer
+        kmers[i-beg] = canonicalkmer
+
+        if i + k >= rlen: return kmers
+        if read[i + k] not in baseinv:
+            nbeg, kmer = getNextKmer(i+k+1, read, k)
+            rckmer = getRCkmer(kmer, k)
+            for j in range(nbeg-i-1):
+                next(it, None)
+        else:
+            kmer = ((kmer & mask) << 2) + base[read[i + k]]
+            rckmer = (rckmer >> 2) + (3-base[read[i+k]] << 2*(k-1))
+
     return kmers
 
 
@@ -207,7 +220,7 @@ def seq2KmerQual(kmerCov, seq, k, flanksize=0, trimmed=False):
 
 def writeKmerDict(fname, kmerDB, precision=0):
     with open(fname+".kmers", 'w') as f:
-        for locus, kmers in enumerate(kmerDB):
+        for locus, kmers in kmerDB.items():
             f.write(">locus\t{}\n".format(locus))
             for kmer, count in kmers.items():
                 f.write("{:<21.0f}\t{:.{prec}f}\n".format(kmer, count, prec=precision))
@@ -273,33 +286,30 @@ def readKmers(fname, kmerDB, end=999999, sort=True, kmerName=False, threshold=0)
         else:
             assignKmerTable(kmerDB, locus, table, sort, kmerName, threshold)
 
-
-def readKmerDict(fname, nloci, kmerDB=None, threshold=0):
+def readKmerDict(fname, kmerDB={}, threshold=0):
     """ read a kmer file as a dictionary """
-    hasInput = True
-    if kmerDB is None:
-        kmerDB = np.empty(nloci, dtype=object)
-        hasInput = False
+    
+    hasInput = True if len(kmerDB) else False
+
     with open(fname) as f:
         locus = 0
-        if kmerDB[locus] is None:
-            kmerDB[locus] = {}
+        if not hasInput: kmerDB[locus] = {}
         f.readline()
+
         for line in f:
             if line[0] == '>':
                 locus += 1
-                if kmerDB[locus] is None:
-                    kmerDB[locus] = {}
+                if not hasInput: kmerDB[locus] = {}
             else:
-                vals = [int(v) for v in line.split()]
-                if vals[1] < threshold:
+                kmer, count = [int(v) for v in line.split()]
+                if count < threshold:
                     pass
                 else:
-                    kmerDB[locus][vals[0]] = vals[1]
-
-    if not hasInput:
-        return kmerDB
-
+                    if hasInput:
+                        assert kmer in kmerDB[locus]
+                        kmerDB[locus][kmer] += count
+                    else:
+                        kmerDB[locus][kmer] = count
 
 def countLoci(fname):
     with open(fname) as f:

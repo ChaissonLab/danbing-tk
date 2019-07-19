@@ -30,12 +30,14 @@ y = {}
 for fname in args.illumina:
     print("\treading", fname)
     if combine:
-        vu.readKmers(fname, y, sort=True, kmerName=True)
+        vu.readKmerDict(fname, y)
     else:
         vu.readKmers(fname, y, sort=True)
+
 if combine:
-    vu.writeKmers(args.out, y)
+    vu.writeKmerDict(args.out, y)
     exit(0)
+
 nloci = len(y)
 print("#loci:", nloci)
 
