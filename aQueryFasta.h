@@ -200,7 +200,7 @@ void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t
                 i = nbeg - 1;
             } else {
                 kmer = ( (kmer & mask) << 2 ) + baseNumConversion[read[i + k]];
-                rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] * 1UL) << (2*(k-1)));
+                rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] & mask) << (2*(k-1))); // XXX test correctness
             }
         }
     }
@@ -220,7 +220,7 @@ void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t
                 i = nbeg - 1;
             } else {
                 kmer = ( (kmer & mask) << 2 ) + baseNumConversion[read[i + k]];
-                rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] * 1UL) << (2*(k-1)));
+                rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] & mask) << (2*(k-1))); // XXX test correctness
             }
         }
     }
@@ -246,7 +246,7 @@ void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank 
             i = nbeg - 1;
         } else {
             kmer = ( (kmer & mask) << 2 ) + baseNumConversion[read[i + k]];
-            rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] * 1ULL) << (2*(k-1)));
+            rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] & mask) << (2*(k-1))); // XXX test correctness
         }
     }
 }
