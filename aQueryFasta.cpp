@@ -40,7 +40,7 @@ void rand_str(char *dest, size_t length) {
     *dest = '\0';
 }
 
-typedef std::pair<uint8_t, uint8_t> PE_KMC; // pair-end kmer count
+typedef std::pair<uint8_t, uint8_t> PE_KMC; // pair-end kmer count // XXX not compatible with longer reads
 
 struct statStruct { // for forward + reverse strand (paired-end)
     uint32_t ind1 = NAN32;
@@ -179,6 +179,16 @@ void _countHit(vector<size_t>& kmers1, vector<size_t>& kmers2, kmeruIndex_umap& 
             updatetop2(totalHits1[locus], locus, totalHits2[locus], out);
         }
         if (out.scores[0].first + out.scores[0].second - out.scores[1].first - out.scores[1].second >= remain[i]) { // will stop if tie
+            for (size_t j = i+1; j < kmers1.size(); ++j) {
+                if (kmerDBi[kmers1[j]].count(out.ind1)) {
+                    out.scores[0].first += dup[j].first;
+                    out.scores[0].second += dup[j].second;
+                }
+                if (kmerDBi[kmers1[j]].count(out.ind2)) { // FIXME not correct, ind2 is not determined yet
+                    out.scores[1].first += dup[j].first;
+                    out.scores[1].second += dup[j].second;
+                }
+            }
             break;
         }
     }
@@ -193,6 +203,7 @@ size_t countHit(vector<size_t>& kmers1, vector<size_t>& kmers2, kmeruIndex_umap&
     size_t score1 = stat.scores[0].first + stat.scores[0].second;
     size_t score2 = stat.scores[1].first + stat.scores[1].second;
 
+    // FIXME ind2, score2 is not correct (underestimated)
     if (stat.scores[0].first >= Cthreshold and stat.scores[0].second >= Cthreshold and 
         float(score1) / (score1+score2) >= Rthreshold and stat.ind1 != NAN32) {
 
@@ -434,7 +445,10 @@ void CountWords(void *data) {
                 ind = countHit(kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold, Rthreshold);
                 // if (bait) { ind = countHit(kmers1, kmers2, kmerDBi, nloci, Cthreshold, Rthreshold, contamination); } // TODO deprecated
 
-                if (ind == nloci) { continue; }
+                if (ind == nloci) { 
+                    if (simmode) { msa[i][ind].push_back(pos); }
+                    continue;
+                }
                 else {
                     kmer_aCount_umap &trKmers = trResults[ind];
                     for (size_t i = 0; i < kmers1.size(); ++i) {

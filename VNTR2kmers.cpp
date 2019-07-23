@@ -43,8 +43,8 @@ void getflanks(flankStruct& out, vector<vector<size_t>>& sizeTable, size_t i, si
     out.tr_l = lTRflanksize;
     out.tr_r = rTRflanksize;
     out.lntr_l = lNTRflanksize;
-    out.lntr_r = rlen - lTRflanksize;
-    out.rntr_l = rlen - rTRflanksize;
+    out.lntr_r = rlen - lTRflanksize - (k-1); // seamless contenuation of kmers from ntr to tr
+    out.rntr_l = rlen - rTRflanksize - (k-1); // seamless contenuation of kmers from tr to ntr
     out.rntr_r = rNTRflanksize;
 }
 
