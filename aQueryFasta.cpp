@@ -446,7 +446,7 @@ void CountWords(void *data) {
                 // if (bait) { ind = countHit(kmers1, kmers2, kmerDBi, nloci, Cthreshold, Rthreshold, contamination); } // TODO deprecated
 
                 if (ind == nloci) { 
-                    if (simmode) { msa[i][ind].push_back(pos); }
+                    if (simmode) { if ((int)currentLocus == currentLocus) {msa[i][ind].push_back(pos); } }
                     continue;
                 }
                 else {
