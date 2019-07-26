@@ -68,10 +68,9 @@ void updatetop2(size_t count_f, size_t ind, size_t count_r, statStruct& out) { /
 }
 
 template <typename T>
-void mergeVec(vector<T>& dest, vector<T>& src) {
-    dest.insert(dest.end(),
-                std::make_move_iterator(src.begin()),
-                std::make_move_iterator(src.end()));
+void mergeVec(vector<T>& container, vector<T>& vec1, vector<T>& vec2) {
+    container = vec1;
+    container.insert(container.end(), vec2.begin(), vec2.end());
 }
 
 vector<size_t> getSortedIndex(vector<size_t>& data) {
@@ -81,10 +80,10 @@ vector<size_t> getSortedIndex(vector<size_t>& data) {
     return std::move(indices);
 }
 
-void countDupRemove(vector<size_t>& kmers, vector<size_t>& kmers_other, vector<PE_KMC>& dup) {
-    vector<bool> orient(kmers.size(), 0);
-    orient.resize(kmers.size() + kmers_other.size(), 1);
-    mergeVec(kmers, kmers_other);
+void countDupRemove(vector<size_t>& kmers, vector<size_t>& kmers1, vector<size_t>& kmers2, vector<PE_KMC>& dup) {
+    vector<bool> orient(kmers1.size(), 0);
+    orient.resize(kmers1.size() + kmers2.size(), 1);
+    mergeVec(kmers, kmers1, kmers2);
 
     vector<size_t> indorder = getSortedIndex(kmers);
     // sort kmers and orient
@@ -128,8 +127,9 @@ void countRemain(vector<PE_KMC>& dup, vector<size_t>& remain) {
 }
 
 // TODO might not need to input nmappedloci , not used later
-void fillstats(vector<size_t>& kmers, vector<size_t>& kmers_other, kmeruIndex_umap& kmerDBi, vector<PE_KMC>& dup, vector<size_t>& remain) {
-    countDupRemove(kmers, kmers_other, dup); // count the occurrence of kmers in each read
+void fillstats(vector<size_t>& kmers, vector<size_t>& kmers1, vector<size_t>& kmers2, 
+               kmeruIndex_umap& kmerDBi, vector<PE_KMC>& dup, vector<size_t>& remain) {
+    countDupRemove(kmers, kmers1, kmers2, dup); // count the occurrence of kmers in each read
 
     // get # of mapped loci for each kmer
     size_t nkmers = kmers.size();
@@ -163,28 +163,33 @@ void fillstats(vector<size_t>& kmers, vector<size_t>& kmers_other, kmeruIndex_um
 }
 
 // XXX optimization
-void _countHit(vector<size_t>& kmers1, vector<size_t>& kmers2, kmeruIndex_umap& kmerDBi, vector<PE_KMC>& dup, size_t nloci, statStruct& out) {
+void _countHit(vector<size_t>& kmers, vector<size_t>& kmers1, vector<size_t>& kmers2, kmeruIndex_umap& kmerDBi, 
+               vector<PE_KMC>& dup, size_t nloci, statStruct& out) {
     vector<size_t> remain;
-    fillstats(kmers1, kmers2, kmerDBi, dup, remain);
+    fillstats(kmers, kmers1, kmers2, kmerDBi, dup, remain);
 
     vector<uint32_t> totalHits1(nloci+1, 0), totalHits2(nloci+1, 0); // one extra element for baitDB
-    //_statStruct out_f; // indices and scores of top and second hits in forward strand
 
     // for each kmer, increment counts of the mapped loci for each read
     // use "remain" to achieve early stopping
-    for (size_t i = 0; i < kmers1.size(); ++i) {
-        for (auto locus : kmerDBi[kmers1[i]]) {
+    for (size_t i = 0; i < kmers.size(); ++i) {
+        for (auto locus_bit : kmerDBi[kmers[i]]) {
+            auto locus = locus_bit >> 1;
             totalHits1[locus] += dup[i].first;
             totalHits2[locus] += dup[i].second;
             updatetop2(totalHits1[locus], locus, totalHits2[locus], out);
         }
         if (out.scores[0].first + out.scores[0].second - out.scores[1].first - out.scores[1].second >= remain[i]) { // will stop if tie
-            for (size_t j = i+1; j < kmers1.size(); ++j) {
-                if (kmerDBi[kmers1[j]].count(out.ind1)) {
+            uint32_t ind1_tr = (out.ind1 << 1) + 1;
+            uint32_t ind1_ntr = out.ind1 << 1;
+            uint32_t ind2_tr = (out.ind2 << 1) + 1;
+            uint32_t ind2_ntr = out.ind2 << 1;
+            for (size_t j = i+1; j < kmers.size(); ++j) {
+                if (kmerDBi[kmers[j]].count(ind1_tr) or kmerDBi[kmers[j]].count(ind1_ntr)) {
                     out.scores[0].first += dup[j].first;
                     out.scores[0].second += dup[j].second;
                 }
-                if (kmerDBi[kmers1[j]].count(out.ind2)) { // FIXME not correct, ind2 is not determined yet
+                if (kmerDBi[kmers[j]].count(ind2_tr) or kmerDBi[kmers[j]].count(ind2_ntr)) { // FIXME not correct, ind2 is not determined yet
                     out.scores[1].first += dup[j].first;
                     out.scores[1].second += dup[j].second;
                 }
@@ -195,10 +200,10 @@ void _countHit(vector<size_t>& kmers1, vector<size_t>& kmers2, kmeruIndex_umap& 
 }
 
 // used when no baitDB; XXX optimization
-size_t countHit(vector<size_t>& kmers1, vector<size_t>& kmers2, kmeruIndex_umap& kmerDBi, vector<PE_KMC>& dup, 
+size_t countHit(vector<size_t>& kmers, vector<size_t>& kmers1, vector<size_t>& kmers2, kmeruIndex_umap& kmerDBi, vector<PE_KMC>& dup, 
                 size_t nloci, uint16_t Cthreshold, float Rthreshold = 0.5) {
     statStruct stat;
-    _countHit(kmers1, kmers2, kmerDBi, dup, nloci, stat);
+    _countHit(kmers, kmers1, kmers2, kmerDBi, dup, nloci, stat);
 
     size_t score1 = stat.scores[0].first + stat.scores[0].second;
     size_t score2 = stat.scores[1].first + stat.scores[1].second;
@@ -210,6 +215,28 @@ size_t countHit(vector<size_t>& kmers1, vector<size_t>& kmers2, kmeruIndex_umap&
         return stat.ind1;
     }
     return nloci;
+}
+
+int noDoubleTransition(kmer_aCount_umap& trKmers, vector<size_t>& kmers) {
+    int first = trKmers.count(kmers[0]);
+    int prev = first;
+    int current;
+    size_t ntransition = 0;
+    for (size_t i = 1; i < kmers.size(); ++i) {
+        current = trKmers.count(kmers[i]);
+        if (prev != current) { ++ntransition; }
+        prev = current;
+    }
+
+    return (ntransition > 1 ? -1 : (first << 1) + current);
+}
+
+bool isValidPair(kmer_aCount_umap& trKmers, vector<size_t>& kmers1, vector<size_t>& kmers2) {
+    int type1 = noDoubleTransition(trKmers, kmers1);
+    int type2 = noDoubleTransition(trKmers, kmers2);
+
+    if ((type1 != type2 or type1 == 3) and type1 != -1 and type2 != -1) { return true; }
+    else { return false; }
 }
 
 // used when baitDB is provided, record contamination // TODO deprecated
@@ -435,14 +462,14 @@ void CountWords(void *data) {
                 string& seq = seqs[seqi++];
                 string& seq1 = seqs[seqi++];
 
-                vector<size_t> kmers1, kmers2;
+                vector<size_t> kmers1, kmers2, kmers;
                 vector<PE_KMC> dup;
                 read2kmers(kmers1, seq, k); // stores numeric kmers
                 read2kmers(kmers2, seq1, k);
                 if (not kmers1.size() and not kmers2.size()) { continue; }
 
                 size_t ind;
-                ind = countHit(kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold, Rthreshold);
+                ind = countHit(kmers, kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold, Rthreshold);
                 // if (bait) { ind = countHit(kmers1, kmers2, kmerDBi, nloci, Cthreshold, Rthreshold, contamination); } // TODO deprecated
 
                 if (ind == nloci) { 
@@ -451,12 +478,17 @@ void CountWords(void *data) {
                 }
                 else {
                     kmer_aCount_umap &trKmers = trResults[ind];
-                    for (size_t i = 0; i < kmers1.size(); ++i) {
-                        if (trKmers.count(kmers1[i])) {
-                            trKmers[kmers1[i]] += (dup[i].first + dup[i].second);
+                    if (isValidPair(trKmers, kmers1, kmers2)) {
+                        for (size_t i = 0; i < kmers.size(); ++i) {
+                            if (trKmers.count(kmers[i])) {
+                                trKmers[kmers[i]] += (dup[i].first + dup[i].second);
+                            }
                         }
+                        if (simmode) { if (currentLocus != ind) { msa[i][ind].push_back(pos); } }
                     }
-                    if (simmode) { if (currentLocus != ind) { msa[i][ind].push_back(pos); } }
+                    else {
+                        if (simmode) { if ((int)currentLocus == currentLocus) {msa[i][nloci].push_back(pos); } }
+                    }
                 }
             }
         }
@@ -558,7 +590,7 @@ void ExtractFasta(void *data) { // TODO countHit deprecated
             if (isFastq) { // TODO: test balanced cth
                 while (seqi < seqs.size()) {
                     uint8_t start, len;
-                    vector<size_t> kmers1, kmers2;
+                    vector<size_t> kmers1, kmers2, kmers;
                     vector<PE_KMC> dup;
 
                     start = starts[seqi];
@@ -571,7 +603,7 @@ void ExtractFasta(void *data) { // TODO countHit deprecated
                     string& seq1 = seqs[seqi++];
                     read2kmers(kmers2, seq1, k, start, seq1.size()-start-len);
 
-                    size_t ind = countHit(kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold);
+                    size_t ind = countHit(kmers, kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold);
                     if (ind == nloci) { continue; }
                     else {
                         mappedseqi.push_back(seqi); // index points to the next read
@@ -580,7 +612,7 @@ void ExtractFasta(void *data) { // TODO countHit deprecated
             }
             else if (isFasta) { // TODO: test balanced cth
                 while (seqi < seqs.size()) {
-                    vector<size_t> kmers1, kmers2;
+                    vector<size_t> kmers1, kmers2, kmers;
                     vector<PE_KMC> dup;
 
                     string& seq = seqs[seqi++];
@@ -588,7 +620,7 @@ void ExtractFasta(void *data) { // TODO countHit deprecated
                     read2kmers(kmers1, seq, k); // stores numeric kmers
                     read2kmers(kmers2, seq1, k);
 
-                    size_t ind = countHit(kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold);
+                    size_t ind = countHit(kmers, kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold);
                     if (ind == nloci) { continue; }
                     else {
                         mappedseqi.push_back(seqi); // index points to the next read
@@ -789,22 +821,22 @@ int main(int argc, char* argv[]) {
     vector<kmer_aCount_umap> trKmerDB(nloci);
     kmeruIndex_umap kmerDBi;
     if (multiKmerFile) {
-        readKmersFile(trKmerDB, kmerDBi, trFname, 0, false); // start from index 0, do not count
+        readKmersFile(trKmerDB, kmerDBi, trFname, 0, true, false); // start from index 0, use locationBit, do not count
     } else {
-        readKmersFile(trKmerDB, kmerDBi, *(it_q+1)+".kmers", 0, false); // start from index 0, do not count
+        readKmersFile(trKmerDB, kmerDBi, *(it_q+1)+".kmers", 0, false, false); // start from index 0, no locationBit, do not count
     }
     cerr << "# unique kmers in trKmerDB: " << kmerDBi.size() << '\n';
 
 
     if (multiKmerFile) {
-        readKmersFile2DBi(kmerDBi, *(it_qs+1)+".lntr.kmers", 0); // start from index 0
-        readKmersFile2DBi(kmerDBi, *(it_qs+1)+".rntr.kmers", 0); // start from index 0
+        readKmersFile2DBi(kmerDBi, *(it_qs+1)+".lntr.kmers", 0, true); // start from index 0, use locationBit
+        readKmersFile2DBi(kmerDBi, *(it_qs+1)+".rntr.kmers", 0, true); // start from index 0, use locationBit
         cerr << "# unique kmers in tr/ntrKmerDB: " << kmerDBi.size() << '\n';
     }
     cerr << "read *.kmers file in " << (time(nullptr) - time1) << " sec." << endl;
 
     if (it_b != args.end()) {
-        readKmersFile2DBi(kmerDBi, "baitDB.kmers", nloci); // record kmerDBi only, start from index nloci, do not count
+        readKmersFile2DBi(kmerDBi, "baitDB.kmers", nloci); // record kmerDBi only, start from index nloci, no locationBit, do not count
     }
 
 

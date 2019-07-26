@@ -103,7 +103,7 @@ const unsigned char byteRC[]   = {
 
 string decodeNumericSeq(size_t num, size_t k){
     string seq = "";
-    for (size_t i = 0; i < k; i++){
+    for (size_t i = 0; i < k; ++i){
         seq = baseNumConversion[num % 4] + seq;
         num >>= 2;
     }
@@ -112,7 +112,7 @@ string decodeNumericSeq(size_t num, size_t k){
     
 size_t encodeSeq(string seq){ // poor implementation, extra string copy
     size_t numericSeq = 0;
-    for (size_t i = 0; i < seq.length(); i++){
+    for (size_t i = 0; i < seq.length(); ++i){
         numericSeq = (numericSeq<<2) + baseNumConversion[seq[i]];
     }
     return numericSeq;
@@ -120,7 +120,7 @@ size_t encodeSeq(string seq){ // poor implementation, extra string copy
 
 size_t encodeSeq(string& seq, size_t start, size_t k) { // no extra copy
     size_t numericSeq = 0;
-    for (size_t i = start; i < start+k; i++){
+    for (size_t i = start; i < start+k; ++i){
         numericSeq = (numericSeq<<2) + baseNumConversion[seq[i]];
     }
     return numericSeq;
@@ -153,7 +153,7 @@ string getRC(const string &read) {
     string rcread;
     size_t rlen = read.size();
     rcread.resize(rlen);
-    for (size_t i = 0; i < rlen; i++) {
+    for (size_t i = 0; i < rlen; ++i) {
         rcread[i] = baseComplement[read[rlen - 1 - i]];
     }
     return rcread;
@@ -185,7 +185,7 @@ void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t
     rckmer = getNuRC(kmer, k);
  
     if (count) {
-        for (size_t i = beg; i < rlen - k - rightflank + 1; i++){
+        for (size_t i = beg; i < rlen - k - rightflank + 1; ++i){
             if (kmer > rckmer) {
                 canonicalkmer = rckmer;
             } else {
@@ -205,7 +205,7 @@ void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t
         }
     }
     else {
-        for (size_t i = beg; i < rlen - k - rightflank + 1; i++){
+        for (size_t i = beg; i < rlen - k - rightflank + 1; ++i){
             if (kmer > rckmer) {
                 canonicalkmer = rckmer;
             } else {
@@ -235,7 +235,7 @@ void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank 
     if (beg == rlen){ return; }
     rckmer = getNuRC(kmer, k);
 
-    for (size_t i = beg; i < rlen - k - rightflank + 1; i++){
+    for (size_t i = beg; i < rlen - k - rightflank + 1; ++i){
         canonicalkmer = (kmer > rckmer ? rckmer : kmer);
         kmers.push_back(canonicalkmer);
 
@@ -258,7 +258,7 @@ size_t countLoci(string fname) {
     size_t nloci = 0;
     while (getline(inf, line)) {
         if (line[0] == '>'){
-            nloci++;
+            ++nloci;
         }
     }
     inf.close();
@@ -275,7 +275,7 @@ void readKmersFile2DB(T& kmerDB, string fname, size_t startInd = 0, bool count =
     cerr <<"starting reading kmers from " << fname << endl;
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
-            startInd++;
+            ++startInd;
             if (f.peek() == EOF){
                 f.close();
                 break;
@@ -300,15 +300,19 @@ void readKmersFile2DB(T& kmerDB, string fname, size_t startInd = 0, bool count =
 }
 
 // record kmerIndex_dict kmerDBi only
-void readKmersFile2DBi(kmeruIndex_umap& kmerDBi, string fname, size_t startInd = 0, uint16_t threshold = 0) {
+void readKmersFile2DBi(kmeruIndex_umap& kmerDBi, string fname, size_t startInd = 0, bool locationBit=false, uint16_t threshold = 0) {
     ifstream f(fname);
     assert(f);
     string line;
     getline(f, line);
     cerr <<"starting reading kmers from " << fname << endl;
+
+    size_t ind_bit = startInd << 1; // indicating the kmer is from NTR region
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
-            startInd++;
+            ++startInd;
+            ind_bit += 2;
+
             if (f.peek() == EOF){
                 f.close();
                 break;
@@ -322,7 +326,10 @@ void readKmersFile2DBi(kmeruIndex_umap& kmerDBi, string fname, size_t startInd =
             size_t kmercount = stoul(line);
 
             if (kmercount < threshold) { continue; }
-            if (kmerDBi[kmer].count(startInd) == 0) {
+            if (locationBit) { // insert only if kmer is not in TR region
+                if (kmerDBi[kmer].count(ind_bit+1) == 0) { kmerDBi[kmer].insert(ind_bit); }
+            }
+            else {
                 kmerDBi[kmer].insert(startInd);
             }
         }
@@ -332,15 +339,20 @@ void readKmersFile2DBi(kmeruIndex_umap& kmerDBi, string fname, size_t startInd =
 
 // record kmerDB and kmerIndex_dict kmerDBi
 template <typename T>
-void readKmersFile(T& kmerDB, kmeruIndex_umap& kmerDBi, string fname, size_t startInd = 0, bool count = true, uint16_t threshold = 0) {
+void readKmersFile(T& kmerDB, kmeruIndex_umap& kmerDBi, string fname, size_t startInd = 0, bool locationBit=false,
+                   bool count = true, uint16_t threshold = 0) {
     ifstream f(fname);
     assert(f);
     string line;
     getline(f, line);
     cerr <<"starting reading kmers from " << fname << endl;
+
+    size_t ind_bit = (startInd << 1) + 1; // indicating the kmer is from TR region
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
-            startInd++;
+            ++startInd;
+            ind_bit += 2;
+
             if (f.peek() == EOF){
                 f.close();
                 break;
@@ -359,9 +371,7 @@ void readKmersFile(T& kmerDB, kmeruIndex_umap& kmerDBi, string fname, size_t sta
             } else {
                 kmerDB[startInd][kmer] += 0;
             }
-            if (kmerDBi[kmer].count(startInd) == 0) {
-                kmerDBi[kmer].insert(startInd);
-            }
+            kmerDBi[kmer].insert(locationBit ? ind_bit : startInd);
         }
     }
     f.close();
@@ -371,7 +381,7 @@ template <typename T>
 void writeKmers(string outfpref, T& kmerDB, size_t threshold = 0) {
     ofstream fout(outfpref+".kmers");
     assert(fout);
-    for (size_t i = 0; i < kmerDB.size(); i++) {
+    for (size_t i = 0; i < kmerDB.size(); ++i) {
         fout << ">locus " << i <<"\n";
         for (auto &p : kmerDB[i]) {
             if (p.second < threshold) { continue; }
@@ -384,7 +394,7 @@ void writeKmers(string outfpref, T& kmerDB, size_t threshold = 0) {
 void writeKmers(string outfpref, vector<kmerAttr_dict>& kmerAttrDB) {
     ofstream fout(outfpref+".kmers");
     assert(fout);
-    for (size_t i = 0; i < kmerAttrDB.size(); i++) {
+    for (size_t i = 0; i < kmerAttrDB.size(); ++i) {
         fout << ">locus " << i <<"\n";
         for (auto &p : kmerAttrDB[i]) {
             fout << p.first;
@@ -480,8 +490,8 @@ public:
             nodes[setid].push_back(*s);
             nodes[setid].push_back(*t);
             setsizes[setid] += 2;
-            setid++;
-            nset++;
+            ++setid;
+            ++nset;
 
         }
         else if (mode == 1) {    // s already exists; s -> t
@@ -531,7 +541,7 @@ public:
             }
             // get reverse complement of each node
             vector<string> tmpnodes(nodes[oldlabel].size());
-            for (size_t i = 0; i < nodes[oldlabel].size(); i++) {
+            for (size_t i = 0; i < nodes[oldlabel].size(); ++i) {
                 tmpnodes[i] = getRC(nodes[oldlabel][i]);
             }
             // insert (t_rc, s_rc) as (source, target) in newlabel
@@ -610,14 +620,14 @@ public:
                 if (sets[s] != sets[t])			// s, t in different sets
                     { updatesets(&s, &t, -1); }		// combine s, t sets 
             	else
-                    { setsizes[sets[s]]++; }
+                    { ++setsizes[sets[s]]; }
                 adj[s][t] += count;
             }
             if (sInAdj == 2)  {				// s, t in adj_rc
                 if (sets[s_rc] != sets[t_rc])
                     { updatesets(&s_rc, &t_rc, -1); }
                 else
-                    { setsizes[sets[t_rc]]++; }
+                    { ++setsizes[sets[t_rc]]; }
                 adj[t_rc][s_rc] += count;
             }
         }
@@ -693,14 +703,14 @@ public:
                 if (sets[s] != sets[t])				// s, t in different sets
                     { updatesets(&s, &t, -1); }			// combine s, t sets 
             	else
-                    { setsizes[sets[s]]++; }
+                    { ++setsizes[sets[s]]; }
                 adjAttr[s][t] = attr;
             }
             if (sInAdj == 2)  {					// s, t in adj_rc
                 if (sets[s_rc] != sets[t_rc])
                     { updatesets(&s_rc, &t_rc, -1); }
                 else
-                    { setsizes[sets[t_rc]]++; }
+                    { ++setsizes[sets[t_rc]]; }
                 adjAttr[t_rc][s_rc] = attr;
             }
         }
