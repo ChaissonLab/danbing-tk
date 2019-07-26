@@ -403,7 +403,7 @@ def PlotRegression(x, y, xlabel='data_X', ylabel='data_Y', title='', fname='', o
         y1_proj = np.sum(y1) / a
     if plot:
         xp = np.arange(0, np.max(x1), 2).reshape(-1, 1)
-        plt.plot(x1, y1, '.', color='C0')
+        plt.plot(x1, y1, '.', color='C0', alpha=0.1)
         plt.plot(xp, reg.predict(xp), '-', color='C0')
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
