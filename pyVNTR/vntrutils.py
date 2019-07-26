@@ -152,14 +152,16 @@ def buildNuKmers(read, k, leftflank=0, rightflank=0, count=True):
     return kmers
 
 def read2kmers(read, k, leftflank=0, rightflank=0):
+    """
+    will return max_val_of_uint64 (-1) if there's 'N' within kmer
+    """
     rlen = len(read)
     mask = (1 << 2*(k-1)) - 1
+    kmers = np.zeros(rlen-k-leftflank-rightflank+1, dtype='uint64') - 1
 
     beg, kmer = getNextKmer(leftflank, read, k)
     if beg == rlen: return kmers
     rckmer = getRCkmer(kmer, k)
-
-    kmers = np.zeros(rlen-beg-k-rightflank+1, dtype='uint64') - 1
 
     it = iter(range(beg, rlen-k-rightflank+1))
     for i in it:
