@@ -231,12 +231,29 @@ int noDoubleTransition(kmer_aCount_umap& trKmers, vector<size_t>& kmers) {
     return (ntransition > 1 ? -1 : (first << 1) + current);
 }
 
-bool isValidPair(kmer_aCount_umap& trKmers, vector<size_t>& kmers1, vector<size_t>& kmers2) {
+bool isValidPair(kmer_aCount_umap& trKmers, vector<size_t>& kmers1, vector<size_t>& kmers2, int simmode) {
     int type1 = noDoubleTransition(trKmers, kmers1);
     int type2 = noDoubleTransition(trKmers, kmers2);
 
-    if ((type1 != type2 or type1 == 3) and type1 != -1 and type2 != -1) { return true; }
-    else { return false; }
+    if (type1 == -1 or type2 == -1) { return false; }
+    if (simmode) {
+        static const bool invalid_pair[4][4] = { // forward and reverse strands are in the same sense
+            {false,  true,  true,  true},
+            { true, false,  true,  true},
+            { true, false, false, false},
+            { true, false,  true,  true}
+        };
+        return invalid_pair[type1][type2];
+
+    } else {
+        static const bool invalid_pair[4][4] = { // forward and reverse strands are in different senses
+            {false,  true,  true,  true},
+            { true,  true, false,  true},
+            { true, false, false, false},
+            { true,  true, false,  true}
+        };
+        return invalid_pair[type1][type2];
+    }
 }
 
 // used when baitDB is provided, record contamination // TODO deprecated
@@ -478,7 +495,7 @@ void CountWords(void *data) {
                 }
                 else {
                     kmer_aCount_umap &trKmers = trResults[ind];
-                    if (isValidPair(trKmers, kmers1, kmers2)) {
+                    if (isValidPair(trKmers, kmers1, kmers2, simmode)) {
                         for (size_t i = 0; i < kmers.size(); ++i) {
                             if (trKmers.count(kmers[i])) {
                                 trKmers[kmers[i]] += (dup[i].first + dup[i].second);
