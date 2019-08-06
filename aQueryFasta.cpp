@@ -173,23 +173,18 @@ void _countHit(vector<size_t>& kmers, vector<size_t>& kmers1, vector<size_t>& km
     // for each kmer, increment counts of the mapped loci for each read
     // use "remain" to achieve early stopping
     for (size_t i = 0; i < kmers.size(); ++i) {
-        for (auto locus_bit : kmerDBi[kmers[i]]) {
-            auto locus = locus_bit >> 1;
+        for (auto locus : kmerDBi[kmers[i]]) {
             totalHits1[locus] += dup[i].first;
             totalHits2[locus] += dup[i].second;
             updatetop2(totalHits1[locus], locus, totalHits2[locus], out);
         }
         if (out.scores[0].first + out.scores[0].second - out.scores[1].first - out.scores[1].second >= remain[i]) { // will stop if tie
-            uint32_t ind1_tr = (out.ind1 << 1) + 1;
-            uint32_t ind1_ntr = out.ind1 << 1;
-            uint32_t ind2_tr = (out.ind2 << 1) + 1;
-            uint32_t ind2_ntr = out.ind2 << 1;
             for (size_t j = i+1; j < kmers.size(); ++j) {
-                if (kmerDBi[kmers[j]].count(ind1_tr) or kmerDBi[kmers[j]].count(ind1_ntr)) {
+                if (kmerDBi[kmers[j]].count(out.ind1)) {
                     out.scores[0].first += dup[j].first;
                     out.scores[0].second += dup[j].second;
                 }
-                if (kmerDBi[kmers[j]].count(ind2_tr) or kmerDBi[kmers[j]].count(ind2_ntr)) { // FIXME not correct, ind2 is not determined yet
+                if (kmerDBi[kmers[j]].count(out.ind2)) { // FIXME not correct, ind2 is not determined yet
                     out.scores[1].first += dup[j].first;
                     out.scores[1].second += dup[j].second;
                 }
@@ -208,6 +203,7 @@ size_t countHit(vector<size_t>& kmers, vector<size_t>& kmers1, vector<size_t>& k
     size_t score1 = stat.scores[0].first + stat.scores[0].second;
     size_t score2 = stat.scores[1].first + stat.scores[1].second;
 
+
     // FIXME ind2, score2 is not correct (underestimated)
     if (stat.scores[0].first >= Cthreshold and stat.scores[0].second >= Cthreshold and 
         float(score1) / (score1+score2) >= Rthreshold and stat.ind1 != NAN32) {
@@ -217,23 +213,35 @@ size_t countHit(vector<size_t>& kmers, vector<size_t>& kmers1, vector<size_t>& k
     return nloci;
 }
 
-int noDoubleTransition(kmer_aCount_umap& trKmers, vector<size_t>& kmers) {
-    int first = trKmers.count(kmers[0]);
-    int prev = first;
-    int current;
-    size_t ntransition = 0;
-    for (size_t i = 1; i < kmers.size(); ++i) {
-        current = trKmers.count(kmers[i]);
-        if (prev != current) { ++ntransition; }
-        prev = current;
+int noDoubleTransition(kmer_aCount_umap& trKmers, kmer_aCount_umap& ntrKmers, vector<size_t>& kmers) {
+    vector<int> types(kmers.size(), 0);
+    for (size_t i = 0; i < kmers.size(); ++i) {
+        types[i] = (trKmers.count(kmers[i]) ? 2 : ntrKmers.count(kmers[i]));
     }
 
-    return (ntransition > 1 ? -1 : (first << 1) + current);
+    size_t ntransition = 0, firstvalidpos = 0;
+    int first = types[0];
+    while (first == 0) { first = types[++firstvalidpos]; }
+    assert(firstvalidpos < types.size()); // TODO
+
+    size_t nullruns = (firstvalidpos ? 1 : 0);
+    int prev = first;
+    for (size_t j = firstvalidpos+1; j < types.size(); ++j) {
+        if (not types[j]) {
+            if (types[j-1] != types[j]) { ++nullruns; }
+        }
+        else {
+            if (prev != types[j]) { ++ntransition; }
+            prev = types[j];
+        }
+    }
+
+    return (ntransition > 1 or nullruns > 1 ? -1 : (first-1 << 1) + prev-1);
 }
 
-bool isValidPair(kmer_aCount_umap& trKmers, vector<size_t>& kmers1, vector<size_t>& kmers2, int simmode) {
-    int type1 = noDoubleTransition(trKmers, kmers1);
-    int type2 = noDoubleTransition(trKmers, kmers2);
+bool isValidPair(kmer_aCount_umap& trKmers, kmer_aCount_umap& ntrKmers, vector<size_t>& kmers1, vector<size_t>& kmers2, int simmode) {
+    int type1 = noDoubleTransition(trKmers, ntrKmers, kmers1);
+    int type2 = noDoubleTransition(trKmers, ntrKmers, kmers2);
 
     if (type1 == -1 or type2 == -1) { return false; }
     if (simmode) {
@@ -244,8 +252,8 @@ bool isValidPair(kmer_aCount_umap& trKmers, vector<size_t>& kmers1, vector<size_
             { true, false,  true,  true}
         };
         return invalid_pair[type1][type2];
-
-    } else {
+    }
+    else {
         static const bool invalid_pair[4][4] = { // forward and reverse strands are in different senses
             {false,  true,  true,  true},
             { true,  true, false,  true},
@@ -312,8 +320,8 @@ class Counts {
 public:
     ifstream *in;
     bool interleaved, isFasta, isFastq;
-    kmeruIndex_umap* kmerDBi;
-    vector<kmer_aCount_umap>* trResults;
+    kmeruIndex_umap *kmerDBi;
+    vector<kmer_aCount_umap> *trResults, *ntrKmerDB;
     size_t *readIndex;
     size_t threadIndex, nloci;
     uint16_t k, Cthreshold;
@@ -339,6 +347,7 @@ template <typename ValueType>
 void CountWords(void *data) {
     kmeruIndex_umap& kmerDBi = *((Counts*)data)->kmerDBi;
     vector<kmer_aCount_umap>& trResults = *((Counts*)data)->trResults;
+    vector<kmer_aCount_umap>& ntrKmerDB = *((Counts*)data)->ntrKmerDB;
     ifstream *in = ((Counts*)data)->in;
     bool interleaved = ((Counts*)data)->interleaved;
     bool isFasta = ((Counts*)data)->isFasta;
@@ -495,7 +504,8 @@ void CountWords(void *data) {
                 }
                 else {
                     kmer_aCount_umap &trKmers = trResults[ind];
-                    if (isValidPair(trKmers, kmers1, kmers2, simmode)) {
+                    kmer_aCount_umap &ntrKmers = ntrKmerDB[ind];
+                    if (isValidPair(trKmers, ntrKmers, kmers1, kmers2, simmode)) {
                         for (size_t i = 0; i < kmers.size(); ++i) {
                             if (trKmers.count(kmers[i])) {
                                 trKmers[kmers[i]] += (dup[i].first + dup[i].second);
@@ -835,10 +845,10 @@ int main(int argc, char* argv[]) {
 
 
     // read input files
-    vector<kmer_aCount_umap> trKmerDB(nloci);
+    vector<kmer_aCount_umap> trKmerDB(nloci), ntrKmerDB(nloci);
     kmeruIndex_umap kmerDBi;
     if (multiKmerFile) {
-        readKmersFile(trKmerDB, kmerDBi, trFname, 0, true, false); // start from index 0, use locationBit, do not count
+        readKmersFile(trKmerDB, kmerDBi, trFname, 0, false, false); // start from index 0, no locationBit, do not count
     } else {
         readKmersFile(trKmerDB, kmerDBi, *(it_q+1)+".kmers", 0, false, false); // start from index 0, no locationBit, do not count
     }
@@ -846,8 +856,8 @@ int main(int argc, char* argv[]) {
 
 
     if (multiKmerFile) {
-        readKmersFile2DBi(kmerDBi, *(it_qs+1)+".lntr.kmers", 0, true); // start from index 0, use locationBit
-        readKmersFile2DBi(kmerDBi, *(it_qs+1)+".rntr.kmers", 0, true); // start from index 0, use locationBit
+        readKmersFile(ntrKmerDB, kmerDBi, *(it_qs+1)+".lntr.kmers", 0, false, false); // start from index 0, no locationBit, no count
+        readKmersFile(ntrKmerDB, kmerDBi, *(it_qs+1)+".rntr.kmers", 0, false, false); // start from index 0, no locationBit, no count
         cerr << "# unique kmers in tr/ntrKmerDB: " << kmerDBi.size() << '\n';
     }
     cerr << "read *.kmers file in " << (time(nullptr) - time1) << " sec." << endl;
@@ -884,6 +894,7 @@ int main(int argc, char* argv[]) {
         counts.Cthreshold = Cthreshold;
         counts.Rthreshold = Rthreshold;
         counts.kmerDBi = &kmerDBi;
+        counts.ntrKmerDB = &ntrKmerDB;
     }
     if (extractFasta) { trKmerDB.clear(); }
     //cerr << "thread data preparation completed in " << (time(nullptr) - time1) << " sec." << endl;
@@ -931,7 +942,8 @@ int main(int argc, char* argv[]) {
     for (size_t t = 0; t < nproc; ++t) {
         if (extractFasta) {
             pthread_create(&threads[t], &threadAttr[t], (void* (*)(void*))ExtractFasta, &threaddata.counts[t]);
-        } else {
+        } 
+        else {
             if (simmode == 2) {
                 pthread_create(&threads[t], &threadAttr[t], (void* (*)(void*))CountWords<float>, &threaddata.counts[t]);
             }
@@ -942,9 +954,7 @@ int main(int argc, char* argv[]) {
     }
     cerr << "threads created" << endl;
  
-    for (size_t t = 0; t < nproc; ++t) {
-        pthread_join(threads[t], NULL);
-    }
+    for (size_t t = 0; t < nproc; ++t) { pthread_join(threads[t], NULL); }
     cerr << "parallel query completed in " << (time(nullptr) - time1) << " sec." << endl;
     fastqFile.close();
 
