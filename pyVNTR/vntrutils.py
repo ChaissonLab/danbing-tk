@@ -156,6 +156,8 @@ def read2kmers(read, k, leftflank=0, rightflank=0):
     will return max_val_of_uint64 (-1) if there's 'N' within kmer
     """
     rlen = len(read)
+    if rlen - k - leftflank - rightflank + 1 <= 0: return np.array([])
+
     mask = (1 << 2*(k-1)) - 1
     kmers = np.zeros(rlen-k-leftflank-rightflank+1, dtype='uint64') - 1
 
@@ -166,7 +168,7 @@ def read2kmers(read, k, leftflank=0, rightflank=0):
     it = iter(range(beg, rlen-k-rightflank+1))
     for i in it:
         canonicalkmer = rckmer if kmer > rckmer else kmer
-        kmers[i-beg] = canonicalkmer
+        kmers[i] = canonicalkmer
 
         if i + k >= rlen: return kmers
         if read[i + k] not in baseinv:
@@ -343,6 +345,23 @@ def readFasta(fname, nloci=0):
 
     return seqDB
 
+def readFasta2dict(fname):
+    seqDB = {}
+    with open(fname) as f:
+        locus = 0
+        seq = ''
+        f.readline()
+        for line in f:
+            if line[0] == '>':
+                seqDB[locus] = seq
+                seq = ''
+                locus += 1
+            else:
+                seq = line.rstrip()
+        else:
+            seqDB[locus] = seq
+
+    return seqDB
 
 def RecursiveRejection(x, y):
     reg = LinearRegression(fit_intercept=False).fit(x, y)
