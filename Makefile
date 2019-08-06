@@ -1,5 +1,5 @@
 PREFIX = /home/cmb-16/mjc/tsungyul/work/vntr
-TARGETS = aQueryFasta_stm vntr2kmers 
+TARGETS = aQueryFasta_stm aQueryFasta_stm_g vntr2kmers 
 #TARGETS = aQueryFasta amphQueryFasta vntr2kmers fasta2kmers kmer2dot seq2num num2seq rvseq bam2pe
 
 CXX = g++ -std=c++11 -O3
@@ -17,7 +17,7 @@ aQueryFasta_stm.o:	aQueryFasta.cpp
 
 aQueryFasta_stm_g:	aQueryFasta_stm_g.o
 	$(CXX) -g $(LDFLAGS) -o aQueryFasta_stm_g aQueryFasta_stm_g.o
-aQueryFasta_g.o:	aQueryFasta.cpp
+aQueryFasta_stm_g.o:	aQueryFasta.cpp
 	$(CXX) -g $(LDFLAGS) -c aQueryFasta.cpp -o aQueryFasta_stm_g.o
 
 vntr2kmers:	vntr2kmers.o
