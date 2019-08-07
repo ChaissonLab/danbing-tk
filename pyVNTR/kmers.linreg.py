@@ -24,7 +24,7 @@ print(args)
 threshold = args.threshold
 R2threshold = args.R2threshold
 combine = args.combine and len(args.illumina) != 1
-plotloci = set([int(v) for v in args.plot.split(",")])
+plotloci = set([int(v) for v in args.plot.split(",")]) if args.plot else set([])
 
 print("reading illumina kmers")
 y = {}
