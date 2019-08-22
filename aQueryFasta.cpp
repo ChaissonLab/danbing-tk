@@ -637,7 +637,7 @@ int main(int argc, char* argv[]) {
 
     if (argc < 4) {
         cerr << endl
-             << "Usage: nuQueryFasta [-b] [-e] [-t] [-s] -k <-qs> <-fqi | fai> -o -p -cth -rth" << endl
+             << "Usage: nuQueryFasta [-b] [-e] [-t] [-s] [-a] -k <-qs> <-fqi | fai> -o -p -cth -rth" << endl
              << "Options:" << endl
              << "  -b     Use baitDB to decrease ambiguous mapping" << endl
              << "  -e     Write mapped reads to STDOUT in fasta format" << endl
@@ -646,6 +646,7 @@ int main(int argc, char* argv[]) {
              << "  -s     Run in simulation mode to write the origin and destination of mis-assigned reads to STDOUT" << endl
              << "         Specify 1 for simulated reads from TR" << endl
              << "         Specify 2 for simulated reads from whole genome" << endl
+             << "  -a     Augmentation mode, use pruned kmers and augkmers" << endl
              << "  -k     Kmer size" << endl
              << "  -qs    Prefix for *.tr.kmers, *.lntr.kmers, *.rntr.kmers files" << endl
              << "  -fqi   Interleaved pair-end fastq file" << endl // deprecated
@@ -660,12 +661,12 @@ int main(int argc, char* argv[]) {
     }
    
     vector<string> args(argv, argv+argc);
-    bool bait = false, extractFasta = false, isFastq;
+    bool bait = false, extractFasta = false, aug = false, isFastq;
     int simmode = 0;
     size_t argi = 1, trim = 0, k, nproc, Cthreshold;
     float Rthreshold;
     string trPrefix, trFname, fastxFname, outPrefix;
-    ifstream fastxFile, trFile, lntrFile, rntrFile, baitFile;
+    ifstream fastxFile, trFile, lntrFile, rntrFile, augFile, baitFile;
     ofstream outfile, baitOut;
     while (argi < argc) {
         if (args[argi] == "-b") {
@@ -677,6 +678,7 @@ int main(int argc, char* argv[]) {
         else if (args[argi] == "-e") { extractFasta = true; }
         else if (args[argi] == "-t") { trim = stoi(args[++argi]); }
         else if (args[argi] == "-s") { simmode = stoi(args[++argi]); }
+        else if (args[argi] == "-a") { aug = true; }
         else if (args[argi] == "-k") { k = stoi(args[++argi]); }
         else if (args[argi] == "-qs") {
             trPrefix = args[++argi];
@@ -688,6 +690,11 @@ int main(int argc, char* argv[]) {
             trFile.close();
             lntrFile.close();
             rntrFile.close();
+            if (aug) {
+                augFile.open(trPrefix+".tr.aug.kmers");
+                assert(augFile);
+                augFile.close();
+            }
         }
         else if (args[argi] == "-fqi" or args[argi] == "-fai") {
             isFastq = (args[argi] == "-fqi" ? true : false);
@@ -712,6 +719,10 @@ int main(int argc, char* argv[]) {
             Rthreshold = stof(args[++argi]);
             assert(Rthreshold <= 1 and Rthreshold >= 0.5);
         }
+        else { 
+            cerr << "invalid option" << endl;
+            return 1;
+        }
         ++argi;
     }
 
@@ -721,6 +732,7 @@ int main(int argc, char* argv[]) {
          << "isFastq: " << isFastq << endl
          << "sim mode: " << simmode << endl
          << "trim mode: " << trim << endl
+         << "augmentation mode: " << aug << endl
          << "k: " << k << endl
          << "Cthreshold: " << Cthreshold << endl
          << "Rthreshold: " << Rthreshold << endl
@@ -741,7 +753,12 @@ int main(int argc, char* argv[]) {
 
     readKmersFile2DBi(kmerDBi, trPrefix+".lntr.kmers", 0); // start from index 0
     readKmersFile2DBi(kmerDBi, trPrefix+".rntr.kmers", 0); // start from index 0
-    cerr << "# unique kmers in tr/ntrKmerDB: " << kmerDBi.size() << '\n'
+    cerr << "# unique kmers in tr/ntrKmerDB: " << kmerDBi.size() << '\n';
+
+    if (aug) {
+        readKmersFile2DBi(kmerDBi, trPrefix+".tr.aug.kmers", 0); // start from index 0
+    }
+    cerr << "# unique kmers in tr/ntr/augKmerDB: " << kmerDBi.size() << '\n'
          << "read *.kmers file in " << (time(nullptr) - time1) << " sec." << endl;
 
     if (bait) {
