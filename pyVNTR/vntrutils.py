@@ -66,6 +66,14 @@ byteRC = [
  240, 176, 112,  48, 224, 160,  96,  32, 208, 144,
   80,  16, 192, 128,  64,   0]
 
+def getRCstring(string):
+    RCstring = np.empty(len(string), dtype='U')
+    rlen = len(string)
+    for i in range(rlen):
+        RCstring[rlen-i-1] = baseComplement[ord(string[i])]
+
+    return ''.join(RCstring)
+
 def encodeString(string):
     numericString = 0
     for i in range(len(string)):
@@ -290,7 +298,7 @@ def readKmers(fname, kmerDB, end=999999, sort=True, kmerName=False, threshold=0)
         else:
             assignKmerTable(kmerDB, locus, table, sort, kmerName, threshold)
 
-def readKmerDict(fname, kmerDB={}, threshold=0):
+def readKmerDict(fname, kmerDB={}, threshold=0, checkkmer=False):
     """ read a kmer file as a dictionary """
     
     hasInput = True if len(kmerDB) else False
@@ -306,14 +314,14 @@ def readKmerDict(fname, kmerDB={}, threshold=0):
                 if not hasInput: kmerDB[locus] = {}
             else:
                 kmer, count = [int(v) for v in line.split()]
-                if count < threshold:
-                    pass
-                else:
-                    if hasInput:
-                        assert kmer in kmerDB[locus]
+                if count >= threshold:
+                    if kmer in kmerDB[locus]:
                         kmerDB[locus][kmer] += count
                     else:
-                        kmerDB[locus][kmer] = count
+                        if checkkmer: assert False
+                        else: kmerDB[locus][kmer] = count
+
+    if not hasInput: return kmerDB
 
 def countLoci(fname):
     with open(fname) as f:
@@ -423,7 +431,7 @@ def PlotRegression(x, y, xlabel='data_X', ylabel='data_Y', title='', fname='', o
     if pred:
         y1_proj = np.sum(y1) / a
     if plot:
-        xp = np.arange(0, np.max(x1), 2).reshape(-1, 1)
+        xp = np.linspace(0, np.max(x1), 2).reshape(-1, 1)
         plt.plot(x1, y1, '.', color='C0', alpha=0.1)
         plt.plot(xp, reg.predict(xp), '-', color='C0')
         plt.xlabel(xlabel)
