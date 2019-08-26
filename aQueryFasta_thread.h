@@ -1,5 +1,5 @@
-#ifndef A_QUERYFASTA_H_
-#define A_QUERYFASTA_H_
+#ifndef A_QUERYFASTA_THREAD_H_
+#define A_QUERYFASTA_THREAD_H_
 
 #include "stdlib.h"
 #include <vector>
@@ -25,7 +25,7 @@ using namespace std;
 //typedef unordered_set<size_t> kmer_set;
 typedef unordered_map<size_t, uint32_t> kmerCount_umap; // assume count < (2^16 -1)
 typedef unordered_map<size_t, atomic_size_t> kmer_aCount_umap;
-//typedef unordered_map<size_t, vector<uint16_t>> kmerIndex_dict; // assume number of loci < (2^16 -1)
+typedef unordered_map<size_t, uint8_t> GraphType;
 typedef unordered_map<size_t, unordered_set<uint32_t>> kmeruIndex_umap; // assume number of loci < (2^16 -1)
 typedef unordered_map<size_t, vector<uint16_t>> kmerAttr_dict;
 typedef unordered_map<string, unordered_map<string, uint16_t>> adj_dict;
@@ -103,31 +103,23 @@ const unsigned char byteRC[]   = {
 
 string decodeNumericSeq(size_t num, size_t k){
     string seq = "";
-    for (size_t i = 0; i < k; i++){
+    for (size_t i = 0; i < k; ++i){
         seq = baseNumConversion[num % 4] + seq;
         num >>= 2;
     }
     return seq;
 }
     
-size_t encodeSeq(string seq){ // poor implementation, extra string copy
-    size_t numericSeq = 0;
-    for (size_t i = 0; i < seq.length(); i++){
-        numericSeq = (numericSeq<<2) + baseNumConversion[seq[i]];
-    }
-    return numericSeq;
-}
-
 size_t encodeSeq(string& seq, size_t start, size_t k) { // no extra copy
     size_t numericSeq = 0;
-    for (size_t i = start; i < start+k; i++){
+    for (size_t i = start; i < start+k; ++i){
         numericSeq = (numericSeq<<2) + baseNumConversion[seq[i]];
     }
     return numericSeq;
 }
 
 size_t getNextKmer(size_t& kmer, size_t beg, string& read, size_t k){
-    size_t rlen = read.length();
+    size_t rlen = read.size();
     if (beg + k > rlen){
         kmer = 0;
         return rlen;
@@ -153,7 +145,7 @@ string getRC(const string &read) {
     string rcread;
     size_t rlen = read.size();
     rcread.resize(rlen);
-    for (size_t i = 0; i < rlen; i++) {
+    for (size_t i = 0; i < rlen; ++i) {
         rcread[i] = baseComplement[read[rlen - 1 - i]];
     }
     return rcread;
@@ -176,7 +168,7 @@ size_t getNuRC(size_t num, size_t k) {
 
 template <typename T>
 void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0, bool count = true) { // old version
-    size_t rlen = read.length();
+    size_t rlen = read.size();
     size_t mask = (1UL << 2*(k-1)) - 1;
     size_t beg, nbeg, canonicalkmer, kmer, rckmer;
 
@@ -185,7 +177,7 @@ void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t
     rckmer = getNuRC(kmer, k);
  
     if (count) {
-        for (size_t i = beg; i < rlen - k - rightflank + 1; i++){
+        for (size_t i = beg; i < rlen - k - rightflank + 1; ++i){
             if (kmer > rckmer) {
                 canonicalkmer = rckmer;
             } else {
@@ -205,7 +197,7 @@ void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t
         }
     }
     else {
-        for (size_t i = beg; i < rlen - k - rightflank + 1; i++){
+        for (size_t i = beg; i < rlen - k - rightflank + 1; ++i){
             if (kmer > rckmer) {
                 canonicalkmer = rckmer;
             } else {
@@ -226,8 +218,36 @@ void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t
     }
 }
 
-void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0) {
-    const size_t rlen = read.length();
+void _buildKmerGraph(GraphType& g, string& read, size_t k, size_t leftflank, size_t rightflank) {
+    const size_t rlen = read.size();
+    const size_t mask = (1ULL << 2*(k-1)) - 1;
+
+    size_t beg, nbeg, kmer;
+    beg = getNextKmer(kmer, leftflank, read, k);
+    if (beg != rlen){
+        for (size_t i = beg; i < rlen - k - rightflank; ++i){
+            if (std::find(alphabet, alphabet+4, read[i + k]) == alphabet+4){
+                g[kmer] |= 0;
+                nbeg = getNextKmer(kmer, i+k+1, read, k);
+                if (nbeg == rlen) { break; }
+                i = nbeg - 1;
+            } else {
+                g[kmer] |= (1 << baseNumConversion[read[i + k]]);
+                kmer = ( (kmer & mask) << 2 ) + baseNumConversion[read[i + k]];
+            }
+        }
+        g[kmer] |= 0;
+    }
+}
+
+void buildKmerGraph(GraphType& g, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0) {
+    _buildKmerGraph(g, read, k, leftflank, rightflank);
+    string rcread = getRC(read);
+    _buildKmerGraph(g, rcread, k, rightflank, leftflank);
+}
+
+void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0, bool canonical = true) {
+    const size_t rlen = read.size();
     const size_t mask = (1ULL << 2*(k-1)) - 1;
     size_t beg, nbeg, canonicalkmer, kmer, rckmer;
 
@@ -235,9 +255,9 @@ void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank 
     if (beg == rlen){ return; }
     rckmer = getNuRC(kmer, k);
 
-    for (size_t i = beg; i < rlen - k - rightflank + 1; i++){
+    for (size_t i = beg; i < rlen - k - rightflank + 1; ++i){
         canonicalkmer = (kmer > rckmer ? rckmer : kmer);
-        kmers.push_back(canonicalkmer);
+        kmers.push_back(canonical ? canonicalkmer : kmer);
 
         if (std::find(alphabet, alphabet+4, read[i + k]) == alphabet+4){
             nbeg = getNextKmer(kmer, i+k+1, read, k);
@@ -258,7 +278,7 @@ size_t countLoci(string fname) {
     size_t nloci = 0;
     while (getline(inf, line)) {
         if (line[0] == '>'){
-            nloci++;
+            ++nloci;
         }
     }
     inf.close();
@@ -275,7 +295,7 @@ void readKmersFile2DB(T& kmerDB, string fname, size_t startInd = 0, bool count =
     cerr <<"starting reading kmers from " << fname << endl;
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
-            startInd++;
+            ++startInd;
             if (f.peek() == EOF){
                 f.close();
                 break;
@@ -308,7 +328,7 @@ void readKmersFile2DBi(kmeruIndex_umap& kmerDBi, string fname, size_t startInd =
     cerr <<"starting reading kmers from " << fname << endl;
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
-            startInd++;
+            ++startInd;
             if (f.peek() == EOF){
                 f.close();
                 break;
@@ -340,7 +360,7 @@ void readKmersFile(T& kmerDB, kmeruIndex_umap& kmerDBi, string fname, size_t sta
     cerr <<"starting reading kmers from " << fname << endl;
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
-            startInd++;
+            ++startInd;
             if (f.peek() == EOF){
                 f.close();
                 break;
@@ -371,11 +391,11 @@ template <typename T>
 void writeKmers(string outfpref, T& kmerDB, size_t threshold = 0) {
     ofstream fout(outfpref+".kmers");
     assert(fout);
-    for (size_t i = 0; i < kmerDB.size(); i++) {
+    for (size_t i = 0; i < kmerDB.size(); ++i) {
         fout << ">locus " << i <<"\n";
         for (auto &p : kmerDB[i]) {
             if (p.second < threshold) { continue; }
-            fout << p.first << '\t' << p.second << '\n';
+            fout << p.first << '\t' << (size_t)p.second << '\n';
         }
     }
     fout.close();
@@ -384,7 +404,7 @@ void writeKmers(string outfpref, T& kmerDB, size_t threshold = 0) {
 void writeKmers(string outfpref, vector<kmerAttr_dict>& kmerAttrDB) {
     ofstream fout(outfpref+".kmers");
     assert(fout);
-    for (size_t i = 0; i < kmerAttrDB.size(); i++) {
+    for (size_t i = 0; i < kmerAttrDB.size(); ++i) {
         fout << ">locus " << i <<"\n";
         for (auto &p : kmerAttrDB[i]) {
             fout << p.first;
@@ -480,8 +500,8 @@ public:
             nodes[setid].push_back(*s);
             nodes[setid].push_back(*t);
             setsizes[setid] += 2;
-            setid++;
-            nset++;
+            ++setid;
+            ++nset;
 
         }
         else if (mode == 1) {    // s already exists; s -> t
@@ -531,7 +551,7 @@ public:
             }
             // get reverse complement of each node
             vector<string> tmpnodes(nodes[oldlabel].size());
-            for (size_t i = 0; i < nodes[oldlabel].size(); i++) {
+            for (size_t i = 0; i < nodes[oldlabel].size(); ++i) {
                 tmpnodes[i] = getRC(nodes[oldlabel][i]);
             }
             // insert (t_rc, s_rc) as (source, target) in newlabel
