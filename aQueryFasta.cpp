@@ -637,7 +637,7 @@ int main(int argc, char* argv[]) {
 
     if (argc < 4) {
         cerr << endl
-             << "Usage: nuQueryFasta [-b] [-e] [-t] [-s] [-a] -k <-qs> <-fqi | fai> -o -p -cth -rth" << endl
+             << "Usage: aQueryFasta [-b] [-e] [-t] [-s] [-a] -k <-qs> <-fqi | fai> -o -p -cth -rth" << endl
              << "Options:" << endl
              << "  -b     Use baitDB to decrease ambiguous mapping" << endl
              << "  -e     Write mapped reads to STDOUT in fasta format" << endl
