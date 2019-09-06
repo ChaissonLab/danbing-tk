@@ -114,7 +114,7 @@ int main(int argc, const char * argv[]) {
                     buildNuKmers(lNTRkmersDB[locus], read, ksize, lntr_l, lntr_r, count); // bug: one kmer less?
                     buildNuKmers(rNTRkmersDB[locus], read, ksize, rntr_l, rntr_r, count); // bug: one kmer less?
                     if (genGraph) {
-                        buildKmerGraph(graphDB[locus], read, ksize);
+                        buildKmerGraph(graphDB[locus], read, ksize); // no self loop
                     }
                 }
                 read = "";

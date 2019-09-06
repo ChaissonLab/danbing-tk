@@ -218,7 +218,7 @@ void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t
     }
 }
 
-void _buildKmerGraph(GraphType& g, string& read, size_t k, size_t leftflank, size_t rightflank) {
+void _buildKmerGraph(GraphType& g, string& read, size_t k, size_t leftflank, size_t rightflank, bool noselfloop) {
     const size_t rlen = read.size();
     const size_t mask = (1ULL << 2*(k-1)) - 1;
 
@@ -232,20 +232,23 @@ void _buildKmerGraph(GraphType& g, string& read, size_t k, size_t leftflank, siz
                 if (nbeg == rlen) { break; }
                 i = nbeg - 1;
             } else {
-                g[kmer] |= (1 << baseNumConversion[read[i + k]]);
-                kmer = ( (kmer & mask) << 2 ) + baseNumConversion[read[i + k]];
+                size_t nextkmer = ((kmer & mask) << 2) + baseNumConversion[read[i + k]];
+                bool valid = (not noselfloop) or (noselfloop and (kmer != nextkmer));
+                g[kmer] |= ((1 & valid) << baseNumConversion[read[i + k]]);
+                kmer = nextkmer;
             }
         }
         g[kmer] |= 0;
     }
 }
 
-void buildKmerGraph(GraphType& g, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0) {
-    _buildKmerGraph(g, read, k, leftflank, rightflank);
+void buildKmerGraph(GraphType& g, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0, bool noselfloop = true) {
+    _buildKmerGraph(g, read, k, leftflank, rightflank, noselfloop);
     string rcread = getRC(read);
-    _buildKmerGraph(g, rcread, k, rightflank, leftflank);
+    _buildKmerGraph(g, rcread, k, rightflank, leftflank, noselfloop);
 }
 
+// invalid kmers are skipped; input/output size differs
 void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0, bool canonical = true) {
     const size_t rlen = read.size();
     const size_t mask = (1ULL << 2*(k-1)) - 1;
@@ -268,6 +271,14 @@ void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank 
             kmer = ( (kmer & mask) << 2 ) + baseNumConversion[read[i + k]];
             rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] & mask) << (2*(k-1))); // XXX test correctness
         }
+    }
+}
+
+void noncaVec2CaUmap(vector<size_t>& kmers, kmerCount_umap& out, size_t ksize) {
+    size_t RCkmer;
+    for (size_t kmer : kmers) {
+        RCkmer = getNuRC(kmer, ksize);
+        ++out[(kmer <= RCkmer ? kmer : RCkmer)];
     }
 }
 

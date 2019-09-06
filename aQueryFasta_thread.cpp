@@ -25,8 +25,8 @@ bool testmode;
 size_t readNumber = 0;
 bool firstoutput = true;
 size_t ksize;
-uint64_t NAN64 = 0xFFFFFFFFFFFFFFFF;
-uint32_t NAN32 = 0xFFFFFFFF;
+const uint64_t NAN64 = 0xFFFFFFFFFFFFFFFF;
+const uint32_t NAN32 = 0xFFFFFFFF;
 
 typedef unordered_map<size_t, vector<size_t>> msa_umap;
 
@@ -249,7 +249,7 @@ void parseReadName(string& title, size_t readn, vector<size_t>& poss, vector<Val
 
 void getOutNodes(GraphType& g, size_t node, vector<size_t>& outnodes) {
     // a node is a kmer and is not neccessarily canonical
-    const size_t mask = (1UL << 2*(ksize-1)) - 1;
+    const static uint64_t mask = (1UL << 2*(ksize-1)) - 1;
     if (g.count(node)) {
         uint8_t nucBits = g[node]; // a 4-bit value that corresponds to the presence of trailing TGCA in downstream nodes
         for (size_t i = 0; i < 4; ++i) {
@@ -262,58 +262,147 @@ void getOutNodes(GraphType& g, size_t node, vector<size_t>& outnodes) {
     }
 }
 
-bool isThreadFeasible(GraphType& g, string& seq, size_t Cthreshold) {
-    vector<size_t> kmers;
+template <typename T>
+void printVec(vector<T>& vec) {
+    for (auto v : vec) { cerr << v; }
+    cerr << endl;
+}
+
+// 0: not feasible, 1: feasible, w/o correction, 2: feasible w/ correction // TODO exclude self loop
+int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t Cthreshold) {
     read2kmers(kmers, seq, ksize, 0, 0, false); // leftflank = 0, rightflank = 0, canonical = false
 
+    const static uint64_t mask = (1UL << 2*(ksize-1)) - 1;
     const size_t nkmers = kmers.size();
     const size_t maxskipcount = (nkmers >= Cthreshold ? nkmers - Cthreshold : 0);
-    size_t skipcount = 0;
-    size_t kmer = kmers[skipcount];
+    const size_t maxcorrectioncount = 2;
+    size_t nskip = 0, ncorrection = 0, nfailedcorrection = 0; // TODO
+    size_t kmer = kmers[nskip];
+    //vector<int> states(nkmers, 0); // TODO
 
-    while (not g.count(kmer)) { kmer = kmers[++skipcount]; }
+    while (not g.count(kmer)) { kmer = kmers[++nskip]; } // find the first matching node
     unordered_set<size_t> feasibleNodes = {kmer};
+    //states[nskip] = 1;
 
-    for (size_t i = skipcount + 1; i < nkmers; ++i) {
+    for (size_t i = nskip + 1; i < nkmers; ++i) {
         unordered_set<size_t> nextFeasibleNodes;
         bool skip = true;
 
         for (size_t node : feasibleNodes) {
             vector<size_t> outnodes;
-            getOutNodes(g, node, outnodes);
+            getOutNodes(g, node, outnodes); // for each node, find its outNodes
+            //cerr << "Try aligning " << decodeNumericSeq(kmers[i], 21) << kmers[i] << " to next of " << decodeNumericSeq(node, 21) << node << ": "; //TODO
         
             for (size_t outnode : outnodes) {
+                //cerr << decodeNumericSeq(outnode, 21) << outnode << ' '; // TODO
                 nextFeasibleNodes.insert(outnode);
-                if (kmers[i] == outnode) {
+                if (kmers[i] == outnode) { // matching node found
+                    //cerr << "match found\n"; // TODO
                     nextFeasibleNodes.clear();
                     nextFeasibleNodes.insert(outnode);
                     skip = false;
+                    //states[i] = std::max(1, states[i]); // TODO
                     break;
                 }
+                //else { cerr << "\n"; } // TODO
             }
             if (not skip) { break; }
         }
 
-        if (skip) {
-            if (++skipcount > maxskipcount) { return false; }
+        if (skip) { // read kmer has no matching node in the graph, try error correction
+            size_t oldnt = kmers[i] % 4;
+            vector<size_t> candnts; // candidate nucleotides
+            if (ncorrection < maxcorrectioncount) {
+                // for (size_t node : nextFeasibleNodes) { candnts.push_back(node % 4); } // incorrect when there's skipping due to NNN
+                //cerr << "=====pos " << i << "=====\n" // TODO
+                //     << "finding correction for " << decodeNumericSeq(kmers[i], 21) << " from "; // TODO
+                //for (size_t node : nextFeasibleNodes) { cerr << decodeNumericSeq(node, 21) << ' '; } // TODO
+                    
+                for (size_t nt = 0; nt < 4; ++nt) {
+                    if (nt == oldnt) { continue; }
+                    if (nextFeasibleNodes.count(kmers[i] - oldnt + nt)) {
+                        //cerr << "found! "; // TODO
+                        skip = false;
+                        //states[i] = std::max(2, states[i]);
+                        candnts.push_back(nt);
+                    }
+                }
+                //cerr << '\n'; // TODO
+            }
+
+            if (skip) {
+                ++nfailedcorrection;
+                if (++nskip > maxskipcount) {
+                    //printVec(states);
+                    //cerr << nskip << ' ' << nfailedcorrection << ' ' << ncorrection << endl;
+                    return 0;
+                }
+            }
+            else {
+                bool corrected = false;
+                if (candnts.size() == 1) { corrected = true; }
+                else { // determine which nucleotide is the proper correction by examining the following (ksize-1) kmers
+                    for (size_t j = 1; j < std::min(ksize, nkmers-i); ++j) { 
+                        vector<size_t> newcandnts;
+                        for (size_t k = 0; k < candnts.size(); ++k) { // check if the corrected kmer can extend the thread
+                            vector<size_t> outnodes;
+                            size_t node = kmers[i+j-1] + (((int)candnts[k] - (int)oldnt) << ((j-1) << 1));
+                            getOutNodes(g, node, outnodes);
+                            size_t candkmer = kmers[i+j] + (((int)candnts[k] - (int)oldnt) << (j << 1));
+                            if (std::find(outnodes.begin(), outnodes.end(), candkmer) != outnodes.end()) { newcandnts.push_back(candnts[k]); }
+                        }
+                        std::swap(candnts, newcandnts);
+                        if (candnts.size() == 0) { break; }
+                        else if (candnts.size() == 1) {
+                            corrected = true;
+                            //states[i] = std::max(3, states[i]); // TODO
+                            break;
+                        }
+                    }
+                }
+                if (corrected) { // correct the following kmers in the read
+                    ++ncorrection;
+                    //cerr << "corrected kmers: "; // TODO
+                    kmers[i] -= oldnt;
+                    kmers[i] += candnts[0];
+                    //cerr << "0:" << decodeNumericSeq(kmers[i], 21) << ' '; // TODO
+
+                    for (size_t j = 1; j < std::min(ksize, nkmers-i); ++j) {
+                        size_t nextkmer = kmers[i+j] - (oldnt << (j << 1)) + (candnts[0] << (j << 1));
+                        if ((nextkmer >> 2) << 2 != (kmers[i+j-1] & mask) << 1) { break; } // check no skipping due to NNN
+                        kmers[i+j] = nextkmer;
+                        //if (kmers[i+j] < (oldnt << (j<<1))) { // TODO debug only
+                        //    cerr << kmers[i+j] << '\t' << i << '\t' << j << '\t' << oldnt << '\t' << (oldnt << (j<<1)) << endl;
+                        //}
+                        //assert(kmers[i+j] >= (oldnt << (j<<1))); // TODO debug only
+                        //cerr << j << ':' << decodeNumericSeq(kmers[i+j], 21) << ' '; // TODO
+                        //states[i+j] = std::max(3, states[i+j]); // TODO
+                    }
+                    //cerr << '\n'; // TODO
+                    nextFeasibleNodes.clear();
+                    nextFeasibleNodes.insert(kmers[i]);
+                }
+                else { ++nskip; ++nfailedcorrection; } // no feasible correction
+            }
         }
         feasibleNodes.swap(nextFeasibleNodes);
     }
-    return true;
+    //printVec(states); // TODO
+    //cerr << nskip << ' ' << nfailedcorrection << ' ' << ncorrection << endl;
+    return (ncorrection ? 2 : 1);
 }
 
 class Counts {
 public:
-    ifstream *in;
-    bool isFastq, extractFasta;
+    bool isFastq, extractFasta, bait, threading;
+    uint16_t Cthreshold;
+    size_t *readIndex;
+    size_t threadIndex, nloci;
+    float Rthreshold;
     kmeruIndex_umap* kmerDBi;
     vector<GraphType>* graphDB;
     vector<kmer_aCount_umap>* trResults;
-    size_t *readIndex;
-    size_t threadIndex, nloci;
-    uint16_t Cthreshold;
-    float Rthreshold;
-    bool bait, threading;
+    ifstream *in;
     // simmode only
     int simmode;
     bool *firstoutput;
@@ -486,20 +575,32 @@ void CountWords(void *data) {
                 if (simmode) { if ((int)currentLocus == currentLocus) {msa[i][ind].push_back(pos); } }
             }
             else {
-                int feasibility;
+                int feasibility0 = 0, feasibility1 = 0;
+                kmerCount_umap cakmers;
 
                 if (threading) {
-                    feasibility = ( isThreadFeasible(graphDB[ind], seq, Cthreshold) << 1 ) 
-                                  + isThreadFeasible(graphDB[ind], seq1, Cthreshold);
+                    vector<size_t> noncakmers0, noncakmers1;
+                    feasibility0 = isThreadFeasible(graphDB[ind], seq, noncakmers0, Cthreshold);
+                    feasibility1 = isThreadFeasible(graphDB[ind], seq1, noncakmers1, Cthreshold);
+                    noncaVec2CaUmap(noncakmers0, cakmers, ksize);
+                    noncaVec2CaUmap(noncakmers1, cakmers, ksize);
                 }
 
-                if ((threading and feasibility == 3) or not threading) {
+                if ((threading and feasibility0 and feasibility1) or not threading) {
                     kmer_aCount_umap &trKmers = trResults[ind];
-                    for (size_t i = 0; i < kmers1.size(); ++i) {
-                        if (trKmers.count(kmers1[i])) {
-                            trKmers[kmers1[i]] += (dup[i].first + dup[i].second);
+                    if (not threading) {
+                        for (size_t i = 0; i < kmers1.size(); ++i) {
+                            if (trKmers.count(kmers1[i])) {
+                                trKmers[kmers1[i]] += (dup[i].first + dup[i].second);
+                            }
                         }
                     }
+                    else {
+                        for (auto& p : cakmers) {
+                            if (trKmers.count(p.first)) { trKmers[p.first] += p.second; }
+                        }
+                    }
+
                     if (simmode) { if (currentLocus != ind) { msa[i][ind].push_back(pos); } }
 
                     if (extractFasta) {
