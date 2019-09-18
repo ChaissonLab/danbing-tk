@@ -19,33 +19,58 @@
 #include <algorithm>
 
 using namespace std;
+size_t ksize;
+
+
+void removeNodeFromGraph(size_t node, GraphType& graph) {
+    static const size_t mask = (1UL << 2*(ksize-1)) - 1;
+
+    if (graph.count(node)) { // if the kmer is in the graph
+        graph.erase(node); // remove the node
+
+        uint8_t nucmask = 0xff - (1 << (node % 4));
+        size_t km1mer = node & mask;
+        for (size_t nuc = 0; nuc < 4; ++nuc) { // check all possible upstream nodes
+            size_t prevkmer = (nuc << ((ksize-1) << 1)) + km1mer;
+            if (graph.count(prevkmer)) { graph[prevkmer] &= nucmask; } // remove the edge that points from the upstream node
+        }
+    }
+}
 
 
 int main(int argc, const char * argv[]) {
 
     if (argc < 2){
         cerr << endl
-             << "usage: vntr2kmers [-th] [-g] -k -fs -ntr -o -fa \n"
-             << "  -th                 Filter out kmers w/ count below this threshold. Default: 0, i.e. no filtering\n"
-             << "  -g                  output *graph.kmers for threading-based kmer query.\n"
-             << "  -k                  Kmer size\n"
-             << "  -fs                 Length of flanking sequence in *.tr.fasta.\n"
-             << "  -ntr                Length of desired NTR in *kmers.\n"
-             << "  -o                  Output file prefix.\n"
-             << "  -fa <n> <list>      Use specified *.fasta in the [list] instead of hapDB.\n"
-             << "                      Count the first [n] files and build kmers for the rest\n"
+             << "usage: vntr2kmers_thread [-th] [-g] [-p] -k -fs -ntr -o -fa \n"
+             << "  -th <INT>        Filter out kmers w/ count below this threshold. Default: 0, i.e. no filtering\n"
+             << "  -g               output *graph.kmers for threading-based kmer query.\n"
+             << "  -p <FILE>        Prune tr/graph kmers with the given kmers file.\n"
+             << "  -k <INT>         Kmer size\n"
+             << "  -fs <INT>        Length of flanking sequence in *.tr.fasta.\n"
+             << "  -ntr <INT>       Length of desired NTR in *kmers.\n"
+             << "  -o <STR>         Output file prefix.\n"
+             << "  -fa <n> <list>   Use specified *.fasta in the [list] instead of hapDB.\n"
+             << "                   Count the first [n] files and build kmers for the rest\n"
              << "  ** The program assumes 800 bp of each NTR region\n\n";
         return 0;
     }
     vector<string> args(argv, argv+argc);
-    bool genGraph = false;
-    size_t argi = 1, threshold = 0, nhap = 0, NTRsize, ksize, fs, nfile2count, nloci;
-    string outPref;
+    bool genGraph = false, prune = false;
+    size_t argi = 1, threshold = 0, nhap = 0, NTRsize, fs, nfile2count, nloci;
+    string pruneFname, outPref;
     vector<string> infnames;
 
     while (argi < argc) {
         if (args[argi] == "-th") { threshold = stoi(args[++argi]); }
         else if (args[argi] == "-g") { genGraph = true; }
+        else if (args[argi] == "-p") {
+            prune = true;
+            pruneFname = args[++argi];
+            ifstream tmp(pruneFname);
+            assert(tmp);
+            tmp.close();
+        }
         else if (args[argi] == "-k") { ksize = stoi(args[++argi]); }
         else if (args[argi] == "-fs") { fs = stoi(args[++argi]); }
         else if (args[argi] == "-ntr") {
@@ -96,7 +121,7 @@ int main(int argc, const char * argv[]) {
         ifstream fin(infnames[n]);
         assert(fin.is_open());
 
-        cout << "building and counting " << infnames[n] << " kmers\n";
+        cerr << "building and counting " << infnames[n] << " kmers\n";
         while (getline(fin, line)) {
             if (line[0] != '>') {
                 read += line;
@@ -124,11 +149,32 @@ int main(int argc, const char * argv[]) {
         fin.close();
     }
 
+    if (prune) {
+        cerr << "pruning unsupported kmers with " << pruneFname << endl;
+
+        vector<kmerCount_umap> prunedkmersDB(nloci);
+        readKmersFile2DB(prunedkmersDB, pruneFname);
+
+        for (size_t locus = 0; locus < nloci; ++locus) {
+            auto& TRkmers = TRkmersDB[locus];
+            auto& prunedkmers = prunedkmersDB[locus];
+            for (auto& p : prunedkmers) { TRkmers.erase(p.first); }
+
+            if (genGraph) {
+                auto& graph = graphDB[locus];
+                for (auto& p : prunedkmers) {
+                    removeNodeFromGraph(p.first, graph);
+                    removeNodeFromGraph(getNuRC(p.first, ksize), graph);
+                }
+            }
+        }
+    }
+
 
     // -----
     // write kmers files for all kmer databases
     // -----
-    cout << "writing outputs" << endl;
+    cerr << "writing outputs" << endl;
     writeKmers(outPref + ".tr", TRkmersDB, threshold);
     writeKmers(outPref + ".lntr", lNTRkmersDB, threshold);
     writeKmers(outPref + ".rntr", rNTRkmersDB, threshold);
