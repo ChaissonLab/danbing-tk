@@ -268,43 +268,41 @@ void printVec(vector<T>& vec) {
     cerr << endl;
 }
 
-// 0: not feasible, 1: feasible, w/o correction, 2: feasible w/ correction // TODO exclude self loop
-int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t Cthreshold) {
+// 0: not feasible, 1: feasible, w/o correction, 2: feasible w/ correction
+int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t thread_cth, bool correction) {
     read2kmers(kmers, seq, ksize, 0, 0, false); // leftflank = 0, rightflank = 0, canonical = false
 
     const static uint64_t mask = (1UL << 2*(ksize-1)) - 1;
     const size_t nkmers = kmers.size();
-    const size_t maxskipcount = (nkmers >= Cthreshold ? nkmers - Cthreshold : 0);
+    const size_t maxskipcount = (nkmers >= thread_cth ? nkmers - thread_cth : 0);
     const size_t maxcorrectioncount = 2;
-    size_t nskip = 0, ncorrection = 0, nfailedcorrection = 0; // TODO
+    size_t nskip = 0, ncorrection = 0;
     size_t kmer = kmers[nskip];
-    //vector<int> states(nkmers, 0); // TODO
 
     while (not g.count(kmer)) { kmer = kmers[++nskip]; } // find the first matching node
     unordered_set<size_t> feasibleNodes = {kmer};
-    //states[nskip] = 1;
 
     for (size_t i = nskip + 1; i < nkmers; ++i) {
+        if (kmers[i] == kmers[i-1]) { // skip homopolymer run
+            ++nskip;
+            continue;
+        }
+
         unordered_set<size_t> nextFeasibleNodes;
         bool skip = true;
 
         for (size_t node : feasibleNodes) {
             vector<size_t> outnodes;
             getOutNodes(g, node, outnodes); // for each node, find its outNodes
-            //cerr << "Try aligning " << decodeNumericSeq(kmers[i], 21) << kmers[i] << " to next of " << decodeNumericSeq(node, 21) << node << ": "; //TODO
         
             for (size_t outnode : outnodes) {
-                //cerr << decodeNumericSeq(outnode, 21) << outnode << ' '; // TODO
                 nextFeasibleNodes.insert(outnode);
                 if (kmers[i] == outnode) { // matching node found
-                    //cerr << "match found\n"; // TODO
                     nextFeasibleNodes.clear();
                     nextFeasibleNodes.insert(outnode);
                     skip = false;
-                    //states[i] = std::max(1, states[i]); // TODO
                     break;
                 }
-                //else { cerr << "\n"; } // TODO
             }
             if (not skip) { break; }
         }
@@ -312,29 +310,21 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t Ct
         if (skip) { // read kmer has no matching node in the graph, try error correction
             size_t oldnt = kmers[i] % 4;
             vector<size_t> candnts; // candidate nucleotides
-            if (ncorrection < maxcorrectioncount) {
-                // for (size_t node : nextFeasibleNodes) { candnts.push_back(node % 4); } // incorrect when there's skipping due to NNN
-                //cerr << "=====pos " << i << "=====\n" // TODO
-                //     << "finding correction for " << decodeNumericSeq(kmers[i], 21) << " from "; // TODO
-                //for (size_t node : nextFeasibleNodes) { cerr << decodeNumericSeq(node, 21) << ' '; } // TODO
-                    
-                for (size_t nt = 0; nt < 4; ++nt) {
-                    if (nt == oldnt) { continue; }
-                    if (nextFeasibleNodes.count(kmers[i] - oldnt + nt)) {
-                        //cerr << "found! "; // TODO
-                        skip = false;
-                        //states[i] = std::max(2, states[i]);
-                        candnts.push_back(nt);
+
+            if (correction) {
+                if (ncorrection < maxcorrectioncount) {
+                    for (size_t nt = 0; nt < 4; ++nt) {
+                        if (nt == oldnt) { continue; }
+                        if (nextFeasibleNodes.count(kmers[i] - oldnt + nt)) {
+                            skip = false;
+                            candnts.push_back(nt);
+                        }
                     }
                 }
-                //cerr << '\n'; // TODO
             }
 
             if (skip) {
-                ++nfailedcorrection;
                 if (++nskip > maxskipcount) {
-                    //printVec(states);
-                    //cerr << nskip << ' ' << nfailedcorrection << ' ' << ncorrection << endl;
                     return 0;
                 }
             }
@@ -355,47 +345,35 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t Ct
                         if (candnts.size() == 0) { break; }
                         else if (candnts.size() == 1) {
                             corrected = true;
-                            //states[i] = std::max(3, states[i]); // TODO
                             break;
                         }
                     }
                 }
                 if (corrected) { // correct the following kmers in the read
                     ++ncorrection;
-                    //cerr << "corrected kmers: "; // TODO
                     kmers[i] -= oldnt;
                     kmers[i] += candnts[0];
-                    //cerr << "0:" << decodeNumericSeq(kmers[i], 21) << ' '; // TODO
 
                     for (size_t j = 1; j < std::min(ksize, nkmers-i); ++j) {
                         size_t nextkmer = kmers[i+j] - (oldnt << (j << 1)) + (candnts[0] << (j << 1));
                         if ((nextkmer >> 2) << 2 != (kmers[i+j-1] & mask) << 1) { break; } // check no skipping due to NNN
                         kmers[i+j] = nextkmer;
-                        //if (kmers[i+j] < (oldnt << (j<<1))) { // TODO debug only
-                        //    cerr << kmers[i+j] << '\t' << i << '\t' << j << '\t' << oldnt << '\t' << (oldnt << (j<<1)) << endl;
-                        //}
-                        //assert(kmers[i+j] >= (oldnt << (j<<1))); // TODO debug only
-                        //cerr << j << ':' << decodeNumericSeq(kmers[i+j], 21) << ' '; // TODO
-                        //states[i+j] = std::max(3, states[i+j]); // TODO
                     }
-                    //cerr << '\n'; // TODO
                     nextFeasibleNodes.clear();
                     nextFeasibleNodes.insert(kmers[i]);
                 }
-                else { ++nskip; ++nfailedcorrection; } // no feasible correction
+                else { ++nskip; } // no feasible correction
             }
         }
         feasibleNodes.swap(nextFeasibleNodes);
     }
-    //printVec(states); // TODO
-    //cerr << nskip << ' ' << nfailedcorrection << ' ' << ncorrection << endl;
     return (ncorrection ? 2 : 1);
 }
 
 class Counts {
 public:
-    bool isFastq, extractFasta, bait, threading;
-    uint16_t Cthreshold;
+    bool isFastq, extractFasta, bait, threading, correction;
+    uint16_t Cthreshold, thread_cth;
     size_t *readIndex;
     size_t threadIndex, nloci;
     float Rthreshold;
@@ -424,6 +402,7 @@ void CountWords(void *data) {
     bool extractFasta = ((Counts*)data)->extractFasta;
     bool bait = ((Counts*)data)->bait;
     bool threading = ((Counts*)data)->threading;
+    bool correction = ((Counts*)data)->correction;
     int simmode = ((Counts*)data)->simmode;
     size_t &readNumber = *((Counts*)data)->readIndex;
     size_t threadIndex = ((Counts*)data)->threadIndex;
@@ -431,6 +410,7 @@ void CountWords(void *data) {
     size_t readsPerBatch = 300000;
     size_t& nMappedReads = *((Counts*)data)->nMappedReads;
     uint16_t Cthreshold = ((Counts*)data)->Cthreshold;
+    uint16_t thread_cth = ((Counts*)data)->thread_cth;
     float Rthreshold = ((Counts*)data)->Rthreshold;
     ifstream *in = ((Counts*)data)->in;
     kmeruIndex_umap& kmerDBi = *((Counts*)data)->kmerDBi;
@@ -568,8 +548,7 @@ void CountWords(void *data) {
             read2kmers(kmers2, seq1, ksize);
             if (not kmers1.size() and not kmers2.size()) { continue; }
 
-            size_t ind;
-            ind = countHit(kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold, Rthreshold);
+            size_t ind = countHit(kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold, Rthreshold);
 
             if (ind == nloci) { 
                 if (simmode) { if ((int)currentLocus == currentLocus) {msa[i][ind].push_back(pos); } }
@@ -580,8 +559,8 @@ void CountWords(void *data) {
 
                 if (threading) {
                     vector<size_t> noncakmers0, noncakmers1;
-                    feasibility0 = isThreadFeasible(graphDB[ind], seq, noncakmers0, Cthreshold);
-                    feasibility1 = isThreadFeasible(graphDB[ind], seq1, noncakmers1, Cthreshold);
+                    feasibility0 = isThreadFeasible(graphDB[ind], seq, noncakmers0, thread_cth, correction);
+                    feasibility1 = isThreadFeasible(graphDB[ind], seq1, noncakmers1, thread_cth, correction);
                     noncaVec2CaUmap(noncakmers0, cakmers, ksize);
                     noncaVec2CaUmap(noncakmers1, cakmers, ksize);
                 }
@@ -639,34 +618,36 @@ int main(int argc, char* argv[]) {
 
     if (argc < 2) {
         cerr << endl
-             << "Usage: nuQueryFasta [-b] [-e] [-t] [-s] [-a] [-g] -k <-qs> <-fqi | fai> -o -p -cth -rth" << endl
+             << "Usage: nuQueryFasta [-b] [-e] [-t] [-s] [-a] [-g|-gc] -k <-qs> <-fqi | fai> -o -p -cth -rth" << endl
              << "Options:" << endl
-             << "  -b     Use baitDB to decrease ambiguous mapping" << endl
-             << "  -e     Write mapped reads to STDOUT in fasta format" << endl
-             << "         not compatible with -s option" << endl
-             << "  -t     Used trimmed pangenome graph e.g. \"-t 1\" for pan.*.trim1.kmers" << endl
-             << "  -s     Run in simulation mode to write the origin and destination of mis-assigned reads to STDOUT" << endl
-             << "         Specify 1 for simulated reads from TR" << endl
-             << "         Specify 2 for simulated reads from whole genome" << endl
-             << "  -a     Augmentation mode, use pruned kmers and augkmers" << endl
-             << "  -g     Use graph threading algorithm" << endl
-             << "  -k     Kmer size" << endl
-             << "  -qs    Prefix for *.tr.kmers, *.lntr.kmers, *.rntr.kmers, *.graph.kmers files" << endl
-             << "  -fqi   Interleaved pair-end fastq file" << endl // deprecated
-             << "  -fai   interleaved pair-end fasta file" << endl
-             << "  -o     Output prefix" << endl
-             << "  -p     Use n threads." << endl
-             << "  -cth   Discard both pe reads if maxhit of one pe read is below this threshold" << endl
-             << "  -rth   Discard reads with maxhit/(maxhit+secondhit) below this threshold." << endl
-             << "         Range [0.5, 1]. 1: does not allow noise. 0.5: no filtering." << endl
+             << "  -b           Use baitDB to decrease ambiguous mapping" << endl
+             << "  -e           Write mapped reads to STDOUT in fasta format" << endl
+             << "               not compatible with -s option" << endl
+             << "  -t <INT>     Used trimmed pangenome graph e.g. \"-t 1\" for pan.*.trim1.kmers" << endl
+             << "  -s <INT>     Run in simulation mode to write the origin and destination of mis-assigned reads to STDOUT" << endl
+             << "               Specify 1 for simulated reads from TR" << endl
+             << "               Specify 2 for simulated reads from whole genome" << endl
+             << "  -a           Augmentation mode, use pruned kmers and augkmers" << endl
+             << "  -g <INT>     Use graph threading algorithm w/o error correction" << endl
+             << "  -gc <INT>    Use graph threading algorithm w error correction" << endl
+             << "               Discard pe reads if # of matching kmers < [INT]" << endl
+             << "  -k <INT>     Kmer size" << endl
+             << "  -qs <str>    Prefix for *.tr.kmers, *.lntr.kmers, *.rntr.kmers, *.graph.kmers files" << endl
+             << "  -fqi <str>   Interleaved pair-end fastq file" << endl // deprecated
+             << "  -fai <str>   interleaved pair-end fasta file" << endl
+             << "  -o <str>     Output prefix" << endl
+             << "  -p <int>     Use n threads." << endl
+             << "  -cth <int>   Discard both pe reads if maxhit of one pe read is below this threshold" << endl
+             << "  -rth <float> Discard reads with maxhit/(maxhit+secondhit) below this threshold." << endl
+             << "               Range [0.5, 1]. 1: does not allow noise. 0.5: no filtering." << endl
              << endl;
         return 0;
     }
    
     vector<string> args(argv, argv+argc);
-    bool bait = false, extractFasta = false, aug = false, threading = false, isFastq;
+    bool bait = false, extractFasta = false, aug = false, threading = false, correction = false, isFastq;
     int simmode = 0;
-    size_t argi = 1, trim = 0, nproc, Cthreshold;
+    size_t argi = 1, trim = 0, thread_cth = 0, nproc, Cthreshold;
     float Rthreshold;
     string trPrefix, trFname, fastxFname, outPrefix;
     ifstream fastxFile, trFile, lntrFile, rntrFile, augFile, baitFile;
@@ -682,7 +663,11 @@ int main(int argc, char* argv[]) {
         else if (args[argi] == "-t") { trim = stoi(args[++argi]); }
         else if (args[argi] == "-s") { simmode = stoi(args[++argi]); }
         else if (args[argi] == "-a") { aug = true; }
-        else if (args[argi] == "-g") { threading = true; }
+        else if (args[argi] == "-g" or args[argi] == "-gc") {
+            if (args[argi] == "-gc") { correction = true; }
+            threading = true;
+            thread_cth = stoi(args[++argi]);
+        }
         else if (args[argi] == "-k") { ksize = stoi(args[++argi]); }
         else if (args[argi] == "-qs") {
             trPrefix = args[++argi];
@@ -741,6 +726,7 @@ int main(int argc, char* argv[]) {
          << "k: " << ksize << endl
          << "Cthreshold: " << Cthreshold << endl
          << "Rthreshold: " << Rthreshold << endl
+         << "threading Cthreshold" << thread_cth << endl
          << "fastx: " << fastxFname << endl
          << "query: " << trPrefix << ".(tr/rntr/lntr).kmers"<< endl
          << endl
@@ -799,9 +785,11 @@ int main(int argc, char* argv[]) {
         counts.bait = bait;
         counts.simmode = simmode;
         counts.threading = threading;
+        counts.correction = correction;
 
         counts.Cthreshold = Cthreshold;
         counts.Rthreshold = Rthreshold;
+        counts.thread_cth = thread_cth;
     }
 
     time1 = time(nullptr);
