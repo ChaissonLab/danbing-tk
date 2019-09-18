@@ -167,7 +167,7 @@ size_t getNuRC(size_t num, size_t k) {
 }
 
 template <typename T>
-void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0, bool count = true) { // old version
+void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0, bool count = true) {
     size_t rlen = read.size();
     size_t mask = (1UL << 2*(k-1)) - 1;
     size_t beg, nbeg, canonicalkmer, kmer, rckmer;
@@ -176,44 +176,22 @@ void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t
     if (beg == rlen){ return; }
     rckmer = getNuRC(kmer, k);
  
-    if (count) {
-        for (size_t i = beg; i < rlen - k - rightflank + 1; ++i){
-            if (kmer > rckmer) {
-                canonicalkmer = rckmer;
-            } else {
-                canonicalkmer = kmer;
-            }
-            kmers[canonicalkmer] += 1;
-
-            if (find(alphabet, alphabet+4, read[i + k]) == alphabet+4){
-                nbeg = getNextKmer(kmer, i+k+1, read, k);
-                if (nbeg == rlen) { return; }
-                rckmer = getNuRC(kmer, k);
-                i = nbeg - 1;
-            } else {
-                kmer = ( (kmer & mask) << 2 ) + baseNumConversion[read[i + k]];
-                rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] & mask) << (2*(k-1))); // XXX test correctness
-            }
+    for (size_t i = beg; i < rlen - k - rightflank + 1; ++i){
+        if (kmer > rckmer) {
+            canonicalkmer = rckmer;
+        } else {
+            canonicalkmer = kmer;
         }
-    }
-    else {
-        for (size_t i = beg; i < rlen - k - rightflank + 1; ++i){
-            if (kmer > rckmer) {
-                canonicalkmer = rckmer;
-            } else {
-                canonicalkmer = kmer;
-            }
-            kmers[canonicalkmer] += 0;
-            
-            if (find(alphabet, alphabet+4, read[i + k]) == alphabet+4){
-                nbeg = getNextKmer(kmer, i+k+1, read, k);
-                if (nbeg == rlen) { return; }
-                rckmer = getNuRC(kmer, k);
-                i = nbeg - 1;
-            } else {
-                kmer = ( (kmer & mask) << 2 ) + baseNumConversion[read[i + k]];
-                rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] & mask) << (2*(k-1))); // XXX test correctness
-            }
+        kmers[canonicalkmer] += (1 & count);
+
+        if (find(alphabet, alphabet+4, read[i + k]) == alphabet+4){
+            nbeg = getNextKmer(kmer, i+k+1, read, k);
+            if (nbeg == rlen) { return; }
+            rckmer = getNuRC(kmer, k);
+            i = nbeg - 1;
+        } else {
+            kmer = ( (kmer & mask) << 2 ) + baseNumConversion[read[i + k]];
+            rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] & mask) << (2*(k-1))); // XXX test correctness
         }
     }
 }
@@ -296,6 +274,19 @@ size_t countLoci(string fname) {
     return nloci;
 }
 
+size_t countBedLoci(string& fname) {
+    ifstream inf(fname);
+    assert(inf);
+    string line;
+    size_t nloci = 0;
+    while (getline(inf, line)) {
+        ++nloci;
+    }
+    inf.close();
+    return nloci;
+
+}
+
 // record kmerDB only
 template <typename T>
 void readKmersFile2DB(T& kmerDB, string fname, size_t startInd = 0, bool count = true, uint16_t threshold = 0, uint16_t offset = 0) {
@@ -303,7 +294,7 @@ void readKmersFile2DB(T& kmerDB, string fname, size_t startInd = 0, bool count =
     assert(f);
     string line;
     getline(f, line);
-    cerr <<"starting reading kmers from " << fname << endl;
+    cerr <<"reading kmers from " << fname << endl;
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
             ++startInd;
@@ -336,7 +327,7 @@ void readKmersFile2DBi(kmeruIndex_umap& kmerDBi, string fname, size_t startInd =
     assert(f);
     string line;
     getline(f, line);
-    cerr <<"starting reading kmers from " << fname << endl;
+    cerr <<"reading kmers from " << fname << endl;
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
             ++startInd;
@@ -368,7 +359,7 @@ void readKmersFile(T& kmerDB, kmeruIndex_umap& kmerDBi, string fname, size_t sta
     assert(f);
     string line;
     getline(f, line);
-    cerr <<"starting reading kmers from " << fname << endl;
+    cerr <<"reading kmers from " << fname << endl;
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
             ++startInd;
