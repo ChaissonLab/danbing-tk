@@ -192,8 +192,9 @@ def read2kmers(read, k, leftflank=0, rightflank=0):
 
 
 def seq2KmerQual(kmerCov, seq, k, flanksize=0, trimmed=False):
-    if not kmerCov or not seq:
-        return (np.array([]), 0)
+    if not kmerCov or not seq: return (np.array([]), 0)
+    if len(seq) - k + 1 < 50: return (np.array([]), 0)
+
     seqQual = np.zeros(len(seq) - k + 1) - 20
     beg, kmer = getNextKmer(flanksize, seq, k)
     loss = beg
@@ -298,10 +299,11 @@ def readKmers(fname, kmerDB, end=999999, sort=True, kmerName=False, threshold=0)
         else:
             assignKmerTable(kmerDB, locus, table, sort, kmerName, threshold)
 
-def readKmerDict(fname, kmerDB={}, threshold=0, checkkmer=False):
+def readKmerDict(fname, kmerDB=None, threshold=0, checkkmer=False):
     """ read a kmer file as a dictionary """
     
-    hasInput = True if len(kmerDB) else False
+    hasInput = False if kmerDB is None else True
+    if not hasInput: kmerDB = {}
 
     with open(fname) as f:
         locus = 0
