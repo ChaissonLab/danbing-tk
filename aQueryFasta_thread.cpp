@@ -279,7 +279,10 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t th
     size_t nskip = 0, ncorrection = 0;
     size_t kmer = kmers[nskip];
 
-    while (not g.count(kmer)) { kmer = kmers[++nskip]; } // find the first matching node
+    while (not g.count(kmer)) { // find the first matching node
+        if (++nskip >= nkmers) { break; }
+        kmer = kmers[nskip];
+    }
     unordered_set<size_t> feasibleNodes = {kmer};
 
     for (size_t i = nskip + 1; i < nkmers; ++i) {
@@ -726,7 +729,7 @@ int main(int argc, char* argv[]) {
          << "k: " << ksize << endl
          << "Cthreshold: " << Cthreshold << endl
          << "Rthreshold: " << Rthreshold << endl
-         << "threading Cthreshold" << thread_cth << endl
+         << "threading Cthreshold: " << thread_cth << endl
          << "fastx: " << fastxFname << endl
          << "query: " << trPrefix << ".(tr/rntr/lntr).kmers"<< endl
          << endl
