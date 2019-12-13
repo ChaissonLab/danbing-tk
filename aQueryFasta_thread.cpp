@@ -264,7 +264,7 @@ void getOutNodes(GraphType& g, size_t node, vector<size_t>& outnodes) {
 
 template <typename T>
 void printVec(vector<T>& vec) {
-    for (auto v : vec) { cerr << v; }
+    for (auto v : vec) { cerr << v << ' '; }
     cerr << endl;
 }
 
@@ -280,7 +280,12 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t th
     size_t kmer = kmers[nskip];
 
     while (not g.count(kmer)) { // find the first matching node
-        if (++nskip >= nkmers) { break; }
+        if (++nskip >= nkmers) { // FIXME
+            cerr << seq << endl;
+            printVec(kmers);
+            throw 1;
+            break;
+        }
         kmer = kmers[nskip];
     }
     unordered_set<size_t> feasibleNodes = {kmer};
@@ -351,6 +356,7 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t th
                             break;
                         }
                     }
+                    if (candnts.size() > 1) { corrected = true; } // XXX will always correct with the smaller nt in the next step, introduce bias
                 }
                 if (corrected) { // correct the following kmers in the read
                     ++ncorrection;
@@ -359,7 +365,7 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t th
 
                     for (size_t j = 1; j < std::min(ksize, nkmers-i); ++j) {
                         size_t nextkmer = kmers[i+j] - (oldnt << (j << 1)) + (candnts[0] << (j << 1));
-                        if ((nextkmer >> 2) << 2 != (kmers[i+j-1] & mask) << 1) { break; } // check no skipping due to NNN
+                        if ((nextkmer >> 2) << 2 != (kmers[i+j-1] & mask) << 2) { break; } // check no skipping due to NNN
                         kmers[i+j] = nextkmer;
                     }
                     nextFeasibleNodes.clear();
@@ -370,7 +376,7 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t th
         }
         feasibleNodes.swap(nextFeasibleNodes);
     }
-    return (ncorrection ? 2 : 1);
+    return (nskip < maxskipcount and ncorrection < maxcorrectioncount ? (ncorrection ? 2 : 1) : 0);
 }
 
 class Counts {
@@ -564,8 +570,10 @@ void CountWords(void *data) {
                     vector<size_t> noncakmers0, noncakmers1;
                     feasibility0 = isThreadFeasible(graphDB[ind], seq, noncakmers0, thread_cth, correction);
                     feasibility1 = isThreadFeasible(graphDB[ind], seq1, noncakmers1, thread_cth, correction);
-                    noncaVec2CaUmap(noncakmers0, cakmers, ksize);
-                    noncaVec2CaUmap(noncakmers1, cakmers, ksize);
+                    if (feasibility0 and feasibility1) {
+                        noncaVec2CaUmap(noncakmers0, cakmers, ksize);
+                        noncaVec2CaUmap(noncakmers1, cakmers, ksize);
+                    }
                 }
 
                 if ((threading and feasibility0 and feasibility1) or not threading) {
