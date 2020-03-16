@@ -281,10 +281,11 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t th
 
     while (not g.count(kmer)) { // find the first matching node
         if (++nskip >= nkmers) { // FIXME
-            cerr << seq << endl;
-            printVec(kmers);
-            throw 1;
-            break;
+            return 0;
+            // cerr << seq << endl;
+            // printVec(kmers);
+            // throw 1;
+            // break;
         }
         kmer = kmers[nskip];
     }
