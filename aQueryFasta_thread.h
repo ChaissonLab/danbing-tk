@@ -274,7 +274,7 @@ size_t countLoci(string fname) {
     return nloci;
 }
 
-size_t countBedLoci(string& fname) {
+size_t countBedLoci(string fname) {
     ifstream inf(fname);
     assert(inf);
     string line;

@@ -70,7 +70,7 @@ for k, v in data.items():
     results[k, 1:] = [pred/2, a, rsquare]   ## divide by 2 since diploid individual [!] might be incorrect for CHM1 & CHM13
 
 print("writing outputs")
-np.savetxt('.'.join([args.out, args.mode, "pred"]), results, fmt=['%8.0f','%8.0f','%8.2f','%8.4f'], header="TrueLen\t PredLen\t Slope\t R^2")
+np.savetxt(f'{args.out}.pred', results, fmt=['%8.0f','%8.0f','%8.2f','%8.4f'], header="TrueLen\t PredLen\t Slope\t R^2")
 
 print("plotting summary report")
 if R2threshold != -1:
