@@ -22,7 +22,6 @@ sem_t *semreader;
 sem_t *semcount;
 sem_t *semwriter;
 bool testmode;
-size_t readNumber = 0;
 bool firstoutput = true;
 size_t ksize;
 const uint64_t NAN64 = 0xFFFFFFFFFFFFFFFF;
@@ -100,7 +99,7 @@ void countDupRemove(vector<size_t>& kmers, vector<size_t>& kmers_other, vector<P
     // size_t endpos = *(std::lower_bound(kmers.begin(), kmers.end(), NAN64)); // index of the first occurrence of invalid kmer
 
     // iterate through kmers and count the occurrence in each read
-    assert(kmers.size()); // TODO
+    assert(kmers.size()); // XXX
     size_t last = kmers[0], it = 1;
     PE_KMC pe_kmc(0,0);
     (orient[0] ? ++pe_kmc.second : ++pe_kmc.first);
@@ -269,7 +268,7 @@ void printVec(vector<T>& vec) {
 }
 
 // 0: not feasible, 1: feasible, w/o correction, 2: feasible w/ correction
-int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t thread_cth, bool correction) {
+int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t thread_cth, bool correction, vector<size_t>& nhomoskip) {
     read2kmers(kmers, seq, ksize, 0, 0, false); // leftflank = 0, rightflank = 0, canonical = false
 
     const static uint64_t mask = (1UL << 2*(ksize-1)) - 1;
@@ -282,10 +281,6 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t th
     while (not g.count(kmer)) { // find the first matching node
         if (++nskip >= nkmers) { // FIXME
             return 0;
-            // cerr << seq << endl;
-            // printVec(kmers);
-            // throw 1;
-            // break;
         }
         kmer = kmers[nskip];
     }
@@ -294,6 +289,7 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t th
     for (size_t i = nskip + 1; i < nkmers; ++i) {
         if (kmers[i] == kmers[i-1]) { // skip homopolymer run
             ++nskip;
+            ++nhomoskip[kmers[i]%4];
             continue;
         }
 
@@ -384,8 +380,8 @@ class Counts {
 public:
     bool isFastq, extractFasta, bait, threading, correction;
     uint16_t Cthreshold, thread_cth;
-    size_t *readIndex;
-    size_t threadIndex, nloci;
+    size_t *nReads, *nThreadingReads, *nFeasibleReads;
+    size_t nloci;
     float Rthreshold;
     kmeruIndex_umap* kmerDBi;
     vector<GraphType>* graphDB;
@@ -395,7 +391,6 @@ public:
     int simmode;
     bool *firstoutput;
     // extractFasta only
-    size_t *nMappedReads;
 
     Counts(size_t nloci_) : nloci(nloci_) {}
 };
@@ -414,11 +409,13 @@ void CountWords(void *data) {
     bool threading = ((Counts*)data)->threading;
     bool correction = ((Counts*)data)->correction;
     int simmode = ((Counts*)data)->simmode;
-    size_t &readNumber = *((Counts*)data)->readIndex;
-    size_t threadIndex = ((Counts*)data)->threadIndex;
-    size_t nloci = ((Counts*)data)->nloci;
-    size_t readsPerBatch = 300000;
-    size_t& nMappedReads = *((Counts*)data)->nMappedReads;
+    size_t nReads_ = 0, nThreadingReads_ = 0, nFeasibleReads_ = 0;
+    const size_t nloci = ((Counts*)data)->nloci;
+    const size_t readsPerBatch = 300000;
+    const size_t homoC = ((1UL << (2*ksize)) - 1) / 3; // XXX
+    size_t& nReads = *((Counts*)data)->nReads;
+    size_t& nThreadingReads = *((Counts*)data)->nThreadingReads;
+    size_t& nFeasibleReads = *((Counts*)data)->nFeasibleReads;
     uint16_t Cthreshold = ((Counts*)data)->Cthreshold;
     uint16_t thread_cth = ((Counts*)data)->thread_cth;
     float Rthreshold = ((Counts*)data)->Rthreshold;
@@ -436,10 +433,9 @@ void CountWords(void *data) {
     while (true) {
 
         string title, title1, seq, seq1, qualtitle, qualtitle1, qual, qual1;
-        size_t readn = 0;
         vector<string> seqs(readsPerBatch);
         // for simmode only
-        // locusReadInd: map locus to readn. 0th item = number of reads for 0th item in loci; last item = readn; has same length as loci
+        // locusReadInd: map locus to nReads_. 0th item = number of reads for 0th item in loci; last item = nReads_; has same length as loci
         vector<size_t> locusReadInd;
         size_t startpos;
         // extractFasta only
@@ -449,6 +445,12 @@ void CountWords(void *data) {
         // begin thread locking
         //
         sem_wait(semreader);
+
+        nThreadingReads += nThreadingReads_;
+        nFeasibleReads += nFeasibleReads_;
+        nThreadingReads_ = 0;
+        nFeasibleReads_ = 0;
+        nReads_ = 0;
 
         if (simmode and loci.size() != 0) {
             for (size_t i = 0; i < msa.size(); ++i) {
@@ -470,12 +472,14 @@ void CountWords(void *data) {
         }
 
         if (in->peek() == EOF) {
-            cerr << "Finished at read index " << readNumber << endl;
+            cerr << nReads << " reads processed in total." << endl
+                 << nThreadingReads*2 << " reads entered threading step." << endl
+                 << nFeasibleReads*2 << " reads passsed threading." << endl;
             sem_post(semreader);
             return;
         }
 
-        while (readn < readsPerBatch and in->peek() != EOF) {
+        while (nReads_ < readsPerBatch and in->peek() != EOF) {
             if (isFastq) { // no quality check
                 getline(*in, title);
                 getline(*in, seq);
@@ -493,20 +497,20 @@ void CountWords(void *data) {
                 getline(*in, seq1);
             }
 
-            if (simmode == 1) { parseReadName(title, readn, startpos, loci, locusReadInd); }
-            else if (simmode == 2) { parseReadName(title, readn, poss, loci, locusReadInd); }
+            if (simmode == 1) { parseReadName(title, nReads_, startpos, loci, locusReadInd); }
+            else if (simmode == 2) { parseReadName(title, nReads_, poss, loci, locusReadInd); }
 
-            seqs[readn++] = seq;
-            seqs[readn++] = seq1;
+            seqs[nReads_++] = seq;
+            seqs[nReads_++] = seq1;
         } 
+        nReads += nReads_;
 
-        readNumber += readn;
         if (simmode) {
-            locusReadInd.push_back(readn);
+            locusReadInd.push_back(nReads_);
             msa.resize(loci.size());
         }
 
-        cerr << "Buffered reading " << readn << "\t" << readNumber << endl;
+        cerr << "Buffered reading " << nReads_ << "\t" << nReads << endl;
 
         //
         // All done reading, release the thread lock.
@@ -524,7 +528,7 @@ void CountWords(void *data) {
             currentLocus = loci[i];
         }
 
-        while (seqi < readn) {
+        while (seqi < nReads_) {
 
             if (simmode == 1) {
                 if (seqi == 0) { 
@@ -566,11 +570,13 @@ void CountWords(void *data) {
             else {
                 int feasibility0 = 0, feasibility1 = 0;
                 kmerCount_umap cakmers;
+                ++nThreadingReads_;
+                vector<size_t> nhomoskip(4,0); // XXX
 
                 if (threading) {
                     vector<size_t> noncakmers0, noncakmers1;
-                    feasibility0 = isThreadFeasible(graphDB[ind], seq, noncakmers0, thread_cth, correction);
-                    feasibility1 = isThreadFeasible(graphDB[ind], seq1, noncakmers1, thread_cth, correction);
+                    feasibility0 = isThreadFeasible(graphDB[ind], seq, noncakmers0, thread_cth, correction, nhomoskip);
+                    feasibility1 = isThreadFeasible(graphDB[ind], seq1, noncakmers1, thread_cth, correction, nhomoskip);
                     if (feasibility0 and feasibility1) {
                         noncaVec2CaUmap(noncakmers0, cakmers, ksize);
                         noncaVec2CaUmap(noncakmers1, cakmers, ksize);
@@ -579,6 +585,8 @@ void CountWords(void *data) {
 
                 if ((threading and feasibility0 and feasibility1) or not threading) {
                     kmer_aCount_umap &trKmers = trResults[ind];
+                    ++nFeasibleReads_;
+
                     if (not threading) {
                         for (size_t i = 0; i < kmers1.size(); ++i) {
                             if (trKmers.count(kmers1[i])) {
@@ -589,6 +597,10 @@ void CountWords(void *data) {
                     else {
                         for (auto& p : cakmers) {
                             if (trKmers.count(p.first)) { trKmers[p.first] += p.second; }
+                        }
+                        // XXX recover the counts of skipped homopolymers
+                        for (size_t i = 0; i < 4; ++i) {
+                            if (trKmers.count(homoC * i)) { trKmers[homoC * i] += nhomoskip[i]; }
                         }
                     }
 
@@ -779,17 +791,17 @@ int main(int argc, char* argv[]) {
     cerr << "creating data for each process..." << endl;
     time1 = time(nullptr);
     Threads threaddata(nproc, nloci);
-    size_t nMappedReads = 0;
+    size_t nReads = 0, nThreadingReads = 0, nFeasibleReads = 0;
     for (size_t i = 0; i < nproc; ++i) {
         Counts &counts = threaddata.counts[i];
-        counts.threadIndex = i;
 
         counts.in = &fastxFile;
         counts.trResults = &trKmerDB;
         counts.graphDB = &graphDB;
         counts.kmerDBi = &kmerDBi;
-        counts.nMappedReads = &nMappedReads;
-        counts.readIndex = &readNumber;
+        counts.nReads = &nReads;
+        counts.nThreadingReads= &nThreadingReads;
+        counts.nFeasibleReads= &nFeasibleReads;
         counts.firstoutput = &firstoutput;
 
         counts.isFastq = isFastq;
