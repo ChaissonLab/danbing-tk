@@ -3,12 +3,7 @@
 import argparse
 import vntrutils as vu
 import numpy as np
-import operator
-import matplotlib as mpl
-mpl.use('Agg')
-import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
-import pandas as pd
 
 ap = argparse.ArgumentParser(description="read *.kmers and output regression plots and prediction results")
 ap.add_argument("pacbio", help="*.kmers of pacbio assembled loci")
@@ -60,22 +55,14 @@ for k, v in data.items():
     if k in plotloci:
         a, _, rsquare, pred = vu.PlotRegression(v[:,0:1], v[:,1:2], 
                                     "PacBioEdgeWeights", "IlluminaEdgeWeights", 
-                                    "locus."+str(k)+".Sample"+str(v.shape[0]), args.out+"."+str(k), outlier=args.mode, pred=True, plot=True)
+                                    "locus."+str(k)+".Sample"+str(v.shape[0]), args.out+"."+str(k), outlier=args.mode, pred=True)
     else:
         a, _, rsquare, pred = vu.PlotRegression(v[:,0:1], v[:,1:2],
                                     "PacBioEdgeWeights", "IlluminaEdgeWeights",
-                                    "locus."+str(k)+".Sample"+str(v.shape[0]), args.out+"."+str(k), outlier=args.mode, pred=True, plot=False)
+                                    "locus."+str(k)+".Sample"+str(v.shape[0]), args.out+"."+str(k), outlier=args.mode, pred=True)
     if k % 1000 == 0:
         print(str(k)+" loci processed")
     results[k, 1:] = [pred/2, a, rsquare]   ## divide by 2 since diploid individual [!] might be incorrect for CHM1 & CHM13
 
 print("writing outputs")
 np.savetxt(f'{args.out}.pred', results, fmt=['%8.0f','%8.0f','%8.2f','%8.4f'], header="TrueLen\t PredLen\t Slope\t R^2")
-
-print("plotting summary report")
-if R2threshold != -1:
-    logic = (results[:,3] > R2threshold)
-    results = results[logic]
-vu.PlotRegression(results[:,0:1], results[:,1:2], "TrueLength", "PredictedLength", 
-                    title="True.PredictedLength.Sample"+str(nloci) ,fname='.'.join([args.out,"sum",str(R2threshold)]), 
-                    outlier=args.mode, plot=True)
