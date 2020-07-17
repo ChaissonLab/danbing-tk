@@ -1,0 +1,18 @@
+{
+    "inputDir" : /home/cmb-17/mjc/vntr_genotyping/refGraph/input/,
+    "outputDir" : /staging/mjc/tsungyul/refGraph/,
+    "pangenomeDir" : /staging/mjc/tsungyul/goodPanGenomeGraph/,
+    "genomes" : /home/cmb-17/mjc/vntr_genotyping/goodPanGenomeGraph/input/genomes.txt,
+    "ksize" : 21,
+    "flankSize" : 700,
+    "countThreashold" : 45,
+    "ratioThreashold" : 0.5,
+    "threadingCountThreshold" : 50,
+    "sizeLowerBound" : 50,
+    "sizeUpperBound" : 5000,
+    "TRwindow" : 10000,
+    "ref" : /panfs/qcb-panasas/tsungyul/hg38_noalts/hg38.no_alts.fasta,
+    "refsize" : /panfs/qcb-panasas/tsungyul/hg38_noalts/hg38.no_alts.chrSize,
+    "refTR" : /home/cmb-17/mjc/vntr_genotyping/goodPanGenomeGraph/input/tr.good.bed,
+    "clusterOpts" : "sbatch --time=48:00:00 --partition=cmb"
+}
