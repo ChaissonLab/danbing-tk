@@ -22,12 +22,11 @@ sem_t *semreader;
 sem_t *semcount;
 sem_t *semwriter;
 bool testmode;
-bool firstoutput = true;
 size_t ksize;
 const uint64_t NAN64 = 0xFFFFFFFFFFFFFFFF;
 const uint32_t NAN32 = 0xFFFFFFFF;
 
-typedef unordered_map<size_t, vector<size_t>> msa_umap;
+typedef unordered_map<size_t, size_t> msa_umap; // dest_locus, counts
 
 void rand_str(char *dest, size_t length) {
     char charset[] = "0123456789"
@@ -213,23 +212,22 @@ size_t countHit(vector<size_t>& kmers1, vector<size_t>& kmers2, kmeruIndex_umap&
 
 // simmode = 1; simmulated reads from TR only
 template <typename ValueType>
-void parseReadName(string& title, size_t readn, size_t& startpos, vector<ValueType>& loci, vector<size_t>& locusReadInd) {
-    string sep = "_";
+void parseReadName(string& title, size_t readn, vector<ValueType>& loci, vector<size_t>& locusReadi) {
+    string sep = ".";
     size_t first = title.find(sep);
     size_t newLocus = stoul(title.substr(1, first)); // skip the 1st '>' char
     if (readn == 0) {
         loci.push_back(newLocus);
-        startpos = stoul(title.substr(first+1, title.find(sep, first+1)));
     }
     else if (newLocus != loci.back()) {
         loci.push_back(newLocus);
-        locusReadInd.push_back(readn);
+        locusReadi.push_back(readn);
     }
 }
 
 // simmode = 2; simmulated reads from whole genome
 template <typename ValueType>
-void parseReadName(string& title, size_t readn, vector<size_t>& poss, vector<ValueType>& loci, vector<size_t>& locusReadInd) {
+void parseReadName(string& title, size_t readn, vector<size_t>& poss, vector<ValueType>& loci, vector<size_t>& locusReadi) {
     string sep = "_";
     size_t first = title.find(sep);
     size_t second = title.find(sep, first+1);
@@ -242,8 +240,26 @@ void parseReadName(string& title, size_t readn, vector<size_t>& poss, vector<Val
     else if (newLocus != loci.back()) {
         loci.push_back(newLocus);
         poss.push_back(stoul(title.substr(second+1, title.find(sep, second+1))));
-        locusReadInd.push_back(readn);
+        locusReadi.push_back(readn);
     }
+}
+
+template <typename T>
+void printVec(vector<T>& vec) {
+    for (auto v : vec) { cerr << v << ' '; }
+    cerr << endl;
+}
+
+void writeMsaStats(string outPref, vector<msa_umap>& msaStats) {
+    ofstream fout(outPref+".msa");
+    assert(fout);
+    for (size_t src = 0; src < msaStats.size(); ++src) {
+        fout << ">" << src << "\n";
+        for (auto& p : msaStats[src]) {
+            fout << p.first << "\t" << p.second << "\n";
+        }
+    }
+    fout.close();
 }
 
 void getOutNodes(GraphType& g, size_t node, vector<size_t>& outnodes) {
@@ -259,12 +275,6 @@ void getOutNodes(GraphType& g, size_t node, vector<size_t>& outnodes) {
             nucBits >>= 1;
         }
     }
-}
-
-template <typename T>
-void printVec(vector<T>& vec) {
-    for (auto v : vec) { cerr << v << ' '; }
-    cerr << endl;
 }
 
 // 0: not feasible, 1: feasible, w/o correction, 2: feasible w/ correction
@@ -386,10 +396,10 @@ public:
     kmeruIndex_umap* kmerDBi;
     vector<GraphType>* graphDB;
     vector<kmer_aCount_umap>* trResults;
+    vector<msa_umap>* msaStats;
     ifstream *in;
     // simmode only
     int simmode;
-    bool *firstoutput;
     // extractFasta only
 
     Counts(size_t nloci_) : nloci(nloci_) {}
@@ -423,20 +433,20 @@ void CountWords(void *data) {
     kmeruIndex_umap& kmerDBi = *((Counts*)data)->kmerDBi;
     vector<GraphType>& graphDB = *((Counts*)data)->graphDB;
     vector<kmer_aCount_umap>& trResults = *((Counts*)data)->trResults;
+    vector<msa_umap>& msaStats = *((Counts*)data)->msaStats;
     // simmode only
     // loci: loci that are processed in this batch
-    bool &firstoutput = *((Counts*)data)->firstoutput;
-    vector<ValueType> loci;
+    vector<ValueType> srcLoci;
     vector<size_t> poss;
-    vector<msa_umap> msa;
+    unordered_map<size_t, msa_umap> msa;
 
     while (true) {
 
         string title, title1, seq, seq1, qualtitle, qualtitle1, qual, qual1;
         vector<string> seqs(readsPerBatch);
         // for simmode only
-        // locusReadInd: map locus to nReads_. 0th item = number of reads for 0th item in loci; last item = nReads_; has same length as loci
-        vector<size_t> locusReadInd;
+        // locusReadi: map locus to nReads_. 0th item = number of reads for 0th item in loci; last item = nReads_; has same length as loci
+        vector<size_t> locusReadi;
         size_t startpos;
         // extractFasta only
         vector<size_t> extractindices, assignedloci;
@@ -452,29 +462,17 @@ void CountWords(void *data) {
         nFeasibleReads_ = 0;
         nReads_ = 0;
 
-        if (simmode and loci.size() != 0) {
-            for (size_t i = 0; i < msa.size(); ++i) {
-                if (firstoutput) {
-                    cout << loci[i];
-                    firstoutput = false;
-                }
-                else { cout << '\n' << loci[i]; }
-                for (auto& e : msa[i]) {
-                    cout << '\t' << e.first;
-                    for (size_t pos : msa[i][e.first]) {
-                        cout << ',' << pos;
-                    }
+        if (simmode and srcLoci.size() != 0) {
+            for (auto& p0 : msa) {
+                for (auto& p1 : p0.second) {
+                    msaStats[p0.first][p1.first] = p1.second;
                 }
             }
-            loci.clear();
+            srcLoci.clear();
             msa.clear();
-            poss.clear();
         }
 
         if (in->peek() == EOF) {
-            cerr << nReads << " reads processed in total." << endl
-                 << nThreadingReads*2 << " reads entered threading step." << endl
-                 << nFeasibleReads*2 << " reads passsed threading." << endl;
             sem_post(semreader);
             return;
         }
@@ -497,18 +495,15 @@ void CountWords(void *data) {
                 getline(*in, seq1);
             }
 
-            if (simmode == 1) { parseReadName(title, nReads_, startpos, loci, locusReadInd); }
-            else if (simmode == 2) { parseReadName(title, nReads_, poss, loci, locusReadInd); }
+            if (simmode == 1) { parseReadName(title, nReads_, srcLoci, locusReadi); }
+            else if (simmode == 2) { parseReadName(title, nReads_, poss, srcLoci, locusReadi); }
 
             seqs[nReads_++] = seq;
             seqs[nReads_++] = seq1;
         } 
         nReads += nReads_;
 
-        if (simmode) {
-            locusReadInd.push_back(nReads_);
-            msa.resize(loci.size());
-        }
+        if (simmode) { locusReadi.push_back(nReads_); }
 
         cerr << "Buffered reading " << nReads_ << "\t" << nReads << endl;
 
@@ -520,36 +515,19 @@ void CountWords(void *data) {
         time_t time2 = time(nullptr);
         size_t seqi = 0;
         // simmode only
-        size_t i, pos;
-        ValueType currentLocus;
+        size_t simi;
+        ValueType srcLocus;
         if (simmode) {
-            i = 0;
-            pos = poss[i];
-            currentLocus = loci[i];
+            simi = 0;
+            srcLocus = srcLoci[simi];
         }
 
         while (seqi < nReads_) {
 
-            if (simmode == 1) {
-                if (seqi == 0) { 
-                    pos = startpos; }
-                else {
-                    if (seqi >= locusReadInd[i]) {
-                        ++i;
-                        currentLocus = loci[i];
-                        pos = 0;
-                    } else {
-                        ++pos;
-                    }
-                }
-            }
-            else if (simmode == 2) {
-                if (seqi >= locusReadInd[i]) {
-                    ++i;
-                    currentLocus = loci[i];
-                    pos = poss[i];
-                } else {
-                    ++pos;
+            if (simmode) {
+                if (seqi >= locusReadi[simi]) {
+                    ++simi;
+                    srcLocus = srcLoci[simi];
                 }
             }
 
@@ -562,10 +540,10 @@ void CountWords(void *data) {
             read2kmers(kmers2, seq1, ksize);
             if (not kmers1.size() and not kmers2.size()) { continue; }
 
-            size_t ind = countHit(kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold, Rthreshold);
+            size_t destLocus = countHit(kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold, Rthreshold);
 
-            if (ind == nloci) { 
-                if (simmode) { if ((int)currentLocus == currentLocus) {msa[i][ind].push_back(pos); } }
+            if (destLocus == nloci) { 
+                if (simmode) { if ((int)srcLocus == srcLocus) { ++msa[srcLocus][destLocus]; } }
             }
             else {
                 int feasibility0 = 0, feasibility1 = 0;
@@ -575,8 +553,8 @@ void CountWords(void *data) {
 
                 if (threading) {
                     vector<size_t> noncakmers0, noncakmers1;
-                    feasibility0 = isThreadFeasible(graphDB[ind], seq, noncakmers0, thread_cth, correction, nhomoskip);
-                    feasibility1 = isThreadFeasible(graphDB[ind], seq1, noncakmers1, thread_cth, correction, nhomoskip);
+                    feasibility0 = isThreadFeasible(graphDB[destLocus], seq, noncakmers0, thread_cth, correction, nhomoskip);
+                    feasibility1 = isThreadFeasible(graphDB[destLocus], seq1, noncakmers1, thread_cth, correction, nhomoskip);
                     if (feasibility0 and feasibility1) {
                         noncaVec2CaUmap(noncakmers0, cakmers, ksize);
                         noncaVec2CaUmap(noncakmers1, cakmers, ksize);
@@ -584,7 +562,7 @@ void CountWords(void *data) {
                 }
 
                 if ((threading and feasibility0 and feasibility1) or not threading) {
-                    kmer_aCount_umap &trKmers = trResults[ind];
+                    kmer_aCount_umap &trKmers = trResults[destLocus];
                     ++nFeasibleReads_;
 
                     if (not threading) {
@@ -604,14 +582,17 @@ void CountWords(void *data) {
                         }
                     }
 
-                    if (simmode) { if (currentLocus != ind) { msa[i][ind].push_back(pos); } }
+                    if (simmode) { if (srcLocus != destLocus) { ++msa[srcLocus][destLocus]; } }
 
                     if (extractFasta) {
                         // points to the next read pair 
                         // i.e. to_be_extract_forward (seqi-2), to_be_extract_reverse (seqi-1)
                         extractindices.push_back(seqi); 
-                        assignedloci.push_back(ind);
+                        assignedloci.push_back(destLocus);
                     }
+                }
+                else {
+                    if (simmode) { if ((int)srcLocus == srcLocus) { ++msa[srcLocus][nloci]; } }
                 }
             }
         }
@@ -642,7 +623,7 @@ int main(int argc, char* argv[]) {
 
     if (argc < 2) {
         cerr << endl
-             << "Usage: nuQueryFasta [-b] [-e] [-t] [-s] [-a] [-g|-gc] -k <-qs> <-fqi | fai> -o -p -cth -rth" << endl
+             << "Usage: danbing-tk [-b] [-e] [-t] [-s] [-a] [-g|-gc] -k <-qs> <-fqi | fai> -o -p -cth -rth" << endl
              << "Options:" << endl
              << "  -b           Use baitDB to decrease ambiguous mapping" << endl
              << "  -e           Write mapped reads to STDOUT in fasta format" << endl
@@ -764,6 +745,7 @@ int main(int argc, char* argv[]) {
     vector<kmer_aCount_umap> trKmerDB(nloci);
     vector<GraphType> graphDB(nloci);
     kmeruIndex_umap kmerDBi;
+    vector<msa_umap> msaStats;
 
     readKmersFile(trKmerDB, kmerDBi, trFname, 0, false); // start from index 0, do not count
     cerr << "# unique kmers in trKmerDB: " << kmerDBi.size() << '\n';
@@ -786,6 +768,10 @@ int main(int argc, char* argv[]) {
         readKmersFile2DB(graphDB, trPrefix+".graph.kmers", 0, true); // start from index 0, record counts
     }
 
+    if (simmode == 1) {
+        msaStats.resize(nloci);
+    }
+
 
     // create data for each process
     cerr << "creating data for each process..." << endl;
@@ -800,9 +786,9 @@ int main(int argc, char* argv[]) {
         counts.graphDB = &graphDB;
         counts.kmerDBi = &kmerDBi;
         counts.nReads = &nReads;
-        counts.nThreadingReads= &nThreadingReads;
-        counts.nFeasibleReads= &nFeasibleReads;
-        counts.firstoutput = &firstoutput;
+        counts.nThreadingReads = &nThreadingReads;
+        counts.nFeasibleReads = &nFeasibleReads;
+        counts.msaStats = &msaStats;
 
         counts.isFastq = isFastq;
         counts.extractFasta = extractFasta;
@@ -869,12 +855,18 @@ int main(int argc, char* argv[]) {
     for (size_t t = 0; t < nproc; ++t) {
         pthread_join(threads[t], NULL);
     }
-    cerr << "parallel query completed in " << (time(nullptr) - time1) << " sec." << endl;
+    cerr << nReads << " reads processed in total." << endl
+         << nThreadingReads*2 << " reads entered threading step." << endl
+         << nFeasibleReads*2 << " reads passsed threading." << endl
+         << "parallel query completed in " << (time(nullptr) - time1) << " sec." << endl;
     fastxFile.close();
 
     // write outputs
     cerr << "writing kmers..." << endl;
     writeKmers(outPrefix+".tr", trKmerDB);
+    if (simmode) {
+        writeMsaStats(outPrefix, msaStats);
+    }
 
     cerr << "all done!" << endl;
 
