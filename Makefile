@@ -1,6 +1,6 @@
 PREFIX = /home/cmb-16/mjc/tsungyul/work/vntr
-TARGETS = aQueryFasta_thread vntr2kmers_thread
-TARGETSg = aQueryFasta_thread_g vntr2kmers_thread_g
+TARGETS = danbing-tk vntr2kmers_thread
+TARGETSg = danbing-tk_g vntr2kmers_thread_g
 #TARGETS = aQueryFasta amphQueryFasta vntr2kmers fasta2kmers kmer2dot seq2num num2seq rvseq bam2pe
 
 CXX = g++ -std=c++11 -O3
@@ -11,11 +11,11 @@ all: $(TARGETS)
 allg: $(TARGETS) $(TARGETSg)
 
 # dependencies between programs and .o files
-aQueryFasta_thread:	aQueryFasta_thread.cpp
-	$(CXX) $(LDFLAGS) -o aQueryFasta_thread aQueryFasta_thread.cpp
+danbing-tk:	aQueryFasta_thread.cpp
+	$(CXX) $(LDFLAGS) -o danbing-tk aQueryFasta_thread.cpp
 
-aQueryFasta_thread_g:	aQueryFasta_thread.cpp
-	$(CXX) -g $(LDFLAGS) -o aQueryFasta_thread_g aQueryFasta_thread.cpp
+danbing-tk_g:	aQueryFasta_thread.cpp
+	$(CXX) -g $(LDFLAGS) -o danbing-tk_g aQueryFasta_thread.cpp
 
 vntr2kmers_thread:	VNTR2kmers_thread.cpp
 	$(CXX) -o vntr2kmers_thread VNTR2kmers_thread.cpp
