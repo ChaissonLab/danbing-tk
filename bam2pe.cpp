@@ -1,4 +1,4 @@
-#include "nuQueryFasta.h"
+#include "aQueryFasta_thread.h"
 
 #include <ctime>
 
@@ -9,16 +9,25 @@ struct Read {
 };
 
 
+void prunePEinfo(string& title) {
+	size_t endi = title.size();
+	if (title[endi-2] == '/') {
+		if (title[endi-1] == '1' or title[endi-1] == '2') {
+			title = title.substr(0,endi-2);
+		}
+	}
+}
+
+
 int main(int argc, char* argv[]) {
 
     if (argc < 2) {
         cerr << endl
-             << "Usage: bam2pe -k <-fbi | fqi | fai> <infile>" << endl << endl
+             << "Usage: bam2pe <-fbi | fqi | fai> <infile>" << endl << endl
 
              << "Options:" << endl
-             << "  -k     size of kmer" << endl
-             << "  -fbi   input file from samtools view" << endl
-             << "  -fqi   input file from samtools fastq -n" << endl 
+             << "  -fbi   (Deprecated) input file from samtools view" << endl
+             << "  -fqi   (Deprecated) input file from samtools fastq -n" << endl 
              << "  -fai   input file from samtools fasta -n" << endl << endl;
 
 
@@ -26,9 +35,7 @@ int main(int argc, char* argv[]) {
     }
 
     vector<string> args(argv, argv+argc);
-    assert(find(args.begin(), args.begin()+argc, "-k") != args.end());
 
-    size_t k = stoi(*(find(args.begin(), args.begin()+argc, "-k")+1));
     size_t ind_fbi = distance(args.begin(), find(args.begin(), args.begin()+argc, "-fbi"));
     size_t ind_fqi = distance(args.begin(), find(args.begin(), args.begin()+argc, "-fqi"));
     size_t ind_fai = distance(args.begin(), find(args.begin(), args.begin()+argc, "-fai"));
@@ -59,20 +66,22 @@ int main(int argc, char* argv[]) {
 
             getline(fin, title);
             getline(fin, read.seq);
+			prunePEinfo(title);
+
             read.start = 0;
             read.len = read.seq.size();
 
             if (isFastq) {
                 getline(fin, qualtitle);
                 getline(fin, qual);
-                while (qual[read.start] == '#' and read.len >= k) { read.start++; read.len--; }
-                while (qual[read.start + read.len - 1] == '#' and read.len >= k) { read.len--; }
+                while (qual[read.start] == '#' and read.len >= 1) { read.start++; read.len--; }
+                while (qual[read.start + read.len - 1] == '#' and read.len >= 1) { read.len--; }
             }
 
             if (readDB.count(title)) {
                 Read& read1 = readDB[title];
 
-                if (read.len + read1.len < 21) { continue; }
+                if (read.len < 1 or read1.len < 1) { continue; }
                 else {
                     // output PE reads
                     cout << ">read " << to_string(nPEread) << "_0\n";
@@ -118,8 +127,8 @@ int main(int argc, char* argv[]) {
 
             read.start = 0;
             read.len = read.seq.size();
-            while (qual[read.start] == '#' and read.len >= k) { read.start++; read.len--; }
-            while (qual[read.start + read.len - 1] == '#' and read.len >= k) { read.len--; }
+            while (qual[read.start] == '#' and read.len >= 1) { read.start++; read.len--; }
+            while (qual[read.start + read.len - 1] == '#' and read.len >= 1) { read.len--; }
 
             if (readDB.count(title)) {
                 Read& read1 = readDB[title];
