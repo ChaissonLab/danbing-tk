@@ -11,6 +11,7 @@ genomes = np.loadtxt(config["genomes"], dtype=object).reshape(-1).tolist()
 haps = ["0", "1"]
 kmerTypes = ["tr", "lntr", "rntr", "graph"]
 
+aligner = config["AsmAligner"]
 ksize = config["ksize"]
 FS = config["flankSize"]
 cth = config["countThreashold"]
@@ -25,11 +26,8 @@ copts = config["clusterOpts"]
 
 rule all:
     input:
-        #fao = expand(outdir + "{genome}.{hap}.fasta", genome=genomes, hap=haps),
-        #fai = expand(outdir + "{genome}.{hap}.fasta.fai", genome=genomes, hap=haps),
         chrsize = expand(outdir + "{genome}.{hap}.chrSize", genome=genomes, hap=haps),
-        faBam = expand(outdir + "{genome}.{hap}.srt.bam", genome=genomes, hap=haps),
-        faBai = expand(outdir + "{genome}.{hap}.srt.bam.bai", genome=genomes, hap=haps),
+        faAln = expand(outdir + "{genome}.{hap}.aln.foo", genome=genomes, hap=haps),
         TRfa = expand(outdir + "{genome}.{hap}.tr.fasta", genome=genomes, hap=haps),
         TRbed = expand(outdir + "{genome}.{hap}.bed", genome=genomes, hap=haps),
         PBkmers = expand(outdir + "{genome}.PB.{kmerType}.kmers", genome=genomes, kmerType=kmerTypes),
@@ -44,10 +42,8 @@ rule all:
 
 rule IndexAsm:
     input:
-        fa = expand(indir + "{{genome}}.{hap}.fasta", hap=haps)
+        fa = expand(indir + "{{genome}}.{hap}.fa", hap=haps)
     output:
-        #fao = expand(outdir + "{{genome}}.{hap}.fasta", hap=haps),
-        #fai = expand(outdir + "{{genome}}.{hap}.fasta.fai", hap=haps),
         chrsize = expand(outdir + "{{genome}}.{hap}.chrSize", hap=haps)
     resources:
         cores = 3,
@@ -57,47 +53,66 @@ rule IndexAsm:
         sd = srcdir,
         od = outdir,
         indir = indir,
-        genomes = genomes
+        genomes = genomes,
     shell:"""
 set -eu
 cd {params.od}
 
-ln -s {input.fa} .
+ln -sf {input.fa} .
 for hap in 0 1; do
-    fa={params.indir}/{wildcards.genome}.$hap.fasta
-    ln -s "$fa".fai .
-    //samtools faidx $fa &
+    fa={params.indir}/{wildcards.genome}.$hap.fa
+    ln -sf "$fa".fai .
+	#samtools faidx $fa &
     {params.sd}/script/chrsize.sh $fa > {wildcards.genome}.$hap.chrSize
     wait
 done
 """
 
+def getMem():
+    if aligner == "lra":
+        return 60
+    else:
+        return 40
 
 rule MapAsm2Ref:
     input:
-        fa = indir + "{genome}.{hap}.fasta"
+        fa = indir + "{genome}.{hap}.fa",
     output:
-        faBam = outdir + "{genome}.{hap}.srt.bam",
-        faBai = outdir + "{genome}.{hap}.srt.bam.bai"
+        faAln = outdir + "{genome}.{hap}.aln.foo",
     resources:
         cores = 16,
-        mem = 40
+        mem = lambda wildcards, attempt: getMem() + 20*(attempt-1),
     params:
+        faBam = outdir + "{genome}.{hap}.srt.bam",
+        faPaf = outdir + "{genome}.{hap}.r2a.paf",
+        od = outdir,
         copts = copts,
-        ref = config["ref"]
+        ref = config["ref"],
+        aligner = aligner
     shell:"""
 ulimit -c 20000
+set -eu
+cd {params.od}
 
-minimap2 -a {params.ref} {input.fa} -t $(({resources.cores}-1)) -x asm5 -L -c --cs=long | samtools sort >{output.faBam} &&
-samtools index -@3 {output.faBam}
+if [[ {params.aligner} == "lra" ]]; then
+	lra align -t $(({resources.cores}-1)) -CONTIG {params.ref} {input.fa} -p s | samtools sort >{params.faBam} &&
+	samtools index -@3 {params.faBam}
+	touch {output.faAln}
+elif [[ {params.aligner} == "minimap2" ]]; then
+	minimap2 {input.fa} {params.ref} -t $(({resources.cores}-1)) -x asm5 -L -c -o {params.faPaf}
+	touch {output.faAln}
+else
+	echo "Invalid AsmAligner: {params.aligner}"
+	exit 1
+fi
 """
 
 
 rule AnnotateTR:
     input:
-        fa = expand(indir + "{{genome}}.{hap}.fasta", hap=haps),
+        fa = expand(indir + "{{genome}}.{hap}.fa", hap=haps),
         chrsize = expand(outdir + "{{genome}}.{hap}.chrSize", hap=haps),
-        faBam = expand(outdir + "{{genome}}.{hap}.srt.bam", hap=haps)
+        faAln = expand(outdir + "{{genome}}.{hap}.aln.foo", hap=haps)
     output:
         TRfa = expand(outdir + "{{genome}}.{hap}.tr.fasta", hap=haps),
         TRbed = expand(outdir + "{{genome}}.{hap}.bed", hap=haps)
@@ -109,6 +124,9 @@ rule AnnotateTR:
         sd = srcdir,
         od = outdir,
         refTR = config["refTR"],
+        aligner = aligner,
+        faBam = expand(outdir + "{{genome}}.{hap}.srt.bam", hap=haps),
+        faPaf = expand(outdir + "{{genome}}.{hap}.r2a.paf", hap=haps),
         ksize = ksize,
         FS = FS,
         LB = LB,
@@ -121,21 +139,41 @@ mkdir -p {params.od}/{wildcards.genome}
 cd {params.od}/{wildcards.genome}
 
 ### get asm TR regions
+echo "Liftover asm regions"
 
 fas=( {input.fa} )
 chrsizes=( {input.chrsize} )
-bams=( {input.faBam} )
-for hap in 0 1; do
-    {params.sd}/bin/samLiftover <(samtools view -@3 ${{bams[$hap]}}) <(cat {params.refTR} | cut -f 1-3) /dev/stdout --dir 1 --printNA |
-    awk 'BEGIN {{OFS="\t"}} {{
-        if ($3-$2 < {params.LB}) {{print "NA", "NA", "NA"}}
-        else {{print $0}}
-    }}' > tmp0.$hap.bed
-done
-{params.sd}/script/rmNAforBothBeds.py tmp0.?.bed tmp1.0.bed tmp1.1.bed
+bams=( {params.faBam} )
+pafs=( {params.faPaf} )
+cut -f 1-3 {params.refTR} > ref.bed
+if [[ {params.aligner} == "lra" ]]; then
+	for hap in 0 1; do
+		{params.sd}/bin/samLiftover <(samtools view ${{bams[$hap]}}) ref.bed /dev/stdout --dir 1 --printNA |
+		awk 'BEGIN {{OFS="\t"}} {{
+			if ($3-$2 < {params.LB}) {{print "NA", "NA", "NA"}}
+			else {{print $0}}
+		}}' > tmp0.$hap.bed
+	done
+	{params.sd}/script/rmNAforBothBeds.py tmp0.?.bed tmp1.0.bed tmp1.1.bed
+else
+	cp ref.bed tmp0.m.bed
+	for hap in 0 1; do
+		paftools.js liftover ${{pafs[$hap]}} ref.bed |
+		{params.sd}/script/liftbed.clean.py ref.bed /dev/stdin > tmp0."$hap".bed
+		bedtools map -c 4 -o collapse -a tmp0.m.bed \
+									  -b <(awk 'BEGIN {{OFS="\t"}} {{print $4,$5,$6,$1"/"$2"/"$3}}' tmp0.$hap.bed | bedtools sort) > tmp0.m.bed.tmp &&
+		mv tmp0.m.bed.tmp tmp0.m.bed
+	done
+	awk '$4 != "." && $5 != "." && $4 !~ /,/ && $5 !~ /,/' tmp0.m.bed > tmp0.mc.bed
+	for hap in 0 1; do 
+		cut -f 1,2,3,$(($hap+4)) tmp0.mc.bed |
+		tr '/' '\t' | awk 'BEGIN {{OFS="\t"}} {{print $4,$5,$6,$1,$2,$3}}' > tmp1.$hap.bed
+	done
+fi
 
 
 ### TR boundary expansion
+echo "Expand TR boundary"
 
 nloci=$(cat tmp1.0.bed | wc -l)
 params="{resources.cores} {params.ksize} {params.FS} {params.UB} {params.TRwindow}"" ""$nloci"
@@ -198,14 +236,14 @@ rm -f {wildcards.genome}/*.dat
 rule GenRawGenomeGraph:
     input:
         TRfa = expand(outdir + "{{genome}}.{hap}.tr.fasta", hap=haps),
-        ILbam = indir + "{genome}.IL.srt.bam",
-        ILbai = indir + "{genome}.IL.srt.bam.bai"
+        ILbam = indir + "{genome}.final.cram",
+        ILbai = indir + "{genome}.final.cram.crai"
     output:
         rawPBkmers = expand(outdir + "{{genome}}.rawPB.{kmerType}.kmers", kmerType=kmerTypes),
         rawILkmers = outdir + "{genome}.rawIL.tr.kmers"
     resources:
         cores = 16,
-        mem = lambda wildcards, attempt: 80 + 20*(attempt-1)
+        mem = lambda wildcards, attempt: 20 + 20*(attempt-1)
     params:
         copts = copts,
         sd = srcdir,
@@ -224,11 +262,7 @@ cd {params.od}
 {params.sd}/bin/vntr2kmers_thread -g -k {params.ksize} -fs {params.FS} -ntr {params.FS} -o {wildcards.genome}.rawPB -fa 2 {input.TRfa}
 
 samtools fasta -@2 -n {input.ILbam} |
-awk '{{if (substr($1,1,1) == ">") {{
-        if (substr($1,length($1)-1,1) == "/") {{ print substr($1, 1, length($1)-2) }} else {{ print $1 }} }}
-      else {{ print $1 }}
-     }}' |
-{params.sd}/bin/bam2pe -k {params.ksize} -fai /dev/stdin |
+{params.sd}/bin/bam2pe -fai /dev/stdin |
 {params.sd}/bin/danbing-tk -g {params.thcth} -k {params.ksize} -qs {params.od}/{wildcards.genome}.rawPB -fai /dev/stdin -o {wildcards.genome}.rawIL -p {resources.cores} -cth {params.cth} -rth {params.rth}
 """
 
@@ -263,7 +297,7 @@ rule GenPrunedGenomeGraph:
         PBkmers = expand(outdir + "{{genome}}.PB.{kmerType}.kmers", kmerType=kmerTypes)
     resources:
         cores = 2,
-        mem = 40
+        mem = 10
     params:
         copts = copts,
         sd = srcdir,
@@ -329,70 +363,10 @@ ulimit -c 20000
 """
 
 
-rule GenotypeSamples:
-    input:
-        panKmers = expand(outdir + "pan.{kmerType}.kmers", kmerType=kmerTypes),
-        ILbam = indir + "{genome}.IL.srt.bam",
-        ILbai = indir + "{genome}.IL.srt.bam.bai",
-    output:
-        panILkmers = outdir + "pan.{genome}.IL.tr.kmers",
-    resources:
-        cores = 24,
-        mem = lambda wildcards, attempt: 40 + 20*(attempt-1)
-    params:
-        copts = copts,
-        sd = srcdir,
-        od = outdir,
-        ksize = ksize,
-        cth = cth,
-        rth = rth,
-        rstring = rstring,
-        thcth = thcth,
-    shell:"""
-set -eu
-ulimit -c 20000
-cd {params.od}
-
-samtools fasta -@2 -n {input.ILbam} |
-awk '{{if (substr($1,1,1) == ">") {{
-        if (substr($1,length($1)-1,1) == "/") {{ print substr($1, 1, length($1)-2) }} else {{ print $1 }} }}
-      else {{ print $1 }}
-     }}' |
-{params.sd}/bin/bam2pe -k {params.ksize} -fai /dev/stdin |
-{params.sd}/bin/danbing-tk -gc {params.thcth} -k {params.ksize} -qs pan -fai /dev/stdin -o pan.{wildcards.genome}.IL -p {resources.cores} -cth {params.cth} -rth {params.rth}
-"""
-
-
-rule EvalGenotypeQuality:
-    input:
-        mapping = outdir + "locusMap.tbl",
-        panILkmers = outdir + "pan.{genome}.IL.tr.kmers",
-        PBkmers = outdir + "{genome}.PB.tr.kmers"
-    output:
-        mappedILkmers = outdir + "{genome}.mappedIL.tr.kmers",
-        pred = outdir + "{genome}.LR.pred"
-    resources:
-        cores = 12,
-        mem = lambda wildcards, attempt: 8*attempt
-    params:
-        copts = copts,
-        sd = srcdir,
-        od = outdir,
-        gi = lambda wildcards: genomes.index(wildcards.genome)
-    shell:"""
-set -eu
-ulimit -c 20000
-cd {params.od}
-
-{params.sd}/bin/mapkmers  {input.mapping}  {params.gi}  {input.panILkmers}  {input.PBkmers}  {wildcards.genome}.mappedIL.tr
-{params.sd}/script/kmers.linreg.py --mode invalid --R2threshold -2 {input.PBkmers} {output.mappedILkmers} {wildcards.genome}.LR
-"""
-
-
 rule ComputeBamCoverage:
     input:
-        ILbam = expand(indir + "{genome}.IL.srt.bam", genome=genomes),
-        ILbai = expand(indir + "{genome}.IL.srt.bam.bai", genome=genomes)
+        ILbam = expand(indir + "{genome}.final.cram", genome=genomes),
+        ILbai = expand(indir + "{genome}.final.cram.crai", genome=genomes)
     output:
         bamcov = outdir + "ctrl.cov"
     resources:
