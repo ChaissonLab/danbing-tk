@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import sys
+import os
 import argparse
 import numpy as np
 import matplotlib.cm as cm
@@ -12,12 +13,12 @@ from sklearn.metrics import mean_absolute_error as MAE
 from sklearn.cluster import AgglomerativeClustering
 import warnings
 
-np.set_printoptions(precision=2, suppress=True, edgeitems=100)
+np.set_printoptions(precision=3, suppress=True, edgeitems=100)
 
 
 
-def loadctrlsize(covbed):
-    tmp = np.loadtxt(covbed, dtype=int, usecols=[1,2])
+def loadbedsize(bed):
+    tmp = np.loadtxt(bed, dtype=int, usecols=[1,2])
     return tmp[:,1] - tmp[:,0]
 
 
@@ -91,89 +92,40 @@ def visMatCorrelation(mat, n_cluster=4, quantile=0.95, lim=None, alpha=0.01, fit
     return stats
 
 
-def loadBamCovsByLocus(covfname, suffix=""):
-    bamCovs = {}
-    with open(covfname) as f:
-        for line in f:
-            line = line.split()
-            if len(line) > 2:
-                bamCovs[line[1]+suffix] = np.array([float(s) for s in line[2:]])
-                
-    return bamCovs
+def get1DIQRmask(data, whis=1.5):
+    q1s = np.quantile(data, 0.25)
+    q3s = np.quantile(data, 0.75)
+    kIQRs = (q3s - q1s) * whis
+    return np.logical_or(data < (q1s - kIQRs), data > (q3s + kIQRs))
 
 
-def processCtrlBamCov(outdir="./", mth=1.2, sth=0.1):
-    bamcovmat = []
-    for gi, g in enumerate(genomes):
-        bamcovmat.append(bamCovs[g])
-    bamcovmat = np.array(bamcovmat)
-    
-    cmapname = "nipy_spectral"
-    cmap = cm.get_cmap(cmapname)
-    cmaparray = [cmap(v) for v in np.linspace(0,1,len(genomes))]
-    
-    
-    for ops in [False, True]:
-        if ops: # run outlier rejection
-            pctrlsize = ctrlsize[~badmask]
-            pcovmat = bamcovmat[:,~badmask]
-        else:
-            pctrlsize = np.copy(ctrlsize)
-            pcovmat = np.copy(bamcovmat)
-            badmask = np.zeros_like(ctrlsize, dtype=bool)
+def processCtrlBamCov(covmat, whis=1.5):
+    ctrlsize = loadbedsize(args.covbed) # "/home/cmb-16/mjc/tsungyul/work/vntr/hapdb/a3_r2ok/pan_prune/v2_1/ctrlbam/input/pan.fn2.bed"
+    cov = covmat@ctrlsize / np.sum(ctrlsize)
+    badmask = np.zeros_like(ctrlsize, dtype=bool)
 
-    
-        fig, axes = plt.subplots(2,2,figsize=(12,8))
-    
-        ### compute coverage for each locus; normalize wrt sample global coverage
-        pnormcovmat = pcovmat / (pcovmat@pctrlsize / np.sum(pctrlsize))[:,None]
-        if not ops:
-            normcovmat = np.copy(pnormcovmat)
-        for i in range(pctrlsize.size):
-            axes[0,0].scatter(np.ones(genomes.size)*i, pnormcovmat[:,i], marker='.', c=cmaparray)
-        axes[0,0].set_title("norm. cov. distr.")
+    ### compute coverage for each locus; normalize wrt sample global coverage
+    normcovmat = covmat / (covmat@ctrlsize / np.sum(ctrlsize))[:,None]
 
-        ### check variance
-        stds = np.std(pnormcovmat, axis=0)
-        normstds = stds # * (pctrlsize)**0.5
-        axes[0,1].scatter(np.arange(pctrlsize.size), normstds, marker='.')
-        axes[0,1].set_title("norm. var. distr.")
-        if not ops:
-            badmask = np.logical_or(badmask, normstds > sth)
+    ### check variance
+    stds = np.std(normcovmat, axis=0)
+    badmask = np.logical_or(badmask, get1DIQRmask(stds))
 
-        ### check if mean is biased
-        mnormcov = np.mean(pnormcovmat, axis=0)
-        axes[1,0].scatter(np.arange(pctrlsize.size), mnormcov, marker='.')
-        axes[1,0].set_title("norm. cov. bias by locus")
-        if not ops:
-            badmask = np.logical_or(badmask, mnormcov > mth)
+    ### check if mean is biased
+    means = np.mean(normcovmat, axis=0)
+    badmask = np.logical_or(badmask, get1DIQRmask(means))
 
-        ### check results global cov for each sample
-        x = np.arange(genomes.size)
-        y = pnormcovmat @ pctrlsize / np.sum(pctrlsize)
-        ylow = y - np.std(pnormcovmat, axis=1)
-        yhigh = y + np.std(pnormcovmat, axis=1)
-        axes[1,1].scatter(x, y, marker='.')
-        for i in range(x.size):
-            axes[1,1].plot([x[i],x[i]], [ylow[i],yhigh[i]], '-')
-        axes[1,1].set_title("norm. cov. bias by sample")
-        plt.suptitle("preocessing: {}".format(ops))
-        plt.savefig(f'{outdir}/cov.stat.png', dpi='figure', transparent=True)
-        plt.close()
-
-        ### PCA
-        projX = PCA(n_components=2).fit_transform(pnormcovmat)
-
-        fig, ax = plt.subplots(dpi=100)
-        for gind, g in enumerate(genomes):
-            ax.scatter(projX[gind,0],projX[gind,1], label="{}  {}".format(gind, g), color=cmaparray[gind], alpha=0.5)
-            ax.annotate(s=gind, xy=projX[gind]+0.005, fontsize=5)
-        plt.legend(bbox_to_anchor=(0.85,0.55,0.5,0.5), loc="best")
-        plt.suptitle("preocessing: {}".format(ops))
-        plt.savefig(f'{outdir}/cov.pca.png', dpi='figure', transparent=True)
-        plt.close()
+    print(f'\t{np.sum(badmask)} out of {badmask.size} unique regions removed')
         
-    return pcovmat@pctrlsize / np.sum(pctrlsize), pnormcovmat, normcovmat, pcovmat, bamcovmat
+    ### reject outliers
+    pctrlsize = ctrlsize[~badmask]
+    pcovmat = covmat[:,~badmask]
+    pcov = pcovmat@pctrlsize / np.sum(pctrlsize)
+
+	### covmat for nearest neighbor search
+    normcovmat = covmat / cov[:,None]
+    pnormcovmat = pcovmat / pcov[:,None]
+    return pcov, pnormcovmat, normcovmat
 
 
 def getksumArr(fname, nloci):
@@ -213,7 +165,7 @@ def loadPanLen(wd, genomes):
     for gind, g in enumerate(genomes):
         rawlenmat.append(np.loadtxt(f'{wd}/{g}.LR.pred', usecols=[0], dtype=int))    
 
-    mapping = np.loadtxt(f'{wd}/locusMap.tbl', dtype=object)    
+    mapping = np.loadtxt(f'{args.panmap}', dtype=object)    
     
     panlenmat = np.zeros([genomes.size, nloci], dtype=int)
     for gind, g in enumerate(genomes):
@@ -233,14 +185,14 @@ def getBiasMat(genomes):
 
 def dumpStep1(wd):
     with open(f'{wd}/step1_results.pickle', 'wb') as f:
-        pickle.dump([pbamcov, pnormbamcov, normbamcov, pbamcovmat, bamcovmat, panlenmat, biasmat], f)
+        pickle.dump([pbamcov, pncovmat, ncovmat, panlenmat, biasmat], f)
     return
 
 
 def loadStep1(wd):
     with open(f'{wd}/step1_results.pickle', 'rb') as f:
-        pbamcov, pnormbamcov, normbamcov, pbamcovmat, bamcovmat, panlenmat, biasmat = pickle.load(f)
-    return pbamcov, pnormbamcov, normbamcov, pbamcovmat, bamcovmat, panlenmat, biasmat
+        pbamcov, pncovmat, ncovmat, panlenmat, biasmat = pickle.load(f)
+    return pbamcov, pncovmat, ncovmat, panlenmat, biasmat
 
 
 class RankInd:
@@ -290,21 +242,19 @@ def LengthErrorRate(x, y):
 
 def BiasCorrectedLenPred(outdir="./"):
     opts = {"quantile":1, "alpha":1, "img":None}
-    opts1 = {"quantile":1, "alpha":1, "img":None}
-    opts2 = {"metric":'r2', "fit_intercept":False, "quantile":1, "alpha":1, "img":None}
-    opts = [opts1, opts2]
     nplt = np.sum(LOOmask)
     ncol = 5
     nrow = (nplt-1)//ncol+1
-    errs = np.zeros([4,nplt])
-    for estidx, estimator in enumerate([normbamcov, pnormbamcov, bamcovmat, pbamcovmat]):
+    ctrlcovmats = [ncovmat, pncovmat]
+    errs = np.zeros([len(ctrlcovmats),nplt])
+    for estidx, estimator in enumerate(ctrlcovmats):
         est = estimator[LOOmask]
 
         LOOgenomes = genomes[LOOmask]
         LOOlenmat = panlenmat[LOOmask]
         LOObiasmat = biasmat[LOOmask]
         LOOpbamcov = pbamcov[LOOmask]
-        metric = visMatCorrelation(est, **opts[estidx//2])
+        metric = visMatCorrelation(est, **opts)
         srtmetric = np.argsort(metric, axis=1)[:,:-1]
         bestind = getBestUsingSeqrunPrior(srtmetric, LOOgenomes, badg=badg, LOO=True)
 
@@ -327,31 +277,27 @@ def BiasCorrectedLenPred(outdir="./"):
             axes[idx//ncol, idx%ncol].plot([0,5000],[0,5000],'--r', alpha=0.5)
             axes[idx//ncol, idx%ncol].axis([0,5000,0,5000])
             axes[idx//ncol, idx%ncol].set_title(f'{g}::{ghat}\nErr:{err:.3f} n={x.size}')
-        axes[3,0].set_xlabel("  \n  \n")
-        axes[3,0].set_ylabel("  \n  \n")
-        fig.text(0.5, 0.02, 'True length', ha='center', fontsize=16)
-        fig.text(0.02, 0.5, 'Predicted length', va='center', rotation='vertical', fontsize=16)
-        plt.tight_layout()
+        axes[nrow-1,0].set_xlabel("True length")
+        axes[nrow-1,0].set_ylabel("Predicted length")
         plt.savefig(f'{outdir}/len_pred_linreg_{estidx}.png', dpi='figure', transparent=True)
         plt.close()        
     return errs
 
 
 def LenPredSummary(errs, outdir="./"):
-    nmethod = 4
+    nmethod, nx = errs.shape
     accs = 1 - errs
-    nplt = accs.shape[1]
     plt.figure(dpi=120)
+    qs = np.quantile(accs, [0.25, 0.5, 0.75], axis=1)
+    print(qs)
     for i in range(nmethod):
-        q1, q2, q3 = np.quantile(accs[i], 0.25), np.quantile(accs[i], 0.5), np.quantile(accs[i], 0.75)
-        #print(f'{q1:.3f} {q2:.3f} {q3:.3f}')
-        plt.plot(np.ones(nplt)*i, accs[i], '.')
-        plt.plot(i, q1, '_r', markersize=10)
-        plt.plot(i, q2, '_r', markersize=20)
-        plt.plot(i, q3, '_r', markersize=10)
+        plt.plot(np.ones(nx)*i, accs[i], '.')
+        plt.plot(i, qs[0,i], '_r', markersize=10)
+        plt.plot(i, qs[1,i], '_r', markersize=20)
+        plt.plot(i, qs[2,i], '_r', markersize=10)
     plt.xlim([-1,nmethod])
-    plt.xticks(np.arange(nmethod),["normbamcov", "pnormbamcov", "bmacov", "pbamcov"], rotation=90)
-    plt.title("Comparison of prediction approaches")
+    plt.xticks(np.arange(nmethod),["ncovmat", "pncovmat"], rotation=45)
+    plt.title(f'Comparison of prediction approaches: {qs[1,0]:.3f} {qs[1,1]:.3f}')
     plt.ylabel("accuracy")
     plt.savefig(f'{outdir}/per_genome_acc_AllMethod.png', dpi='figure', transparent=True)
     plt.close()
@@ -388,7 +334,7 @@ def SaveRelError(outdir="./"):
     ng = np.sum(LOOmask)
     relErrs = np.empty([ng,nloci], dtype=object).astype(float)
 
-    est = pnormbamcov[LOOmask]
+    est = ncovmat[LOOmask] ### ncovmat is empirically better than pncovmat
     LOOgenomes = genomes[LOOmask]
     LOOlenmat = panlenmat[LOOmask]
     LOObiasmat = biasmat[LOOmask]
@@ -442,13 +388,12 @@ if __name__ == "__main__":
     ap.add_argument("--genome", help="genome config file", required=True)
     ap.add_argument("--nloci", help="number of VNTR loci", type=int, required=True)
 
-    ap.add_argument("--wd1", help="working directory for step 1", required=True)
+    ap.add_argument("--panmap", help="locus mapping file for all genomes (not LOO); skipped if --skip1", required=True)
     ap.add_argument("--skip1", help="skip step 1 and read from step1_results.pickle", action="store_true")
     ap.add_argument("--cov", help="bam coverage file; skipped if --skip1")
     ap.add_argument("--covbed", help="unique region bed file; skipped if --skip1")
 
-    ap.add_argument("--wd2", help="working directory for step 2", required=True)
-    ap.add_argument("--badg", help="',' delimited list of genomes not used for inference due to poor asm quality", required=True)
+    ap.add_argument("--badg", help="',' delimited list of genomes not used for inference due to poor asm quality")
     ap.add_argument("--LOOconf", help="a string of 1's and 0's indicating the genomes used in step 2, e.g. 1111011011111111011", required=True)
     ap.add_argument("--sampleConf", 
                     help="a string of [0-9]'s indicating the type of samples, e.g. 3100000022222100013,\n"+\
@@ -456,41 +401,39 @@ if __name__ == "__main__":
                     required=True)
     ap.add_argument("--LOOpref", help="kmer file prefix", nargs='?', default="LOO")
     args = ap.parse_args()
-    
+    wd = os.getcwd()
     
     ### step 1
-    outdir = f'{args.wd1}/analysis'
+    outdir = f'{wd}/analysis'
     genomes = np.loadtxt(args.genome, dtype=object) # "/home/cmb-16/mjc/tsungyul/work/vntr/hapdb/config/genomes.txt"
     nloci = args.nloci
-    badg = args.badg.split(',')
+    badg = args.badg.split(',') if args.badg else []
     
     if not args.skip1:
         print("1-1: processing bam coverage", flush=True)
-        bamCovs = loadBamCovsByLocus(args.cov) # "/home/cmb-17/mjc/vntr_genotyping/goodPanGenomeGraph/output/ctrl.cov"
-        ctrlsize = loadctrlsize(args.covbed) # "/home/cmb-16/mjc/tsungyul/work/vntr/hapdb/a3_r2ok/pan_prune/v2_1/ctrlbam/input/pan.fn2.bed"
-        pbamcov, pnormbamcov, normbamcov, pbamcovmat, bamcovmat = processCtrlBamCov(outdir=outdir, mth=1.2, sth=0.1)
+        rawcovmat = np.loadtxt(args.cov, dtype=object)
+        pbamcov, pncovmat, ncovmat = processCtrlBamCov(rawcovmat[:,2:].astype(float))
         
         print("1-2: loading kmer genotypes", flush=True)
-        vntrmat = loadvntrmat(genomes, prefix=f'{args.wd1}/pan')
+        vntrmat = loadvntrmat(genomes, prefix=f'{wd}/pan')
         
         print("1-3: computing VNTR-specific biases", flush=True)
-        panlenmat = loadPanLen(args.wd1, genomes)
+        panlenmat = loadPanLen(wd, genomes)
         biasmat = getBiasMat(genomes)
         
         print("1-4: saving step 1 results", flush=True)
         dumpStep1(outdir)
     else:
         print("1-1: loading step 1 results", flush=True)
-        pbamcov, pnormbamcov, normbamcov, pbamcovmat, bamcovmat, panlenmat, biasmat = loadStep1(outdir)
+        pbamcov, pncovmat, ncovmat, panlenmat, biasmat = loadStep1(outdir)
         
         
     ### step 2
-    outdir = f'{args.wd2}/analysis'
     rankind = RankInd()
     
     print("2-1: loading leave-one-out kmer genotypes", flush=True)
     LOOmask = np.array([int(_) for _ in args.LOOconf], dtype=bool)
-    LOOmat = loadvntrmat(genomes[LOOmask], prefix=f'{args.wd2}/{args.LOOpref}')
+    LOOmat = loadvntrmat(genomes[LOOmask], prefix=f'{wd}/{args.LOOpref}')
     
     print("2-2: computing nearest bias", flush=True)
     vntrstat = visMatCorrelation(biasmat, n_cluster=5, quantile=0.99, outdir=outdir)
