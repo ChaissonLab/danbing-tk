@@ -1,17 +1,17 @@
 {
-    "inputDir" : /staging/mjc/tsungyul/LOO/input/,
-    "outputDir" : /staging/mjc/tsungyul/LOO/,
-    "pangenomeDir" : /staging/mjc/tsungyul/goodPanGenomeGraph/,
-    "genomes" : /home/cmb-16/mjc/tsungyul/work/vntr/hapdb/config/genomes.txt,
-    "LOOgenomes" : /staging/mjc/tsungyul/LOO/input/genomes.txt,
+    "outputDir" : /home/cmb-17/mjc/vntr_genotyping/rpgg2_k21_29k/LOO/output_paf/,
+    "pangenomeDir" : /home/cmb-17/mjc/vntr_genotyping/rpgg2_k21_29k/output_paf/,
+    "pangenomeInputDir" : /home/cmb-17/mjc/vntr_genotyping/rpgg2_k21_29k/input/,
+    "genomes" : /home/cmb-16/mjc/tsungyul/work/vntr/hapdb/config/genomes.HGSVC2.txt,
+    "LOOgenomes" : /home/cmb-17/mjc/vntr_genotyping/rpgg2_k21_29k/LOO/input/genomes.txt,
     "ksize" : 21,
     "countThreashold" : 45,
     "ratioThreashold" : 0.5,
     "threadingCountThreshold" : 50,
-    "clusterOpts" : "sbatch --time=48:00:00 --partition=cmb",
+    "clusterOpts" : "sbatch --time=120:00:00 --partition=cmb",
     "covbed" : /home/cmb-16/mjc/tsungyul/work/vntr/hapdb/a3_r2ok/pan_prune/v2_1/ctrlbam/input/pan.fn2.bed,
-    "LOOconf" : 1111011011111111011,
-    "sampleConf" : 3100000022222100013,
-    "badgenome" : HG04217
+    "LOOconf" : "11110110111111111111111110111",
+    "sampleConf" : "00000000000000000000000000000",
+    "badgenome" : ""
 
 }

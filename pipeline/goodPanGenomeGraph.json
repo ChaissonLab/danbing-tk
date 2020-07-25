@@ -1,7 +1,8 @@
 {
-    "inputDir" : /home/cmb-17/mjc/vntr_genotyping/goodPanGenomeGraph/input/,
-    "outputDir" : /home/cmb-17/mjc/vntr_genotyping/goodPanGenomeGraph/output/,
-    "genomes" : /home/cmb-17/mjc/vntr_genotyping/goodPanGenomeGraph/input/genomes.txt,
+    "inputDir" : /home/cmb-17/mjc/vntr_genotyping/rpgg2_k21_29k/input/,
+    "outputDir" : /home/cmb-17/mjc/vntr_genotyping/rpgg2_k21_29k/output_paf/,
+    "genomes" : /home/cmb-17/mjc/vntr_genotyping/rpgg2_k21_29k/input/genomes.HGSVC2.txt,
+    "AsmAligner" : "minimap2",
     "ksize" : 21,
     "flankSize" : 700,
     "countThreashold" : 45,
@@ -11,7 +12,7 @@
     "sizeUpperBound" : 5000,
     "TRwindow" : 10000,
     "ref" : /home/cmb-16/mjc/tsungyul/work/vntr/datasets/reference/hg38_noalts/hg38.no_alts.fasta,
-    "refTR" : /home/cmb-17/mjc/vntr_genotyping/goodPanGenomeGraph/input/tr.good.bed,
+    "refTR" : /home/cmb-17/mjc/vntr_genotyping/rpgg_k21_29k/input/tr.good.bed,
     "refctrl" : /home/cmb-17/mjc/vntr_genotyping/cmb-16/work/vntr/hapdb/a1_regions/ctrl/pan.fn2.bed,
-    "clusterOpts" : "sbatch --time=48:00:00 --partition=cmb"
+    "clusterOpts" : "sbatch --time=240:00:00 --partition=cmb"
 }

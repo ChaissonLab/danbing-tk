@@ -241,12 +241,13 @@ def LengthErrorRate(x, y):
 
 
 def BiasCorrectedLenPred(outdir="./"):
+    ctrlcovmats = [ncovmat, pncovmat]
     opts = {"quantile":1, "alpha":1, "img":None}
     nplt = np.sum(LOOmask)
     ncol = 5
     nrow = (nplt-1)//ncol+1
-    ctrlcovmats = [ncovmat, pncovmat]
-    errs = np.zeros([len(ctrlcovmats),nplt])
+    nmethod = len(ctrlcovmats)
+    errs = np.zeros([nmethod,nplt])
     for estidx, estimator in enumerate(ctrlcovmats):
         est = estimator[LOOmask]
 
@@ -258,7 +259,8 @@ def BiasCorrectedLenPred(outdir="./"):
         srtmetric = np.argsort(metric, axis=1)[:,:-1]
         bestind = getBestUsingSeqrunPrior(srtmetric, LOOgenomes, badg=badg, LOO=True)
 
-        
+        if estidx == 1: # pncovmat is empirically better
+            lengths = np.zeros([bestind.size, nloci])
         fig, axes = plt.subplots(nrow, ncol, dpi=120, figsize=(15,nrow*3), sharex=True, sharey=True)
         for idx, bidx in enumerate(bestind):
             g, ghat = LOOgenomes[idx], LOOgenomes[bidx]
@@ -270,6 +272,7 @@ def BiasCorrectedLenPred(outdir="./"):
             mask = y1 > 0
             x = x[mask]
             y = y0[mask] / y1[mask]
+            lengths[idx] = y
             err = LengthErrorRate(x, y)
             errs[estidx,idx] = err
 
@@ -277,10 +280,13 @@ def BiasCorrectedLenPred(outdir="./"):
             axes[idx//ncol, idx%ncol].plot([0,5000],[0,5000],'--r', alpha=0.5)
             axes[idx//ncol, idx%ncol].axis([0,5000,0,5000])
             axes[idx//ncol, idx%ncol].set_title(f'{g}::{ghat}\nErr:{err:.3f} n={x.size}')
+
         axes[nrow-1,0].set_xlabel("True length")
         axes[nrow-1,0].set_ylabel("Predicted length")
         plt.savefig(f'{outdir}/len_pred_linreg_{estidx}.png', dpi='figure', transparent=True)
         plt.close()        
+
+        np.savetxt(f'{wd}/analysis/pred_len.txt', lengths.T, fmt='%i', delimiter="\t", header="\t".join(LOOgenomes))
     return errs
 
 
@@ -297,7 +303,7 @@ def LenPredSummary(errs, outdir="./"):
         plt.plot(i, qs[2,i], '_r', markersize=10)
     plt.xlim([-1,nmethod])
     plt.xticks(np.arange(nmethod),["ncovmat", "pncovmat"], rotation=45)
-    plt.title(f'Comparison of prediction approaches: {qs[1,0]:.3f} {qs[1,1]:.3f}')
+    plt.title(f'Comparison between prediction approaches: {qs[1,0]:.3f} {qs[1,1]:.3f}')
     plt.ylabel("accuracy")
     plt.savefig(f'{outdir}/per_genome_acc_AllMethod.png', dpi='figure', transparent=True)
     plt.close()
@@ -334,7 +340,7 @@ def SaveRelError(outdir="./"):
     ng = np.sum(LOOmask)
     relErrs = np.empty([ng,nloci], dtype=object).astype(float)
 
-    est = ncovmat[LOOmask] ### ncovmat is empirically better than pncovmat
+    est = pncovmat[LOOmask] ### pncovmat is empirically better than pncovmat
     LOOgenomes = genomes[LOOmask]
     LOOlenmat = panlenmat[LOOmask]
     LOObiasmat = biasmat[LOOmask]
@@ -388,16 +394,15 @@ if __name__ == "__main__":
     ap.add_argument("--genome", help="genome config file", required=True)
     ap.add_argument("--nloci", help="number of VNTR loci", type=int, required=True)
 
-    ap.add_argument("--panmap", help="locus mapping file for all genomes (not LOO); skipped if --skip1", required=True)
     ap.add_argument("--skip1", help="skip step 1 and read from step1_results.pickle", action="store_true")
+    ap.add_argument("--panmap", help="locus mapping file for all genomes (not LOO); skipped if --skip1")
     ap.add_argument("--cov", help="bam coverage file; skipped if --skip1")
     ap.add_argument("--covbed", help="unique region bed file; skipped if --skip1")
 
     ap.add_argument("--badg", help="',' delimited list of genomes not used for inference due to poor asm quality")
-    ap.add_argument("--LOOconf", help="a string of 1's and 0's indicating the genomes used in step 2, e.g. 1111011011111111011", required=True)
+    ap.add_argument("--LOOconf", help="a string of 1's and 0's indicating the genomes, in the same order as --genome, used in step 2, e.g. 11110, where the last sample is dropped in LOO", required=True)
     ap.add_argument("--sampleConf", 
-                    help="a string of [0-9]'s indicating the type of samples, e.g. 3100000022222100013,\n"+\
-                         "where 0-3 are samples from HGSVC trios, UWashDiversity, 1KGP and independent work, respectively",
+                    help="a string of [0-9]'s indicating distinct sources of samples, in the same order as --genome, e.g. 001001122, where four 0's, three 1's and two 2's samples are sequenced separately. PCA on ctrl.cov may help assign the source of samples.",
                     required=True)
     ap.add_argument("--LOOpref", help="kmer file prefix", nargs='?', default="LOO")
     args = ap.parse_args()
