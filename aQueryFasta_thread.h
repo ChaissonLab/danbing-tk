@@ -1,5 +1,5 @@
-#ifndef NU_QUERYFASTA_H_
-#define NU_QUERYFASTA_H_
+#ifndef A_QUERYFASTA_THREAD_H_
+#define A_QUERYFASTA_THREAD_H_
 
 #include "stdlib.h"
 #include <vector>
@@ -18,14 +18,15 @@
 #include <cmath>
 #include <algorithm>
 #include <iomanip>
+#include <atomic>
 
 using namespace std;
 
-typedef unordered_set<size_t> kmer_set;
-typedef unordered_map<size_t, uint16_t> kmerCount_umap; // assume count < (2^16 -1)
-//typedef unordered_map<size_t, vector<uint16_t>> kmerIndex_dict; // assume number of loci < (2^16 -1)
-//typedef unordered_map<size_t, set<uint16_t>> kmerIndex_umap; // assume number of loci < (2^16 -1)
-typedef unordered_map<size_t, unordered_set<uint16_t>> kmeruIndex_umap; // assume number of loci < (2^16 -1)
+//typedef unordered_set<size_t> kmer_set;
+typedef unordered_map<size_t, uint32_t> kmerCount_umap; // assume count < (2^16 -1)
+typedef unordered_map<size_t, atomic_size_t> kmer_aCount_umap;
+typedef unordered_map<size_t, uint8_t> GraphType;
+typedef unordered_map<size_t, unordered_set<uint32_t>> kmeruIndex_umap; // assume number of loci < (2^16 -1)
 typedef unordered_map<size_t, vector<uint16_t>> kmerAttr_dict;
 typedef unordered_map<string, unordered_map<string, uint16_t>> adj_dict;
 typedef unordered_map<string, unordered_map<string, vector<uint16_t>>> adjAttr_dict;
@@ -102,31 +103,23 @@ const unsigned char byteRC[]   = {
 
 string decodeNumericSeq(size_t num, size_t k){
     string seq = "";
-    for (size_t i = 0; i < k; i++){
+    for (size_t i = 0; i < k; ++i){
         seq = baseNumConversion[num % 4] + seq;
         num >>= 2;
     }
     return seq;
 }
     
-size_t encodeSeq(string seq){ // poor implementation, extra string copy
-    size_t numericSeq = 0;
-    for (size_t i = 0; i < seq.length(); i++){
-        numericSeq = (numericSeq<<2) + baseNumConversion[seq[i]];
-    }
-    return numericSeq;
-}
-
 size_t encodeSeq(string& seq, size_t start, size_t k) { // no extra copy
     size_t numericSeq = 0;
-    for (size_t i = start; i < start+k; i++){
+    for (size_t i = start; i < start+k; ++i){
         numericSeq = (numericSeq<<2) + baseNumConversion[seq[i]];
     }
     return numericSeq;
 }
 
 size_t getNextKmer(size_t& kmer, size_t beg, string& read, size_t k){
-    size_t rlen = read.length();
+    size_t rlen = read.size();
     if (beg + k > rlen){
         kmer = 0;
         return rlen;
@@ -152,7 +145,7 @@ string getRC(const string &read) {
     string rcread;
     size_t rlen = read.size();
     rcread.resize(rlen);
-    for (size_t i = 0; i < rlen; i++) {
+    for (size_t i = 0; i < rlen; ++i) {
         rcread[i] = baseComplement[read[rlen - 1 - i]];
     }
     return rcread;
@@ -172,60 +165,10 @@ size_t getNuRC(size_t num, size_t k) {
     }
     return num_rc;
 }
-/*
-void buildNuKmers(kmerCount_dict& kmers, string& read, size_t k, size_t flanksize, bool count, ) { // new version
-    size_t rlen = read.length();
-    size_t mask = (1UL << 2*(k-1)) - 1;
-    size_t beg, nbeg, canonicalkmer, kmer, rckmer;
 
-    tie(beg, kmer) = getNextKmer(flanksize, read, k);
-    if (beg == rlen){ return; }
-    rckmer = getNuRC(kmer, k);
- 
-    if (count) {
-        for (size_t i = beg; i < rlen - k - flanksize + 1; i++){
-            if (kmer > rckmer) {
-                canonicalkmer = rckmer;
-            } else {
-                canonicalkmer = kmer;
-            }
-            kmers[canonicalkmer] += 1;
-
-            if (find(alphabet, alphabet+4, read[i + k]) == alphabet+4){
-                tie(nbeg, kmer) = getNextKmer(i + k + 1, read, k);
-                if (nbeg == rlen) { return; }
-                rckmer = getNuRC(kmer, k);
-                i = nbeg - 1;
-            } else {
-                kmer = ( (kmer & mask) << 2 ) + baseNumConversion[read[i + k]];
-                rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] * 1UL) << (2*(k-1)));
-            }
-        }
-    }
-    else {
-        for (size_t i = beg; i < rlen - k - flanksize + 1; i++){
-            if (kmer > rckmer) {
-                canonicalkmer = rckmer;
-            } else {
-                canonicalkmer = kmer;
-            }
-            kmers[canonicalkmer] += 0;
-            
-            if (find(alphabet, alphabet+4, read[i + k]) == alphabet+4){
-                tie(nbeg, kmer) = getNextKmer(i + k + 1, read, k);
-                if (nbeg == rlen) { return; }
-                rckmer = getNuRC(kmer, k);
-                i = nbeg - 1;
-            } else {
-                kmer = ( (kmer & mask) << 2 ) + baseNumConversion[read[i + k]];
-                rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] * 1UL) << (2*(k-1)));
-            }
-        }
-    }
-}
-*/
-void buildNuKmers(kmerCount_umap& kmers, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0, bool count = true) { // old version
-    size_t rlen = read.length();
+template <typename T>
+void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0, bool count = true) {
+    size_t rlen = read.size();
     size_t mask = (1UL << 2*(k-1)) - 1;
     size_t beg, nbeg, canonicalkmer, kmer, rckmer;
 
@@ -233,85 +176,89 @@ void buildNuKmers(kmerCount_umap& kmers, string& read, size_t k, size_t leftflan
     if (beg == rlen){ return; }
     rckmer = getNuRC(kmer, k);
  
-    if (count) {
-        for (size_t i = beg; i < rlen - k - rightflank + 1; i++){
-            if (kmer > rckmer) {
-                canonicalkmer = rckmer;
-            } else {
-                canonicalkmer = kmer;
-            }
-            kmers[canonicalkmer] += 1;
-
-            if (find(alphabet, alphabet+4, read[i + k]) == alphabet+4){
-                nbeg = getNextKmer(kmer, i+k+1, read, k);
-                if (nbeg == rlen) { return; }
-                rckmer = getNuRC(kmer, k);
-                i = nbeg - 1;
-            } else {
-                kmer = ( (kmer & mask) << 2 ) + baseNumConversion[read[i + k]];
-                rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] * 1UL) << (2*(k-1)));
-            }
+    for (size_t i = beg; i < rlen - k - rightflank + 1; ++i){
+        if (kmer > rckmer) {
+            canonicalkmer = rckmer;
+        } else {
+            canonicalkmer = kmer;
         }
-    }
-    else {
-        for (size_t i = beg; i < rlen - k - rightflank + 1; i++){
-            if (kmer > rckmer) {
-                canonicalkmer = rckmer;
-            } else {
-                canonicalkmer = kmer;
-            }
-            kmers[canonicalkmer] += 0;
-            
-            if (find(alphabet, alphabet+4, read[i + k]) == alphabet+4){
-                nbeg = getNextKmer(kmer, i+k+1, read, k);
-                if (nbeg == rlen) { return; }
-                rckmer = getNuRC(kmer, k);
-                i = nbeg - 1;
-            } else {
-                kmer = ( (kmer & mask) << 2 ) + baseNumConversion[read[i + k]];
-                rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] * 1UL) << (2*(k-1)));
-            }
+        kmers[canonicalkmer] += (1 & count);
+
+        if (find(alphabet, alphabet+4, read[i + k]) == alphabet+4){
+            nbeg = getNextKmer(kmer, i+k+1, read, k);
+            if (nbeg == rlen) { return; }
+            rckmer = getNuRC(kmer, k);
+            i = nbeg - 1;
+        } else {
+            kmer = ( (kmer & mask) << 2 ) + baseNumConversion[read[i + k]];
+            rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] & mask) << (2*(k-1))); // XXX test correctness
         }
     }
 }
 
-/*
-// deprecated
-void buildNuNoncaKmers(kmerCount_dict& kmers, string& read, size_t k, size_t flanksize = 0, bool count = 1) {
-    size_t rlen = read.length();
-    size_t mask = 1UL << 2*(k-1);
+void _buildKmerGraph(GraphType& g, string& read, size_t k, size_t leftflank, size_t rightflank, bool noselfloop) {
+    const size_t rlen = read.size();
+    const size_t mask = (1ULL << 2*(k-1)) - 1;
+
     size_t beg, nbeg, kmer;
+    beg = getNextKmer(kmer, leftflank, read, k);
+    if (beg != rlen){
+        for (size_t i = beg; i < rlen - k - rightflank; ++i){
+            if (std::find(alphabet, alphabet+4, read[i + k]) == alphabet+4){
+                g[kmer] |= 0;
+                nbeg = getNextKmer(kmer, i+k+1, read, k);
+                if (nbeg == rlen) { break; }
+                i = nbeg - 1;
+            } else {
+                size_t nextkmer = ((kmer & mask) << 2) + baseNumConversion[read[i + k]];
+                bool valid = (not noselfloop) or (noselfloop and (kmer != nextkmer));
+                g[kmer] |= ((1 & valid) << baseNumConversion[read[i + k]]);
+                kmer = nextkmer;
+            }
+        }
+        g[kmer] |= 0;
+    }
+}
 
-    tie(beg, kmer) = getNextKmer(flanksize, read, k);
+void buildKmerGraph(GraphType& g, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0, bool noselfloop = true) {
+    _buildKmerGraph(g, read, k, leftflank, rightflank, noselfloop);
+    string rcread = getRC(read);
+    _buildKmerGraph(g, rcread, k, rightflank, leftflank, noselfloop);
+}
+
+// invalid kmers are skipped; input/output size differs
+void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0, bool canonical = true) {
+    const size_t rlen = read.size();
+    const size_t mask = (1ULL << 2*(k-1)) - 1;
+    size_t beg, nbeg, canonicalkmer, kmer, rckmer;
+
+    beg = getNextKmer(kmer, leftflank, read, k);
     if (beg == rlen){ return; }
+    rckmer = getNuRC(kmer, k);
 
-    if (count) {
-        for (size_t i = beg; i < rlen - k - flanksize + 1; i++){
-            kmers[kmer] += 1;
-            
-            if (read[i + k] == 'N'){
-                tie(nbeg, kmer) = getNextKmer(i + k + 1, read, k);
-                if (nbeg == rlen) { return; }
-                i = nbeg - 1;
-            } else {
-                kmer = ( (kmer % mask) << 2 ) + baseNumConversion[read[i + k]];
-            }
+    for (size_t i = beg; i < rlen - k - rightflank + 1; ++i){
+        canonicalkmer = (kmer > rckmer ? rckmer : kmer);
+        kmers.push_back(canonical ? canonicalkmer : kmer);
+
+        if (std::find(alphabet, alphabet+4, read[i + k]) == alphabet+4){
+            nbeg = getNextKmer(kmer, i+k+1, read, k);
+            if (nbeg == rlen) { return; }
+            rckmer = getNuRC(kmer, k);
+            i = nbeg - 1;
+        } else {
+            kmer = ( (kmer & mask) << 2 ) + baseNumConversion[read[i + k]];
+            rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] & mask) << (2*(k-1))); // XXX test correctness
         }
     }
-    else {
-        for (size_t i = beg; i < rlen - k - flanksize + 1; i++){
-            kmers[kmer] += 0;
-            
-            if (read[i + k] == 'N'){
-                tie(nbeg, kmer) = getNextKmer(i + k + 1, read, k);
-                if (nbeg == rlen) { return; }
-                i = nbeg - 1;
-            } else {
-                kmer = ( (kmer % mask) << 2 ) + baseNumConversion[read[i + k]];
-            }
-        }
+}
+
+void noncaVec2CaUmap(vector<size_t>& kmers, kmerCount_umap& out, size_t ksize) {
+    size_t RCkmer;
+    for (size_t kmer : kmers) {
+        RCkmer = getNuRC(kmer, ksize);
+        ++out[(kmer <= RCkmer ? kmer : RCkmer)];
     }
-}*/
+}
 
 size_t countLoci(string fname) {
     ifstream inf(fname);
@@ -320,23 +267,37 @@ size_t countLoci(string fname) {
     size_t nloci = 0;
     while (getline(inf, line)) {
         if (line[0] == '>'){
-            nloci++;
+            ++nloci;
         }
     }
     inf.close();
     return nloci;
 }
 
-// function polymorphism: record kmerDB only
-void readKmersFile(vector<kmerCount_umap>& kmerDB, string fname, size_t startInd = 0, bool count = true, uint16_t threshold = 0, uint16_t offset = 0) {
+size_t countBedLoci(string fname) {
+    ifstream inf(fname);
+    assert(inf);
+    string line;
+    size_t nloci = 0;
+    while (getline(inf, line)) {
+        ++nloci;
+    }
+    inf.close();
+    return nloci;
+
+}
+
+// record kmerDB only
+template <typename T>
+void readKmersFile2DB(T& kmerDB, string fname, size_t startInd = 0, bool count = true, uint16_t threshold = 0, uint16_t offset = 0) {
     ifstream f(fname);
     assert(f);
     string line;
     getline(f, line);
-    cerr <<"starting reading kmers from " << fname << endl;
+    cerr <<"reading kmers from " << fname << endl;
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
-            startInd++;
+            ++startInd;
             if (f.peek() == EOF){
                 f.close();
                 break;
@@ -347,7 +308,7 @@ void readKmersFile(vector<kmerCount_umap>& kmerDB, string fname, size_t startInd
             getline(f, line, '\t');
             size_t kmer = stoul(line);
             getline(f, line);
-            uint16_t kmercount = stoul(line);
+            size_t kmercount = stoul(line);
 
             if (kmercount < threshold) { continue; }
             if (count) {
@@ -360,16 +321,16 @@ void readKmersFile(vector<kmerCount_umap>& kmerDB, string fname, size_t startInd
     f.close();
 }
 
-// function polymorphism: record kmerSetDB and kmerIndex_dict kmerDBi
-void readKmersFile(vector<kmer_set>& kmerSetDB, kmeruIndex_umap& kmerDBi, string fname, size_t startInd = 0, uint16_t threshold = 0) {
+// record kmerIndex_dict kmerDBi only
+void readKmersFile2DBi(kmeruIndex_umap& kmerDBi, string fname, size_t startInd = 0, uint16_t threshold = 0) {
     ifstream f(fname);
     assert(f);
     string line;
     getline(f, line);
-    cerr <<"starting reading kmers from " << fname << endl;
+    cerr <<"reading kmers from " << fname << endl;
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
-            startInd++;
+            ++startInd;
             if (f.peek() == EOF){
                 f.close();
                 break;
@@ -380,10 +341,9 @@ void readKmersFile(vector<kmer_set>& kmerSetDB, kmeruIndex_umap& kmerDBi, string
             getline(f, line, '\t');
             size_t kmer = stoul(line);
             getline(f, line);
-            uint16_t kmercount = stoul(line);
+            size_t kmercount = stoul(line);
 
             if (kmercount < threshold) { continue; }
-            kmerSetDB[startInd].insert(kmer);
             if (kmerDBi[kmer].count(startInd) == 0) {
                 kmerDBi[kmer].insert(startInd);
             }
@@ -392,16 +352,17 @@ void readKmersFile(vector<kmer_set>& kmerSetDB, kmeruIndex_umap& kmerDBi, string
     f.close();
 }
 
-// function polymorphism: record kmerDB and kmerIndex_dict kmerDBi
-void readKmersFile(vector<kmerCount_umap>& kmerDB, kmeruIndex_umap& kmerDBi, string fname, size_t startInd = 0, bool count = true, uint16_t threshold = 0) {
+// record kmerDB and kmerIndex_dict kmerDBi
+template <typename T>
+void readKmersFile(T& kmerDB, kmeruIndex_umap& kmerDBi, string fname, size_t startInd = 0, bool count = true, uint16_t threshold = 0) {
     ifstream f(fname);
     assert(f);
     string line;
     getline(f, line);
-    cerr <<"starting reading kmers from " << fname << endl;
+    cerr <<"reading kmers from " << fname << endl;
     while (true){
         if (f.peek() == EOF or f.peek() == '>'){
-            startInd++;
+            ++startInd;
             if (f.peek() == EOF){
                 f.close();
                 break;
@@ -412,7 +373,7 @@ void readKmersFile(vector<kmerCount_umap>& kmerDB, kmeruIndex_umap& kmerDBi, str
             getline(f, line, '\t');
             size_t kmer = stoul(line);
             getline(f, line);
-            uint16_t kmercount = stoul(line);
+            size_t kmercount = stoul(line);
 
             if (kmercount < threshold) { continue; }
             if (count) {
@@ -428,45 +389,15 @@ void readKmersFile(vector<kmerCount_umap>& kmerDB, kmeruIndex_umap& kmerDBi, str
     f.close();
 }
 
-// function polymorphism: record kmerIndex_dict kmerDBi only
-void readKmersFile(kmeruIndex_umap& kmerDBi, string fname, size_t startInd = 0, uint16_t threshold = 0) {
-    ifstream f(fname);
-    assert(f);
-    string line;
-    getline(f, line);
-    cerr <<"starting reading kmers from " << fname << endl;
-    while (true){
-        if (f.peek() == EOF or f.peek() == '>'){
-            startInd++;
-            if (f.peek() == EOF){
-                f.close();
-                break;
-            } else {
-                getline(f, line);
-            }
-        } else {
-            getline(f, line, '\t');
-            size_t kmer = stoul(line);
-            getline(f, line);
-            uint16_t kmercount = stoul(line);
-
-            if (kmercount < threshold) { continue; }
-            if (kmerDBi[kmer].count(startInd) == 0) {
-                kmerDBi[kmer].insert(startInd);
-            }
-        }
-    }
-    f.close();
-}
-
-void writeKmers(string outfpref, vector<kmerCount_umap>& kmerDB, size_t threshold = 0) {
+template <typename T>
+void writeKmers(string outfpref, T& kmerDB, size_t threshold = 0) {
     ofstream fout(outfpref+".kmers");
     assert(fout);
-    for (size_t i = 0; i < kmerDB.size(); i++) {
+    for (size_t i = 0; i < kmerDB.size(); ++i) {
         fout << ">locus " << i <<"\n";
         for (auto &p : kmerDB[i]) {
             if (p.second < threshold) { continue; }
-            fout << p.first << '\t' << p.second << '\n';
+            fout << p.first << '\t' << (size_t)p.second << '\n';
         }
     }
     fout.close();
@@ -475,7 +406,7 @@ void writeKmers(string outfpref, vector<kmerCount_umap>& kmerDB, size_t threshol
 void writeKmers(string outfpref, vector<kmerAttr_dict>& kmerAttrDB) {
     ofstream fout(outfpref+".kmers");
     assert(fout);
-    for (size_t i = 0; i < kmerAttrDB.size(); i++) {
+    for (size_t i = 0; i < kmerAttrDB.size(); ++i) {
         fout << ">locus " << i <<"\n";
         for (auto &p : kmerAttrDB[i]) {
             fout << p.first;
@@ -571,8 +502,8 @@ public:
             nodes[setid].push_back(*s);
             nodes[setid].push_back(*t);
             setsizes[setid] += 2;
-            setid++;
-            nset++;
+            ++setid;
+            ++nset;
 
         }
         else if (mode == 1) {    // s already exists; s -> t
@@ -622,7 +553,7 @@ public:
             }
             // get reverse complement of each node
             vector<string> tmpnodes(nodes[oldlabel].size());
-            for (size_t i = 0; i < nodes[oldlabel].size(); i++) {
+            for (size_t i = 0; i < nodes[oldlabel].size(); ++i) {
                 tmpnodes[i] = getRC(nodes[oldlabel][i]);
             }
             // insert (t_rc, s_rc) as (source, target) in newlabel

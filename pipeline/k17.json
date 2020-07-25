@@ -1,0 +1,17 @@
+{
+    "inputDir" : /home/cmb-17/mjc/vntr_genotyping/k17/input/,
+    "outputDir" : /staging/mjc/tsungyul/k17/,
+    "genomes" : /home/cmb-17/mjc/vntr_genotyping/goodPanGenomeGraph/input/genomes.txt,
+    "ksize" : 17,
+    "flankSize" : 700,
+    "countThreashold" : 45,
+    "ratioThreashold" : 0.5,
+    "threadingCountThreshold" : 50,
+    "sizeLowerBound" : 50,
+    "sizeUpperBound" : 5000,
+    "TRwindow" : 10000,
+    "ref" : /home/cmb-16/mjc/tsungyul/work/vntr/datasets/reference/hg38_noalts/hg38.no_alts.fasta,
+    "refTR" : /home/cmb-17/mjc/vntr_genotyping/k17/input/tr.good.bed,
+    "refctrl" : /home/cmb-17/mjc/vntr_genotyping/cmb-16/work/vntr/hapdb/a1_regions/ctrl/pan.fn2.bed,
+    "clusterOpts" : "sbatch --time=48:00:00 --partition=cmb"
+}
