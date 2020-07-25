@@ -140,7 +140,7 @@ def writeNewBed(jointnewlociPoss, lociPoss, beds, QCbadloci, QCunresolvedloci):
         outbeds_ref[hap] = outbeds_ass[hap][ords_ref[hap]]
     
     # check merging consistency betw h0 and h1
-    full_overlap_mask_ref = np.logical_and(full_overlap_masks_ass[0][ords_ref[0]], full_overlap_masks_ass[1][ords_ref[1]])
+    full_overlap_mask_ref = np.logical_and(full_overlap_masks_ass[0][ords_ref[0]], full_overlap_masks_ass[1][ords_ref[1]]) #XXX overlap set might differ
     full_overlap_sets_ref = [None, None]
     for hap in [0,1]:
         full_overlap_sets_ref[hap] = full_overlap_sets_ass[hap][ords_ref[hap]]
@@ -149,7 +149,7 @@ def writeNewBed(jointnewlociPoss, lociPoss, beds, QCbadloci, QCunresolvedloci):
         mask0 = full_overlap_sets_ref[0] == i # loci in the same to-be-merged set in h0
         indices0 = np.nonzero(mask0)[0]
         total += np.sum(mask0)
-        if not len(indices0):
+        if not len(indices0): #XXX why zero
             mask1 = full_overlap_sets_ref[1] == i
             full_overlap_mask_ref[mask1] = False
         else:
@@ -158,17 +158,22 @@ def writeNewBed(jointnewlociPoss, lociPoss, beds, QCbadloci, QCunresolvedloci):
                 full_overlap_mask_ref[mask0] = False
                 full_overlap_mask_ref[mask1] = False
             else:
-                good += np.sum(mask0)
-                # consistent, update reference region
-                print(i, full_overlap_mask_ref[indices0], indices0, full_overlap_sets_ref[0][mask0], full_overlap_sets_ref[1][mask1])
-                ind = indices0[0]
-                masks = [mask0, mask1]
-                refs2 = np.amin(outbeds_ref[0][masks[0],4])
-                refe2 = np.amax(outbeds_ref[0][masks[0],5])
-                for hap in [0,1]:
-                    e2 = np.amax(outbeds_ref[hap][masks[hap],2])
-                    outbeds_ref[hap][ind,2] = e2
-                    outbeds_ref[hap][ind,4:] = refs2, refe2
+                # check if duplicates are in the same chrom
+                if np.any(np.concatenate((outbeds_ref[0][mask0,3], outbeds_ref[1][mask0,3])) != outbeds_ref[0][mask0,3][0]):
+                    full_overlap_mask_ref[mask0] = False
+                    full_overlap_mask_ref[mask1] = False
+                else:
+                    good += np.sum(mask0)
+                    # consistent, update reference region
+                    print(i, full_overlap_mask_ref[indices0], indices0, full_overlap_sets_ref[0][mask0], full_overlap_sets_ref[1][mask1])
+                    ind = indices0[0]
+                    masks = [mask0, mask1]
+                    refs2 = np.amin(outbeds_ref[0][masks[0],4])
+                    refe2 = np.amax(outbeds_ref[0][masks[0],5])
+                    for hap in [0,1]:
+                        e2 = np.amax(outbeds_ref[hap][masks[hap],2])
+                        outbeds_ref[hap][ind,2] = e2
+                        outbeds_ref[hap][ind,4:] = refs2, refe2
     
     print(total, good)
     non_overlap_mask_ref = np.logical_and(non_overlap_masks_ass[0][ords_ref[0]], non_overlap_masks_ass[1][ords_ref[1]])
