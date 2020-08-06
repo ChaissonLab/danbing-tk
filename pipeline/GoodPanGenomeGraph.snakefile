@@ -7,7 +7,8 @@ srcdir = os.path.dirname(workflow.snakefile)
 indir = config["inputDir"]
 outdir = config["outputDir"]
 
-genomes = np.loadtxt(config["genomes"], dtype=object).reshape(-1).tolist()
+genomes = np.loadtxt(config["genomes"], dtype=object, ndmin=1).tolist()
+bams = dict(zip(genomes, np.loadtxt(config["bams"], dtype=object, ndmin=1).tolist()))
 haps = ["0", "1"]
 kmerTypes = ["tr", "lntr", "rntr", "graph"]
 
@@ -35,8 +36,8 @@ rule all:
         panbed = outdir + "pan.tr.bed",
         mapping = outdir + "locusMap.tbl",
         panKmers = expand(outdir + "pan.{kmerType}.kmers", kmerType=kmerTypes),
-        panILkmers = expand(outdir + "pan.{genome}.IL.tr.kmers", genome=genomes),
-        pred = expand(outdir + "{genome}.LR.pred", genome=genomes),
+        #panILkmers = expand(outdir + "pan.{genome}.IL.tr.kmers", genome=genomes),
+        #pred = expand(outdir + "{genome}.LR.pred", genome=genomes),
         bamcov = outdir + "ctrl.cov"
         
 
@@ -47,7 +48,8 @@ rule IndexAsm:
         chrsize = expand(outdir + "{{genome}}.{hap}.chrSize", hap=haps)
     resources:
         cores = 3,
-        mem = 4
+        mem = 4,
+    priority: 100
     params:
         copts = copts,
         sd = srcdir,
@@ -68,6 +70,32 @@ for hap in 0 1; do
 done
 """
 
+rule ComputeBamCoverage:
+    input:
+        ILbam = [bams[g] for g in genomes],
+        #ILbam = expand(indir + "{genome}.final.cram", genome=genomes),
+        #ILbai = expand(indir + "{genome}.final.cram.crai", genome=genomes)
+    output:
+        bamcov = outdir + "ctrl.cov"
+    resources:
+        cores = 4,
+        mem = 4
+    priority: 99
+    params:
+        copts = copts,
+        refctrl = config["refctrl"],
+        genomes = genomes,
+    shell:"""
+bams=( {input.ILbam} )
+gi=0
+for g in {params.genomes}; do
+    samtools bedcov {params.refctrl} ${{bams[$gi]}} | awk '{{ print $4/($3-$2) }}' | tr '\n' '\t' | 
+    awk -v g=$g -v gi=$gi 'BEGIN {{OFS="\t"}} {{$1=$1; print gi, g, $0}}'
+    ((++gi))
+done > {output.bamcov}
+"""
+
+
 def getMem():
     if aligner == "lra":
         return 60
@@ -82,6 +110,7 @@ rule MapAsm2Ref:
     resources:
         cores = 16,
         mem = lambda wildcards, attempt: getMem() + 20*(attempt-1),
+    priority: 98
     params:
         faBam = outdir + "{genome}.{hap}.srt.bam",
         faPaf = outdir + "{genome}.{hap}.r2a.paf",
@@ -99,7 +128,7 @@ if [[ {params.aligner} == "lra" ]]; then
 	samtools index -@3 {params.faBam}
 	touch {output.faAln}
 elif [[ {params.aligner} == "minimap2" ]]; then
-	minimap2 {input.fa} {params.ref} -t $(({resources.cores}-1)) -x asm5 -L -c -o {params.faPaf}
+	minimap2 {input.fa} {params.ref} -t $(({resources.cores}-1)) -x asm5 -L -c --cs=long -o {params.faPaf}
 	touch {output.faAln}
 else
 	echo "Invalid AsmAligner: {params.aligner}"
@@ -119,6 +148,7 @@ rule AnnotateTR:
     resources:
         cores = 24,
         mem = lambda wildcards, attempt: 24 + 16*(attempt-1)
+    priority: 97
     params:
         copts = copts,
         sd = srcdir,
@@ -158,8 +188,8 @@ if [[ {params.aligner} == "lra" ]]; then
 else
 	cp ref.bed tmp0.m.bed
 	for hap in 0 1; do
-		paftools.js liftover ${{pafs[$hap]}} ref.bed |
-		{params.sd}/script/liftbed.clean.py ref.bed /dev/stdin > tmp0."$hap".bed
+		paftools.js liftover -l 50 ${{pafs[$hap]}} ref.bed | bedtools sort > tmp0.l"$hap".bed
+		{params.sd}/script/liftbed.clean.py tmp0.l"$hap".bed > tmp0."$hap".bed
 		bedtools map -c 4 -o collapse -a tmp0.m.bed \
 									  -b <(awk 'BEGIN {{OFS="\t"}} {{print $4,$5,$6,$1"/"$2"/"$3}}' tmp0.$hap.bed | bedtools sort) > tmp0.m.bed.tmp &&
 		mv tmp0.m.bed.tmp tmp0.m.bed
@@ -236,14 +266,14 @@ rm -f {wildcards.genome}/*.dat
 rule GenRawGenomeGraph:
     input:
         TRfa = expand(outdir + "{{genome}}.{hap}.tr.fasta", hap=haps),
-        ILbam = indir + "{genome}.final.cram",
-        ILbai = indir + "{genome}.final.cram.crai"
+        ILbam = lambda wildcards: bams[wildcards.genome],
     output:
         rawPBkmers = expand(outdir + "{{genome}}.rawPB.{kmerType}.kmers", kmerType=kmerTypes),
         rawILkmers = outdir + "{genome}.rawIL.tr.kmers"
     resources:
         cores = 16,
         mem = lambda wildcards, attempt: 20 + 20*(attempt-1)
+    priority: 96
     params:
         copts = copts,
         sd = srcdir,
@@ -253,7 +283,7 @@ rule GenRawGenomeGraph:
         cth = cth,
         rth = rth,
         rstring = rstring,
-        thcth = thcth
+        thcth = thcth,
     shell:"""
 set -eu
 ulimit -c 20000
@@ -276,6 +306,7 @@ rule EvalRawGenomeGraph:
     resources:
         cores = 12,
         mem = 8
+    priority: 95
     params:
         copts = copts,
         sd = srcdir,
@@ -298,6 +329,7 @@ rule GenPrunedGenomeGraph:
     resources:
         cores = 2,
         mem = 10
+    priority: 94
     params:
         copts = copts,
         sd = srcdir,
@@ -322,6 +354,7 @@ rule GenPanBed:
     resources:
         cores = 2,
         mem = 4
+    priority: 93
     params:
         copts = copts,
         od = outdir,
@@ -350,6 +383,7 @@ rule GenPanGenomeGraph:
     resources:
         cores = 2,
         mem = lambda wildcards, attempt: 32+8*attempt
+    priority: 92
     params:
         copts = copts,
         sd = srcdir,
@@ -363,25 +397,3 @@ ulimit -c 20000
 """
 
 
-rule ComputeBamCoverage:
-    input:
-        ILbam = expand(indir + "{genome}.final.cram", genome=genomes),
-        ILbai = expand(indir + "{genome}.final.cram.crai", genome=genomes)
-    output:
-        bamcov = outdir + "ctrl.cov"
-    resources:
-        cores = 4,
-        mem = 4
-    params:
-        copts = copts,
-        refctrl = config["refctrl"],
-        genomes = genomes
-    shell:"""
-bams=( {input.ILbam} )
-gi=0
-for g in {params.genomes}; do
-    samtools bedcov {params.refctrl} ${{bams[$gi]}} | awk '{{ print $4/($3-$2) }}' | tr '\n' '\t' | 
-    awk -v g=$g -v gi=$gi 'BEGIN {{OFS="\t"}} {{$1=$1; print gi, g, $0}}'
-    ((++gi))
-done > {output.bamcov}
-"""

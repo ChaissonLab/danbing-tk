@@ -1,0 +1,19 @@
+{
+    "inputDir" : /$PREFIX/danbing-tk/src/test/input/,
+    "outputDir" : /$PREFIX/danbing-tk/src/test/output/,
+    "genomes" : /$PREFIX/danbing-tk/src/test/input/genomes.txt,
+    "bams" : /$PREFIX/danbing-tk/src/test/input/bam.fofn,
+    "AsmAligner" : "minimap2",
+    "ksize" : 21,
+    "flankSize" : 700,
+    "countThreashold" : 45,
+    "ratioThreashold" : 0.5,
+    "threadingCountThreshold" : 50,
+    "sizeLowerBound" : 50,
+    "sizeUpperBound" : 5000,
+    "TRwindow" : 10000,
+    "ref" : /$PREFIX/danbing-tk/src/test/input/hg38.chr12.2155791.2356090.fasta,
+    "refTR" : /$PREFIX/danbing-tk/src/test/input/tr.bed,
+    "refctrl" : /$PREFIX/danbing-tk/src/test/input/ctrl.bed,
+    "clusterOpts" : "sbatch --time=240:00:00 --partition=cmb"
+}
