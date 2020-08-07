@@ -73,13 +73,13 @@ snakemake -p -s /$PREFIX/danbing-tk/pipeline/GoodPanGenomeGraph.snakefile -j 40\
 Submitting jobs to cluster is preferred as `danbing-tk build` is compute-intensive, ~1200 cpu hours for the original dataset. Otherwise, remove `--cluster` and its parameters to run jobs locally.
 
 ### danbing-tk predict
-Locus-specific sampling biases (LSB) at VNTR regions are critical for normalizing the sum of *k*-mer counts to VNTR length. We provided precomputed LSB at the VNTR regions for fast comparison, however this assumes the LSB of the dataset of interest is close enough to the dataset in the original paper. Please ensure this assumption is valid by running a joint PCA on the LSB of non-repetitive regions with the original dataset, provided in `ctrl.cov`. If this assumption failed, leave-one-out analysis (next section) on the dataset of interest is necessary to make accurate predictions. The following usage are for when the assumption holds.
+Locus-specific sampling biases (LSB) at VNTR regions are critical for normalizing the sum of *k*-mer counts to VNTR length. We provided precomputed LSB at the VNTR regions for fast comparison, however this assumes the LSB of the dataset of interest is close enough to the dataset in the original paper. Please ensure this assumption is valid by running a joint PCA on the LSB of non-repetitive regions with the original dataset, provided in `ctrl.cov`. If this assumption failed, leave-one-out analysis (next section) on the dataset of interest is necessary to make accurate predictions. The following usage is for when the assumption holds.
 
-Link precomputed statistics for the original dataset to your working directory.
+Link precomputed statistics of the original dataset to your working directory.
 
 `ln -s /$PREFIX/danbing-tk/dat/step1.txt /$WORKING_DIR/analysis/.`
 
-Run length prediction as follows:
+Run length prediction with:
 
 ```bash
 /$PREFIX/danbing-tk/script/kmc2length.py --genome GENOME.TXT --nloci NLOCI \
@@ -113,7 +113,7 @@ kmer1	out_edges1
 >locus i+1
 ...
 ```
-`out\_edges` denotes the presence of T/G/C/A as the next nucleotide encoded with 4 bits.
+`out_edges` denotes the presence of T/G/C/A as the next nucleotide encoded with 4 bits.
 
 - \*.(tr|lntr|rntr).kmers
 ```
