@@ -13,7 +13,9 @@ Each release comes with the lastest version of genotypable VNTRs, RPGG, and prec
 |-------------------|-----------------------------------|--------------------|------------------|
 | Genotypable VNTRs | tr.good.bed                       | danbing-tk build   |                  |
 | RPGG              | pan.(tr\|lntr\|rntr\|graph).kmers | danbing-tk align   | danbing-tk build |
-| precomputed LSB   | step1.txt                         | danbing-tk predict |                  |
+| precomputed LSB   | step1.csv                         | danbing-tk predict |                  |
+- Genotypable VNTRs are also available under`data/tr.good.bed` if RPGG and LSB are not needed.
+- The 397 non-repetitive control regions are available under `data/ctrl.bed`.
 
 ### Install Dependencies
 danbing-tk requires several external packages. It is recommended to install all requirements using conda as follows:
@@ -77,7 +79,7 @@ Locus-specific sampling biases (LSB) at VNTR regions are critical for normalizin
 
 Link precomputed statistics of the original dataset to your working directory.
 
-`ln -s /$PREFIX/danbing-tk/dat/step1.txt /$WORKING_DIR/analysis/.`
+`ln -s /$PREFIX/danbing-tk/dat/step1.csv /$WORKING_DIR/analysis/.`
 
 Run length prediction with:
 
