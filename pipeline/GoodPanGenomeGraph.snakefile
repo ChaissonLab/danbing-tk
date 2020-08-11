@@ -3,7 +3,7 @@ import numpy as np
 
 configfile: "goodPanGenomeGraph.json"
 
-srcdir = os.path.dirname(workflow.snakefile)
+srcdir = config["srcDir"]
 indir = config["inputDir"]
 outdir = config["outputDir"]
 

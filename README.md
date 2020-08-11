@@ -41,9 +41,9 @@ cd danbing-tk && make
 
 ### Test Environment
 To check if everything is configured properly:
-1. Go to `/$PREFIX/danbing-tk/src/test/`
-2. Replace `$PREFIX` in `goodPanGenomeGraph.json` with the path to danbing-tk
-3. Run `snakemake -p -s ../pipeline/GoodPanGenomeGraph.snakefile -j 4 --rerun-incomplete --output-wait 1`
+1. Go to `/$PREFIX/danbing-tk/test/`
+2. Replace `$PREFIX` in `goodPanGenomeGraph.json` and `input/bam.fofn` with the path to danbing-tk
+3. Run `snakemake -p -s ../pipeline/GoodPanGenomeGraph.snakefile -j 4 --rerun-incomplete --output-wait 3`
 
 ## Usage
 

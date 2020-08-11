@@ -1,4 +1,5 @@
 {
+    "srcDir" : /$PREFIX/danbing-tk/,
     "inputDir" : /$PREFIX/danbing-tk/src/test/input/,
     "outputDir" : /$PREFIX/danbing-tk/src/test/output/,
     "genomes" : /$PREFIX/danbing-tk/src/test/input/genomes.txt,
