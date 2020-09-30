@@ -96,7 +96,7 @@ Predictions and accuracies are written to `pred_len.txt` and `rel_err.txt`
 
 ## Analysis
 ### Distribution of LSB
-To ensure technical variations are consistent between samples and do not introduce bias to VNTR genotypes, or *k*-mer counts, in a subset of samples. It is necessary to ensure the distribution of LSB shows up in one cluster. An example analysis is shown in [script/LSB_analysis.ipynb](https://github.com/ChaissonLab/danbing-tk/blob/master/script/LSB_analysis.ipynb) and script/getCovByLocus.397.sh.
+To ensure technical variations are consistent between samples and do not introduce bias to VNTR genotypes, or *k*-mer counts, in a subset of samples. It is necessary to ensure the distribution of LSB shows up in one cluster. An example analysis is shown in [`script/LSB_analysis.ipynb`](https://github.com/ChaissonLab/danbing-tk/blob/master/script/LSB_analysis.ipynb) and `script/getCovByLocus.397.sh`.
 
 ### Leave-one-out analysis
 To evaluate the quality of custom RPGG on matching SRS dataset, copy `/$PREFIX/danbing-tk/pipeline/leaveOneOut.snakefile` to your working directory and edit accordingly.
