@@ -9,11 +9,13 @@ A toolkit for variable number tandem repeats (VNTRs) analysis, which enables:
 
 ### Download Releases
 Each release comes with the lastest version of genotypable VNTRs, RPGG, and precomputed LSB.
+
 |                   | File                              | Input of           | Output of        |
 |-------------------|-----------------------------------|--------------------|------------------|
 | Genotypable VNTRs | tr.good.bed                       | danbing-tk build   |                  |
 | RPGG              | pan.(tr\|lntr\|rntr\|graph).kmers | danbing-tk align   | danbing-tk build |
 | precomputed LSB   | step1.csv                         | danbing-tk predict |                  |
+
 - Genotypable VNTRs are also available under`data/tr.good.bed` if RPGG and LSB are not needed.
 - The 397 non-repetitive control regions are available under `data/ctrl.bed`.
 
@@ -61,6 +63,8 @@ danbing-tk -gc 50 -k 21 -qs pan -fai /dev/stdin -o $OUT_PREFIX \
 
 `danbing-tk align` takes ~85 cpu hours to genotype a 30x SRS sample.
 
+**Important note:** If outputs of `danbing-tk align` are intended to be used directly for downstream analyses e.g. association tests, please check the [distribution of LSB](#distribution-of-lsb) section below before running.
+
 ### danbing-tk build
 Required inputs: haplotype-resolved assemblies, matched SRS data, reference genome (major chromosomes only without minor contigs) and bed file of tandem repeat regions (optional)
 
@@ -91,6 +95,8 @@ Run length prediction with:
 Predictions and accuracies are written to `pred_len.txt` and `rel_err.txt`
 
 ## Analysis
+### Distribution of LSB
+To ensure technical variations are consistent between samples and do not introduce bias to VNTR genotypes, or *k*-mer counts, in a subset of samples. It is necessary to ensure the distribution of LSB shows up in one cluster. An example analysis is shown in [script/LSB_analysis.ipynb](https://github.com/ChaissonLab/danbing-tk/blob/master/script/LSB_analysis.ipynb) and script/getCovByLocus.397.sh.
 
 ### Leave-one-out analysis
 To evaluate the quality of custom RPGG on matching SRS dataset, copy `/$PREFIX/danbing-tk/pipeline/leaveOneOut.snakefile` to your working directory and edit accordingly.
