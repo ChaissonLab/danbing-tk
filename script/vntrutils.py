@@ -156,7 +156,7 @@ def buildNuKmers(read, k, leftflank=0, rightflank=0, count=True):
 
     return kmers
 
-def read2kmers(read, k, leftflank=0, rightflank=0):
+def read2kmers(read, k, leftflank=0, rightflank=0, dtype='uint64', canonical=True):
     """
     will return max_val_of_uint64 (-1) if there's 'N' within kmer
     """
@@ -164,7 +164,7 @@ def read2kmers(read, k, leftflank=0, rightflank=0):
     if rlen - k - leftflank - rightflank + 1 <= 0: return np.array([])
 
     mask = (1 << 2*(k-1)) - 1
-    kmers = np.zeros(rlen-k-leftflank-rightflank+1, dtype='uint64') - 1
+    kmers = np.zeros(rlen-k-leftflank-rightflank+1, dtype=dtype) - 1
 
     beg, kmer = getNextKmer(leftflank, read, k)
     if beg == rlen: return kmers
@@ -173,7 +173,7 @@ def read2kmers(read, k, leftflank=0, rightflank=0):
     it = iter(range(beg, rlen-k-rightflank+1))
     for i in it:
         canonicalkmer = rckmer if kmer > rckmer else kmer
-        kmers[i] = canonicalkmer
+        kmers[i] = canonicalkmer if canonical else kmer
 
         if i + k >= rlen: return kmers
         if read[i + k] not in baseinv:
