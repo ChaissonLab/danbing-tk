@@ -22,16 +22,17 @@ using namespace std;
 size_t ksize;
 
 
-void removeNodeFromGraph(size_t node, GraphType& graph) {
-    static const size_t mask = (1UL << 2*(ksize-1)) - 1;
+void removeNodeFromGraph(size_t node, GraphType& graph) { // XXX test edge pruning 
+	static const size_t MASK = (1UL << (2*ksize)) - 1 - 3; // keep k-1 prefix
+	static const size_t PREF = 1UL << (2*(ksize-1));
 
     if (graph.count(node)) { // if the kmer is in the graph
         graph.erase(node); // remove the node
 
         uint8_t nucmask = 0xff - (1 << (node % 4));
-        size_t km1mer = node & mask;
+        size_t km1mer = (node & MASK) >> 2;
         for (size_t nuc = 0; nuc < 4; ++nuc) { // check all possible upstream nodes
-            size_t prevkmer = (nuc << ((ksize-1) << 1)) + km1mer;
+            size_t prevkmer = nuc * PREF + km1mer;
             if (graph.count(prevkmer)) { graph[prevkmer] &= nucmask; } // remove the edge that points from the upstream node
         }
     }
