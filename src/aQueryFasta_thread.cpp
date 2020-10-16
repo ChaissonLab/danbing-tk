@@ -265,7 +265,7 @@ void writeMsaStats(string outPref, vector<msa_umap>& msaStats) {
 void getOutNodes(GraphType& g, size_t node, vector<size_t>& outnodes) {
     // a node is a kmer and is not neccessarily canonical
     const static uint64_t mask = (1UL << 2*(ksize-1)) - 1;
-    if (g.count(node)) {
+    if (g.count(node)) { // prevents error from unclean graph XXX remove this after graph pruning code passes testing
         uint8_t nucBits = g[node]; // a 4-bit value that corresponds to the presence of trailing TGCA in downstream nodes
         for (size_t i = 0; i < 4; ++i) {
             if (nucBits % 2) {
