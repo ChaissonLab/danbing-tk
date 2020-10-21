@@ -27,6 +27,8 @@ const uint64_t NAN64 = 0xFFFFFFFFFFFFFFFF;
 const uint32_t NAN32 = 0xFFFFFFFF;
 
 typedef unordered_map<size_t, size_t> msa_umap; // dest_locus, counts
+typedef unordered_map<size_t, unordered_map<size_t, std::pair<size_t, size_t>>> err_umap; // src_locus -> {dest_locus -> (src_count,dest_count)}
+typedef std::pair<uint8_t, uint8_t> PE_KMC; // pair-end kmer count // XXX not compatible with reads longer than 255 bp
 
 void rand_str(char *dest, size_t length) {
     char charset[] = "0123456789"
@@ -39,7 +41,6 @@ void rand_str(char *dest, size_t length) {
     *dest = '\0';
 }
 
-typedef std::pair<uint8_t, uint8_t> PE_KMC; // pair-end kmer count // XXX not compatible with longer reads
 
 struct statStruct { // for forward + reverse strand (paired-end)
     uint32_t ind1 = NAN32;
@@ -81,6 +82,11 @@ vector<size_t> getSortedIndex(vector<size_t>& data) {
 }
 
 void countDupRemove(vector<size_t>& kmers, vector<size_t>& kmers_other, vector<PE_KMC>& dup) {
+    // count the occurrence of kmers in each read
+   	// Return:
+    // 		kmers: unique entries only
+    // 		kmers_other: empty
+	// 		dup: count in <forward,reverse> strand for each entry in kmers
     vector<bool> orient(kmers.size(), 0);
     orient.resize(kmers.size() + kmers_other.size(), 1);
     mergeVec(kmers, kmers_other);
@@ -225,7 +231,7 @@ void parseReadName(string& title, size_t readn, vector<ValueType>& loci, vector<
     }
 }
 
-// simmode = 2; simmulated reads from whole genome
+// OBSOLETE. simmode = 2; simmulated reads from whole genome
 template <typename ValueType>
 void parseReadName(string& title, size_t readn, vector<size_t>& poss, vector<ValueType>& loci, vector<size_t>& locusReadi) {
     string sep = "_";
@@ -244,6 +250,37 @@ void parseReadName(string& title, size_t readn, vector<size_t>& poss, vector<Val
     }
 }
 
+// simmode = 2
+void parseReadName(string& title, vector<std::pair<int, size_t>>& meta, size_t nloci) {
+	// input: read name; vector of (read_locus, number_of_reads)
+	static const string sep = ":";
+	size_t p1 = title.find(sep);
+	size_t p2 = title.find(sep, p1+1);
+	string v = title.substr(p1+1, p2-p1-1);
+	size_t locus;
+	if (v[0] == '.') { locus = nloci; }
+	else { locus = stoul(v); }
+	if (meta.size() == 0) { meta.push_back(std::make_pair(locus, 1)); }
+	else {
+		if (meta.back().first == locus) { ++meta.back().second; } // if locus is the same as the last read, increment number_of_reads
+		else { meta.push_back(std::make_pair(locus, meta.back().second+1)); } // else, append (read_locus, 1)
+	}
+}
+
+void mapLocus(vector<std::pair<int, size_t>>& meta, vector<size_t>& locusmap, size_t seqi, size_t& simi, size_t nloci, size_t& srcLocus) {
+	if (simi == 0 or seqi / 2 >= meta[simi].second) { 
+		if (seqi / 2 >= meta[simi].second) { ++simi; }
+		if (meta[simi].first == nloci) { srcLocus = nloci; }
+		else {
+			if (meta[simi].first >= locusmap.size()) {
+				cerr << "read locus " << meta[simi].first << " > # of valid genome loci = " << locusmap.size() << endl;
+				assert(false);
+			}
+			srcLocus = locusmap[meta[simi].first];
+		}	
+	}
+}
+
 template <typename T>
 void printVec(vector<T>& vec) {
     for (auto v : vec) { cerr << v << ' '; }
@@ -259,6 +296,19 @@ void writeMsaStats(string outPref, vector<msa_umap>& msaStats) {
             fout << p.first << "\t" << p.second << "\n";
         }
     }
+    fout.close();
+}
+
+void writeErrDB(string outPref, err_umap& errdb) {
+    ofstream fout(outPref+".err");
+    assert(fout);
+	for (auto& u : errdb) {
+		fout << u.first << ":{";
+		for (auto& v : u.second) {
+			fout << v.first << ">" << v.second.first << "," << v.second.second << ";";
+		}
+		fout << "}\n";
+	}
     fout.close();
 }
 
@@ -386,6 +436,29 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t th
     return (nskip < maxskipcount and ncorrection < maxcorrectioncount ? (ncorrection ? 2 : 1) : 0);
 }
 
+void _countFPFN(size_t srcLocus, size_t destLocus, err_umap& errdb, vector<kmer_aCount_umap>& trdb, vector<size_t>& kmers) {
+	size_t nloci = trdb.size();
+	// FN
+	if (srcLocus == nloci) { errdb[srcLocus][destLocus].first += kmers.size(); }
+	else {
+        for (size_t kmer : kmers) {
+            if (trdb[srcLocus].count(kmer)) { ++errdb[srcLocus][destLocus].first; }
+        }
+	}
+	// FP
+	if (destLocus == nloci) { errdb[srcLocus][destLocus].second += kmers.size(); }
+	else {
+		for (size_t kmer : kmers) {
+			if (trdb[destLocus].count(kmer)) { ++errdb[srcLocus][destLocus].second; }
+		}
+    }
+}
+
+void countFPFN(size_t srcLocus, size_t destLocus, err_umap& errdb, vector<kmer_aCount_umap>& trdb, vector<size_t>& kmers1, vector<size_t>& kmers2) {
+	_countFPFN(srcLocus, destLocus, errdb, trdb, kmers1);
+	_countFPFN(srcLocus, destLocus, errdb, trdb, kmers2);
+}
+
 class Counts {
 public:
     bool isFastq, extractFasta, bait, threading, correction;
@@ -396,10 +469,13 @@ public:
     kmeruIndex_umap* kmerDBi;
     vector<GraphType>* graphDB;
     vector<kmer_aCount_umap>* trResults;
-    vector<msa_umap>* msaStats;
     ifstream *in;
     // simmode only
     int simmode;
+    vector<msa_umap>* msaStats;
+    err_umap* errdb1;
+    err_umap* errdb2;
+	vector<size_t>* locusmap;
     // extractFasta only
 
     Counts(size_t nloci_) : nloci(nloci_) {}
@@ -434,6 +510,9 @@ void CountWords(void *data) {
     vector<GraphType>& graphDB = *((Counts*)data)->graphDB;
     vector<kmer_aCount_umap>& trResults = *((Counts*)data)->trResults;
     vector<msa_umap>& msaStats = *((Counts*)data)->msaStats;
+    err_umap& errdb1 = *((Counts*)data)->errdb1;
+    err_umap& errdb2 = *((Counts*)data)->errdb2;
+	vector<size_t>& locusmap = *((Counts*)data)->locusmap;
     // simmode only
     // loci: loci that are processed in this batch
     vector<ValueType> srcLoci;
@@ -448,6 +527,7 @@ void CountWords(void *data) {
         // locusReadi: map locus to nReads_. 0th item = number of reads for 0th item in loci; last item = nReads_; has same length as loci
         vector<size_t> locusReadi;
         size_t startpos;
+		vector<std::pair<int, size_t>> meta;
         // extractFasta only
         vector<size_t> extractindices, assignedloci;
 
@@ -462,7 +542,7 @@ void CountWords(void *data) {
         nFeasibleReads_ = 0;
         nReads_ = 0;
 
-        if (simmode and srcLoci.size() != 0) {
+        if (simmode == 1 and srcLoci.size() != 0) {
             for (auto& p0 : msa) {
                 for (auto& p1 : p0.second) {
                     msaStats[p0.first][p1.first] = p1.second;
@@ -496,14 +576,15 @@ void CountWords(void *data) {
             }
 
             if (simmode == 1) { parseReadName(title, nReads_, srcLoci, locusReadi); }
-            else if (simmode == 2) { parseReadName(title, nReads_, poss, srcLoci, locusReadi); }
+            else if (simmode == 2) { parseReadName(title, meta, nloci); } // XXX check once for a read pair
+			//else if (simmode == 2) { parseReadName(title, nReads_, poss, srcLoci, locusReadi); }
 
             seqs[nReads_++] = seq;
             seqs[nReads_++] = seq1;
         } 
         nReads += nReads_;
 
-        if (simmode) { locusReadi.push_back(nReads_); }
+        if (simmode == 1) { locusReadi.push_back(nReads_); }
 
         cerr << "Buffered reading " << nReads_ << "\t" << nReads << endl;
 
@@ -515,21 +596,19 @@ void CountWords(void *data) {
         time_t time2 = time(nullptr);
         size_t seqi = 0;
         // simmode only
-        size_t simi;
+        size_t simi = 0;
         ValueType srcLocus;
-        if (simmode) {
-            simi = 0;
-            srcLocus = srcLoci[simi];
-        }
+        if (simmode == 1) { srcLocus = srcLoci[simi]; }
 
         while (seqi < nReads_) {
 
-            if (simmode) {
+            if (simmode == 1) {
                 if (seqi >= locusReadi[simi]) {
                     ++simi;
                     srcLocus = srcLoci[simi];
                 }
             }
+			else if (simmode == 2) { mapLocus(meta, locusmap, seqi, simi, nloci, srcLocus); }
 
             string& seq = seqs[seqi++];
             string& seq1 = seqs[seqi++];
@@ -542,10 +621,7 @@ void CountWords(void *data) {
 
             size_t destLocus = countHit(kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold, Rthreshold);
 
-            if (destLocus == nloci) { 
-                if (simmode) { if ((int)srcLocus == srcLocus) { ++msa[srcLocus][destLocus]; } }
-            }
-            else {
+            if (destLocus != nloci) {
                 int feasibility0 = 0, feasibility1 = 0;
                 kmerCount_umap cakmers;
                 ++nThreadingReads_;
@@ -582,8 +658,6 @@ void CountWords(void *data) {
                         }
                     }
 
-                    if (simmode) { if (srcLocus != destLocus) { ++msa[srcLocus][destLocus]; } }
-
                     if (extractFasta) {
                         // points to the next read pair 
                         // i.e. to_be_extract_forward (seqi-2), to_be_extract_reverse (seqi-1)
@@ -591,10 +665,18 @@ void CountWords(void *data) {
                         assignedloci.push_back(destLocus);
                     }
                 }
-                else {
-                    if (simmode) { if ((int)srcLocus == srcLocus) { ++msa[srcLocus][nloci]; } }
+                else { // removed by threading
+					destLocus = nloci;
                 }
             }
+
+			if (simmode == 1 and srcLocus != destLocus) {
+				++msa[srcLocus][destLocus];
+			}
+			else if (simmode == 2 and srcLocus != destLocus) {
+				if (threading) { countFPFN(srcLocus, destLocus, errdb2, trResults, kmers1, kmers2); }
+				else { countFPFN(srcLocus, destLocus, errdb1, trResults, kmers1, kmers2); }
+			}
         }
 
         if (extractFasta) {
@@ -623,7 +705,7 @@ int main(int argc, char* argv[]) {
 
     if (argc < 2) {
         cerr << endl
-             << "Usage: danbing-tk [-b] [-e] [-t] [-s] [-a] [-g|-gc] -k <-qs> <-fqi | fai> -o -p -cth -rth" << endl
+             << "Usage: danbing-tk [-b] [-e] [-t] [-s] [-m] [-a] [-g|-gc] -k <-qs> <-fqi | fai> -o -p -cth -rth" << endl
              << "Options:" << endl
              << "  -b           Use baitDB to decrease ambiguous mapping" << endl
              << "  -e           Write mapped reads to STDOUT in fasta format" << endl
@@ -632,9 +714,10 @@ int main(int argc, char* argv[]) {
              << "  -s <INT>     Run in simulation mode to write the origin and destination of mis-assigned reads to STDOUT" << endl
              << "               Specify 1 for simulated reads from TR" << endl
              << "               Specify 2 for simulated reads from whole genome" << endl
+			 << "  -m <str>     locusMap.tbl, used for mapping g-locus to pan-locus in whole genome simulation" << endl
              << "  -a           Augmentation mode, use pruned kmers and augkmers" << endl
              << "  -g <INT>     Use graph threading algorithm w/o error correction" << endl
-             << "  -gc <INT>    Use graph threading algorithm w error correction" << endl
+             << "  -gc <INT>    Use graph threading algorithm w/ error correction" << endl
              << "               Discard pe reads if # of matching kmers < [INT]" << endl
              << "  -k <INT>     Kmer size" << endl
              << "  -qs <str>    Prefix for *.tr.kmers, *.lntr.kmers, *.rntr.kmers, *.graph.kmers files" << endl
@@ -650,12 +733,12 @@ int main(int argc, char* argv[]) {
     }
    
     vector<string> args(argv, argv+argc);
-    bool bait = false, extractFasta = false, aug = false, threading = false, correction = false, isFastq;
+    bool bait = false, extractFasta = false, aug = false, threading = false, correction = false, g2pan = false, isFastq;
     int simmode = 0;
     size_t argi = 1, trim = 0, thread_cth = 0, nproc, Cthreshold;
     float Rthreshold;
     string trPrefix, trFname, fastxFname, outPrefix;
-    ifstream fastxFile, trFile, lntrFile, rntrFile, augFile, baitFile;
+    ifstream fastxFile, trFile, lntrFile, rntrFile, augFile, baitFile, mapFile;
     ofstream outfile, baitOut;
     while (argi < argc) {
         if (args[argi] == "-b") {
@@ -667,6 +750,11 @@ int main(int argc, char* argv[]) {
         else if (args[argi] == "-e") { extractFasta = true; }
         else if (args[argi] == "-t") { trim = stoi(args[++argi]); }
         else if (args[argi] == "-s") { simmode = stoi(args[++argi]); }
+		else if (args[argi] == "-m") {
+			g2pan = true;
+			mapFile.open(args[++argi]);
+			assert(mapFile);
+		}
         else if (args[argi] == "-a") { aug = true; }
         else if (args[argi] == "-g" or args[argi] == "-gc") {
             if (args[argi] == "-gc") { correction = true; }
@@ -746,6 +834,8 @@ int main(int argc, char* argv[]) {
     vector<GraphType> graphDB(nloci);
     kmeruIndex_umap kmerDBi;
     vector<msa_umap> msaStats;
+	err_umap errdb1, errdb2;
+	vector<size_t> locusmap;
 
     readKmersFile(trKmerDB, kmerDBi, trFname, 0, false); // start from index 0, do not count
     cerr << "# unique kmers in trKmerDB: " << kmerDBi.size() << '\n';
@@ -771,6 +861,12 @@ int main(int argc, char* argv[]) {
     if (simmode == 1) {
         msaStats.resize(nloci);
     }
+	if (simmode == 2 and g2pan) {
+		string line;
+		while (getline(mapFile, line)) { locusmap.push_back(stoul(line)); }
+		mapFile.close();
+		cerr << "total number of loci mapped to genome of interest: " << locusmap.size() << endl;
+	}
 
 
     // create data for each process
@@ -789,6 +885,9 @@ int main(int argc, char* argv[]) {
         counts.nThreadingReads = &nThreadingReads;
         counts.nFeasibleReads = &nFeasibleReads;
         counts.msaStats = &msaStats;
+        counts.errdb1 = &errdb1;
+        counts.errdb2 = &errdb2;
+		counts.locusmap = &locusmap;
 
         counts.isFastq = isFastq;
         counts.extractFasta = extractFasta;
@@ -844,7 +943,8 @@ int main(int argc, char* argv[]) {
     // start computing
     for (size_t t = 0; t < nproc; ++t) {
         if (simmode == 2) {
-            pthread_create(&threads[t], &threadAttr[t], (void* (*)(void*))CountWords<float>, &threaddata.counts[t]);
+            //pthread_create(&threads[t], &threadAttr[t], (void* (*)(void*))CountWords<float>, &threaddata.counts[t]);
+            pthread_create(&threads[t], &threadAttr[t], (void* (*)(void*))CountWords<size_t>, &threaddata.counts[t]);
         }
         else {
             pthread_create(&threads[t], &threadAttr[t], (void* (*)(void*))CountWords<size_t>, &threaddata.counts[t]);
@@ -864,9 +964,12 @@ int main(int argc, char* argv[]) {
     // write outputs
     cerr << "writing kmers..." << endl;
     writeKmers(outPrefix+".tr", trKmerDB);
-    if (simmode) {
+    if (simmode == 1) { // TODO
         writeMsaStats(outPrefix, msaStats);
     }
+	else if (simmode == 2) {
+		writeErrDB(outPrefix, errdb2);
+	}
 
     cerr << "all done!" << endl;
 
