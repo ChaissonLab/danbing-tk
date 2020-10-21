@@ -150,18 +150,16 @@ void fillstats(vector<size_t>& kmers, vector<size_t>& kmers_other, kmeruIndex_um
 
     // sort kemrs dup w.r.t. nmappedloci; remove entries w/o mapped locus
     vector<size_t> indorder = getSortedIndex(nmappedloci);
-    vector<size_t> old_kmers = kmers, old_nmappedloci = nmappedloci;
+    vector<size_t> old_kmers = kmers;
     vector<PE_KMC> old_dup = dup;
     for (size_t i = 0; i < nkmers; ++i) {
-        if (old_nmappedloci[indorder[i]] == NAN64) {
+        if (nmappedloci[indorder[i]] == NAN64) {
             kmers.resize(i);
             dup.resize(i);
-            nmappedloci.resize(i);
             break;
         }
         kmers[i] = old_kmers[indorder[i]];
         dup[i] = old_dup[indorder[i]];
-        nmappedloci[i] = old_nmappedloci[indorder[i]];
     }
 
     if (dup.size()) { countRemain(dup, remain); }
@@ -436,27 +434,21 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t th
     return (nskip < maxskipcount and ncorrection < maxcorrectioncount ? (ncorrection ? 2 : 1) : 0);
 }
 
-void _countFPFN(size_t srcLocus, size_t destLocus, err_umap& errdb, vector<kmer_aCount_umap>& trdb, vector<size_t>& kmers) {
+void countFPFN(size_t srcLocus, size_t destLocus, err_umap& errdb, vector<kmer_aCount_umap>& trdb, vector<size_t>& kmers, vector<PE_KMC>& dup) {
 	size_t nloci = trdb.size();
-	// FN
-	if (srcLocus == nloci) { errdb[srcLocus][destLocus].first += kmers.size(); }
-	else {
-        for (size_t kmer : kmers) {
-            if (trdb[srcLocus].count(kmer)) { ++errdb[srcLocus][destLocus].first; }
-        }
-	}
-	// FP
-	if (destLocus == nloci) { errdb[srcLocus][destLocus].second += kmers.size(); }
-	else {
-		for (size_t kmer : kmers) {
-			if (trdb[destLocus].count(kmer)) { ++errdb[srcLocus][destLocus].second; }
+	for (size_t i = 0; i < kmers.size(); ++i) {
+		size_t c = dup[i].first + dup[i].second;
+		// FN
+		if (srcLocus == nloci) { errdb[srcLocus][destLocus].first += c; }
+		else {
+            if (trdb[srcLocus].count(kmers[i])) { errdb[srcLocus][destLocus].first += c; }
 		}
-    }
-}
-
-void countFPFN(size_t srcLocus, size_t destLocus, err_umap& errdb, vector<kmer_aCount_umap>& trdb, vector<size_t>& kmers1, vector<size_t>& kmers2) {
-	_countFPFN(srcLocus, destLocus, errdb, trdb, kmers1);
-	_countFPFN(srcLocus, destLocus, errdb, trdb, kmers2);
+		// FP
+		if (destLocus == nloci) { errdb[srcLocus][destLocus].second += c; }
+		else {
+            if (trdb[destLocus].count(kmers[i])) { errdb[srcLocus][destLocus].second += c; }
+		}
+	}
 }
 
 class Counts {
@@ -674,8 +666,8 @@ void CountWords(void *data) {
 				++msa[srcLocus][destLocus];
 			}
 			else if (simmode == 2 and srcLocus != destLocus) {
-				if (threading) { countFPFN(srcLocus, destLocus, errdb2, trResults, kmers1, kmers2); }
-				else { countFPFN(srcLocus, destLocus, errdb1, trResults, kmers1, kmers2); }
+				if (threading) { countFPFN(srcLocus, destLocus, errdb2, trResults, kmers1, dup); }
+				else { countFPFN(srcLocus, destLocus, errdb1, trResults, kmers1, dup); }
 			}
         }
 
