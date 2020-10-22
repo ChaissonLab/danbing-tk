@@ -27,7 +27,8 @@ const uint64_t NAN64 = 0xFFFFFFFFFFFFFFFF;
 const uint32_t NAN32 = 0xFFFFFFFF;
 
 typedef unordered_map<size_t, size_t> msa_umap; // dest_locus, counts
-typedef unordered_map<size_t, unordered_map<size_t, std::pair<size_t, size_t>>> err_umap; // src_locus -> {dest_locus -> (src_count,dest_count)}
+// src_locus -> {dest_locus -> [src_count, dest_count_uncorrected, dest_count_corrected]}
+typedef unordered_map<size_t, unordered_map<size_t, vector<size_t>>> err_umap;
 typedef std::pair<uint8_t, uint8_t> PE_KMC; // pair-end kmer count // XXX not compatible with reads longer than 255 bp
 
 void rand_str(char *dest, size_t length) {
@@ -303,7 +304,7 @@ void writeErrDB(string outPref, err_umap& errdb) {
 	for (auto& u : errdb) {
 		fout << u.first << ":{";
 		for (auto& v : u.second) {
-			fout << v.first << ">" << v.second.first << "," << v.second.second << ";";
+			fout << v.first << ">" << v.second[0] << "," << v.second[1] << "," << v.second[2] << ";";
 		}
 		fout << "}\n";
 	}
@@ -326,7 +327,7 @@ void getOutNodes(GraphType& g, size_t node, vector<size_t>& outnodes) {
 }
 
 // 0: not feasible, 1: feasible, w/o correction, 2: feasible w/ correction
-int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t thread_cth, bool correction, vector<size_t>& nhomoskip) {
+int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t thread_cth, bool correction) {
     read2kmers(kmers, seq, ksize, 0, 0, false); // leftflank = 0, rightflank = 0, canonical = false
 
     const static uint64_t mask = (1UL << 2*(ksize-1)) - 1;
@@ -347,7 +348,6 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t th
     for (size_t i = nskip + 1; i < nkmers; ++i) {
         if (kmers[i] == kmers[i-1]) { // skip homopolymer run
             ++nskip;
-            ++nhomoskip[kmers[i]%4];
             continue;
         }
 
@@ -434,26 +434,46 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t th
     return (nskip < maxskipcount and ncorrection < maxcorrectioncount ? (ncorrection ? 2 : 1) : 0);
 }
 
-void countFPFN(size_t srcLocus, size_t destLocus, err_umap& errdb, vector<kmer_aCount_umap>& trdb, vector<size_t>& kmers, vector<PE_KMC>& dup) {
+void countFPFN(size_t srcLocus, size_t destLocus, err_umap& errdb, vector<kmer_aCount_umap>& trdb, vector<size_t>& kmers, 
+			   vector<PE_KMC>& dup, kmerCount_umap& cakmers) {
 	size_t nloci = trdb.size();
 	for (size_t i = 0; i < kmers.size(); ++i) {
 		size_t c = dup[i].first + dup[i].second;
 		// FN
-		if (srcLocus == nloci) { errdb[srcLocus][destLocus].first += c; }
+		if (srcLocus == nloci) { errdb[srcLocus][destLocus][0] += c; }
 		else {
-            if (trdb[srcLocus].count(kmers[i])) { errdb[srcLocus][destLocus].first += c; }
+            if (trdb[srcLocus].count(kmers[i])) { errdb[srcLocus][destLocus][0] += c; }
 		}
-		// FP
-		if (destLocus == nloci) { errdb[srcLocus][destLocus].second += c; }
+		// FP from uncorrected reads
+		if (destLocus == nloci) { errdb[srcLocus][destLocus][1] += c; }
 		else {
-            if (trdb[destLocus].count(kmers[i])) { errdb[srcLocus][destLocus].second += c; }
+            if (trdb[destLocus].count(kmers[i])) { errdb[srcLocus][destLocus][1] += c; }
 		}
+	}
+	for (auto& p : cakmers) {
+		// FP from corrected reads
+		if (destLocus == nloci) { errdb[srcLocus][destLocus][2] += p.second; }
+		else {
+            if (trdb[destLocus].count(p.first)) { errdb[srcLocus][destLocus][2] += p.second; }
+		}
+	}
+}
+
+void writeExtractedReads(int extractFasta, vector<string>& seqs, vector<string>& titles, vector<size_t>& extractindices, vector<size_t>& assignedloci) {
+	for (size_t i = 0; i < extractindices.size(); ++i) {
+		if (extractFasta == 1) { cout << titles[--extractindices[i]] << '\n'; } 
+		else { cout << titles[--extractindices[i]] << ":" << assignedloci[i] << "_0\n"; }
+		cout << seqs[extractindices[i]] << '\n';
+
+		if (extractFasta == 1) { cout << titles[--extractindices[i]] << '\n'; } 
+		else { cout << titles[--extractindices[i]] << ":" << assignedloci[i] << "_1\n"; }
+		cout << seqs[extractindices[i]] << '\n';
 	}
 }
 
 class Counts {
 public:
-    bool isFastq, extractFasta, bait, threading, correction;
+    bool isFastq, bait, threading, correction;
     uint16_t Cthreshold, thread_cth;
     size_t *nReads, *nThreadingReads, *nFeasibleReads;
     size_t nloci;
@@ -465,10 +485,10 @@ public:
     // simmode only
     int simmode;
     vector<msa_umap>* msaStats;
-    err_umap* errdb1;
-    err_umap* errdb2;
+    err_umap* errdb;
 	vector<size_t>* locusmap;
     // extractFasta only
+	int extractFasta;
 
     Counts(size_t nloci_) : nloci(nloci_) {}
 };
@@ -482,15 +502,14 @@ public:
 template <typename ValueType>
 void CountWords(void *data) {
     bool isFastq = ((Counts*)data)->isFastq;
-    bool extractFasta = ((Counts*)data)->extractFasta;
     bool bait = ((Counts*)data)->bait;
     bool threading = ((Counts*)data)->threading;
     bool correction = ((Counts*)data)->correction;
     int simmode = ((Counts*)data)->simmode;
+    int extractFasta = ((Counts*)data)->extractFasta;
     size_t nReads_ = 0, nThreadingReads_ = 0, nFeasibleReads_ = 0;
     const size_t nloci = ((Counts*)data)->nloci;
     const size_t readsPerBatch = 300000;
-    const size_t homoC = ((1UL << (2*ksize)) - 1) / 3; // XXX
     size_t& nReads = *((Counts*)data)->nReads;
     size_t& nThreadingReads = *((Counts*)data)->nThreadingReads;
     size_t& nFeasibleReads = *((Counts*)data)->nFeasibleReads;
@@ -502,8 +521,7 @@ void CountWords(void *data) {
     vector<GraphType>& graphDB = *((Counts*)data)->graphDB;
     vector<kmer_aCount_umap>& trResults = *((Counts*)data)->trResults;
     vector<msa_umap>& msaStats = *((Counts*)data)->msaStats;
-    err_umap& errdb1 = *((Counts*)data)->errdb1;
-    err_umap& errdb2 = *((Counts*)data)->errdb2;
+    err_umap& errdb = *((Counts*)data)->errdb;
 	vector<size_t>& locusmap = *((Counts*)data)->locusmap;
     // simmode only
     // loci: loci that are processed in this batch
@@ -522,6 +540,7 @@ void CountWords(void *data) {
 		vector<std::pair<int, size_t>> meta;
         // extractFasta only
         vector<size_t> extractindices, assignedloci;
+		vector<string> titles(readsPerBatch);
 
         //
         // begin thread locking
@@ -571,7 +590,9 @@ void CountWords(void *data) {
             else if (simmode == 2) { parseReadName(title, meta, nloci); } // XXX check once for a read pair
 			//else if (simmode == 2) { parseReadName(title, nReads_, poss, srcLoci, locusReadi); }
 
+			if (extractFasta) { titles[nReads_] = title; }
             seqs[nReads_++] = seq;
+			if (extractFasta) { titles[nReads_] = title1; }
             seqs[nReads_++] = seq1;
         } 
         nReads += nReads_;
@@ -607,22 +628,21 @@ void CountWords(void *data) {
 
             vector<size_t> kmers1, kmers2;
             vector<PE_KMC> dup;
-            read2kmers(kmers1, seq, ksize); // stores numeric kmers
+            read2kmers(kmers1, seq, ksize); // stores numeric canonical kmers
             read2kmers(kmers2, seq1, ksize);
             if (not kmers1.size() and not kmers2.size()) { continue; }
 
             size_t destLocus = countHit(kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold, Rthreshold);
+			kmerCount_umap cakmers;
 
             if (destLocus != nloci) {
                 int feasibility0 = 0, feasibility1 = 0;
-                kmerCount_umap cakmers;
                 ++nThreadingReads_;
-                vector<size_t> nhomoskip(4,0); // XXX
 
                 if (threading) {
                     vector<size_t> noncakmers0, noncakmers1;
-                    feasibility0 = isThreadFeasible(graphDB[destLocus], seq, noncakmers0, thread_cth, correction, nhomoskip);
-                    feasibility1 = isThreadFeasible(graphDB[destLocus], seq1, noncakmers1, thread_cth, correction, nhomoskip);
+                    feasibility0 = isThreadFeasible(graphDB[destLocus], seq, noncakmers0, thread_cth, correction);
+                    feasibility1 = isThreadFeasible(graphDB[destLocus], seq1, noncakmers1, thread_cth, correction);
                     if (feasibility0 and feasibility1) {
                         noncaVec2CaUmap(noncakmers0, cakmers, ksize);
                         noncaVec2CaUmap(noncakmers1, cakmers, ksize);
@@ -633,41 +653,41 @@ void CountWords(void *data) {
                     kmer_aCount_umap &trKmers = trResults[destLocus];
                     ++nFeasibleReads_;
 
-                    if (not threading) {
-                        for (size_t i = 0; i < kmers1.size(); ++i) {
-                            if (trKmers.count(kmers1[i])) {
-                                trKmers[kmers1[i]] += (dup[i].first + dup[i].second);
-                            }
-                        }
-                    }
-                    else {
-                        for (auto& p : cakmers) {
-                            if (trKmers.count(p.first)) { trKmers[p.first] += p.second; }
-                        }
-                        // XXX recover the counts of skipped homopolymers
-                        for (size_t i = 0; i < 4; ++i) {
-                            if (trKmers.count(homoC * i)) { trKmers[homoC * i] += nhomoskip[i]; }
-                        }
-                    }
-
                     if (extractFasta) {
                         // points to the next read pair 
                         // i.e. to_be_extract_forward (seqi-2), to_be_extract_reverse (seqi-1)
                         extractindices.push_back(seqi); 
-                        assignedloci.push_back(destLocus);
+						if (extractFasta == 2) {
+                        	assignedloci.push_back(destLocus);
+						}
                     }
+
+					if (not extractFasta or extractFasta == 2) { // accumulate trKmers for output
+						if (not threading) {
+							for (size_t i = 0; i < kmers1.size(); ++i) {
+								if (trKmers.count(kmers1[i])) {
+									trKmers[kmers1[i]] += (dup[i].first + dup[i].second);
+								}
+							}
+						}
+						else {
+							for (auto& p : cakmers) {
+								if (trKmers.count(p.first)) { trKmers[p.first] += p.second; }
+							}
+						}
+					}
                 }
                 else { // removed by threading
 					destLocus = nloci;
                 }
             }
 
-			if (simmode == 1 and srcLocus != destLocus) {
+			if (simmode == 1 and srcLocus != destLocus and extractFasta != 1) {
 				++msa[srcLocus][destLocus];
 			}
-			else if (simmode == 2 and srcLocus != destLocus) {
-				if (threading) { countFPFN(srcLocus, destLocus, errdb2, trResults, kmers1, dup); }
-				else { countFPFN(srcLocus, destLocus, errdb1, trResults, kmers1, dup); }
+			else if (simmode == 2 and srcLocus != destLocus and extractFasta != 1) {
+				assert(threading);
+				countFPFN(srcLocus, destLocus, errdb, trResults, kmers1, dup, cakmers);
 			}
         }
 
@@ -675,14 +695,7 @@ void CountWords(void *data) {
             // write reads to STDOUT
             // begin thread lock
             sem_wait(semwriter); 
-
-            for (size_t i = 0; i < extractindices.size(); ++i) {
-                cout << ">" << assignedloci[i] << "_0\n"
-                     << seqs[--extractindices[i]] << '\n'
-                     << ">" << assignedloci[i] << "_1\n"
-                     << seqs[--extractindices[i]] << '\n';
-            }
-
+			writeExtractedReads(extractFasta, seqs, titles, extractindices, assignedloci);
             sem_post(semwriter);
             //
             // end of thread lock
@@ -700,17 +713,19 @@ int main(int argc, char* argv[]) {
              << "Usage: danbing-tk [-b] [-e] [-t] [-s] [-m] [-a] [-g|-gc] -k <-qs> <-fqi | fai> -o -p -cth -rth" << endl
              << "Options:" << endl
              << "  -b           Use baitDB to decrease ambiguous mapping" << endl
-             << "  -e           Write mapped reads to STDOUT in fasta format" << endl
-             << "               not compatible with -s option" << endl
+             << "  -e <INT>     Write mapped reads to STDOUT in fasta format." << endl
+             << "               Specify 1 for keeping original read names. Will not write .kmers output." << endl
+			 << "               Specify 2 for appending assigned locus to each read name" << endl
              << "  -t <INT>     Used trimmed pangenome graph e.g. \"-t 1\" for pan.*.trim1.kmers" << endl
              << "  -s <INT>     Run in simulation mode to write the origin and destination of mis-assigned reads to STDOUT" << endl
              << "               Specify 1 for simulated reads from TR" << endl
              << "               Specify 2 for simulated reads from whole genome" << endl
 			 << "  -m <str>     locusMap.tbl, used for mapping g-locus to pan-locus in whole genome simulation" << endl
-             << "  -a           Augmentation mode, use pruned kmers and augkmers" << endl
+             << "  -au          Augmentation mode, use pruned kmers and augkmers" << endl
              << "  -g <INT>     Use graph threading algorithm w/o error correction" << endl
              << "  -gc <INT>    Use graph threading algorithm w/ error correction" << endl
              << "               Discard pe reads if # of matching kmers < [INT]" << endl
+			 << "  -a           Output read alignments. Only work with -g or -gc." << endl
              << "  -k <INT>     Kmer size" << endl
              << "  -qs <str>    Prefix for *.tr.kmers, *.lntr.kmers, *.rntr.kmers, *.graph.kmers files" << endl
              << "  -fqi <str>   Interleaved pair-end fastq file" << endl // deprecated
@@ -725,8 +740,8 @@ int main(int argc, char* argv[]) {
     }
    
     vector<string> args(argv, argv+argc);
-    bool bait = false, extractFasta = false, aug = false, threading = false, correction = false, g2pan = false, isFastq;
-    int simmode = 0;
+    bool bait = false, aug = false, threading = false, correction = false, aln = false, g2pan = false, isFastq;
+    int simmode = 0, extractFasta = 0;
     size_t argi = 1, trim = 0, thread_cth = 0, nproc, Cthreshold;
     float Rthreshold;
     string trPrefix, trFname, fastxFname, outPrefix;
@@ -739,7 +754,7 @@ int main(int argc, char* argv[]) {
             assert(baitFile);
             baitFile.close();
         }
-        else if (args[argi] == "-e") { extractFasta = true; }
+        else if (args[argi] == "-e") { extractFasta = stoi(args[++argi]); }
         else if (args[argi] == "-t") { trim = stoi(args[++argi]); }
         else if (args[argi] == "-s") { simmode = stoi(args[++argi]); }
 		else if (args[argi] == "-m") {
@@ -747,12 +762,13 @@ int main(int argc, char* argv[]) {
 			mapFile.open(args[++argi]);
 			assert(mapFile);
 		}
-        else if (args[argi] == "-a") { aug = true; }
+        else if (args[argi] == "-au") { aug = true; }
         else if (args[argi] == "-g" or args[argi] == "-gc") {
             if (args[argi] == "-gc") { correction = true; }
             threading = true;
             thread_cth = stoi(args[++argi]);
         }
+		else if (args[argi] == "-a") { aln = true; }
         else if (args[argi] == "-k") { ksize = stoi(args[++argi]); }
         else if (args[argi] == "-qs") {
             trPrefix = args[++argi];
@@ -826,7 +842,7 @@ int main(int argc, char* argv[]) {
     vector<GraphType> graphDB(nloci);
     kmeruIndex_umap kmerDBi;
     vector<msa_umap> msaStats;
-	err_umap errdb1, errdb2;
+	err_umap errdb;
 	vector<size_t> locusmap;
 
     readKmersFile(trKmerDB, kmerDBi, trFname, 0, false); // start from index 0, do not count
@@ -877,8 +893,7 @@ int main(int argc, char* argv[]) {
         counts.nThreadingReads = &nThreadingReads;
         counts.nFeasibleReads = &nFeasibleReads;
         counts.msaStats = &msaStats;
-        counts.errdb1 = &errdb1;
-        counts.errdb2 = &errdb2;
+        counts.errdb = &errdb;
 		counts.locusmap = &locusmap;
 
         counts.isFastq = isFastq;
@@ -954,13 +969,15 @@ int main(int argc, char* argv[]) {
     fastxFile.close();
 
     // write outputs
-    cerr << "writing kmers..." << endl;
-    writeKmers(outPrefix+".tr", trKmerDB);
+    if (not extractFasta) {
+		cerr << "writing kmers..." << endl;
+		writeKmers(outPrefix+".tr", trKmerDB);
+	}
     if (simmode == 1) { // TODO
         writeMsaStats(outPrefix, msaStats);
     }
 	else if (simmode == 2) {
-		writeErrDB(outPrefix, errdb2);
+		writeErrDB(outPrefix, errdb);
 	}
 
     cerr << "all done!" << endl;
