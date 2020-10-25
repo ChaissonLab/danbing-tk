@@ -28,8 +28,21 @@ const uint32_t NAN32 = 0xFFFFFFFF;
 
 typedef unordered_map<size_t, size_t> msa_umap; // dest_locus, counts
 // src_locus -> {dest_locus -> [src_count, dest_count_uncorrected, dest_count_corrected]}
-typedef unordered_map<size_t, unordered_map<size_t, vector<size_t>>> err_umap;
+typedef unordered_map<size_t, unordered_map<size_t, std::tuple<size_t,size_t,size_t>>> err_umap;
 typedef std::pair<uint8_t, uint8_t> PE_KMC; // pair-end kmer count // XXX not compatible with reads longer than 255 bp
+
+struct EDIT {
+	vector<char> ops1, ops2; // alignment operation for each end. M: match. S: skip. H: homopolymer. [ACGT]: edits.
+	std::pair<size_t, size_t> map; // <src_locus, dest_locus>
+};
+
+struct statStruct { // for forward + reverse strand (paired-end)
+    uint32_t ind1 = NAN32;
+    uint32_t ind2 = NAN32;
+    vector<PE_KMC> scores; // [(top_score_pe_read1, top_score_pe_read2), (second_score_pe_read1, second_score_pe_read2)] initialized as zeros
+
+    statStruct() : scores(2) {}
+};
 
 void rand_str(char *dest, size_t length) {
     char charset[] = "0123456789"
@@ -41,15 +54,6 @@ void rand_str(char *dest, size_t length) {
     }
     *dest = '\0';
 }
-
-
-struct statStruct { // for forward + reverse strand (paired-end)
-    uint32_t ind1 = NAN32;
-    uint32_t ind2 = NAN32;
-    vector<PE_KMC> scores; // [(top_score_pe_read1, top_score_pe_read2), (second_score_pe_read1, second_score_pe_read2)] initialized as zeros
-
-    statStruct() : scores(2) {}
-};
 
 void updatetop2(size_t count_f, size_t ind, size_t count_r, statStruct& out) { // for sorted_query algo
     if (count_f + count_r > out.scores[0].first + out.scores[0].second) {
@@ -73,13 +77,12 @@ void mergeVec(vector<T>& dest, vector<T>& src) {
     dest.insert(dest.end(),
                 std::make_move_iterator(src.begin()),
                 std::make_move_iterator(src.end()));
+	src.clear();
 }
 
-vector<size_t> getSortedIndex(vector<size_t>& data) {
-    vector<size_t> indices(data.size());
+void getSortedIndex(vector<size_t>& data, vector<size_t>& indices) {
     std::iota(indices.begin(), indices.end(), 0);
     std::sort(indices.begin(), indices.end(), [&data](size_t ind1, size_t ind2) { return data[ind1] < data[ind2]; });
-    return std::move(indices);
 }
 
 void countDupRemove(vector<size_t>& kmers, vector<size_t>& kmers_other, vector<PE_KMC>& dup) {
@@ -90,9 +93,11 @@ void countDupRemove(vector<size_t>& kmers, vector<size_t>& kmers_other, vector<P
 	// 		dup: count in <forward,reverse> strand for each entry in kmers
     vector<bool> orient(kmers.size(), 0);
     orient.resize(kmers.size() + kmers_other.size(), 1);
-    mergeVec(kmers, kmers_other);
+	kmers.insert(kmers.end(), kmers_other.begin(), kmers_other.end());
+	kmers_other.clear();
 
-    vector<size_t> indorder = getSortedIndex(kmers);
+    vector<size_t> indorder(kmers.size());
+	getSortedIndex(kmers, indorder);
     // sort kmers and orient
     vector<size_t> old_kmers = kmers;
     vector<bool> old_orient = orient;
@@ -150,7 +155,8 @@ void fillstats(vector<size_t>& kmers, vector<size_t>& kmers_other, kmeruIndex_um
     }
 
     // sort kemrs dup w.r.t. nmappedloci; remove entries w/o mapped locus
-    vector<size_t> indorder = getSortedIndex(nmappedloci);
+    vector<size_t> indorder(nmappedloci.size());
+	getSortedIndex(nmappedloci, indorder);
     vector<size_t> old_kmers = kmers;
     vector<PE_KMC> old_dup = dup;
     for (size_t i = 0; i < nkmers; ++i) {
@@ -304,7 +310,7 @@ void writeErrDB(string outPref, err_umap& errdb) {
 	for (auto& u : errdb) {
 		fout << u.first << ":{";
 		for (auto& v : u.second) {
-			fout << v.first << ">" << v.second[0] << "," << v.second[1] << "," << v.second[2] << ";";
+			fout << v.first << ">" << std::get<0>(v.second) << "," << std::get<1>(v.second) << "," << std::get<2>(v.second) << ";";
 		}
 		fout << "}\n";
 	}
@@ -327,26 +333,32 @@ void getOutNodes(GraphType& g, size_t node, vector<size_t>& outnodes) {
 }
 
 // 0: not feasible, 1: feasible, w/o correction, 2: feasible w/ correction
-int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t thread_cth, bool correction) {
+int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t thread_cth, bool correction, 
+	bool aln, vector<char>& ops, kmer_aCount_umap& trKmers) {
     read2kmers(kmers, seq, ksize, 0, 0, false); // leftflank = 0, rightflank = 0, canonical = false
 
-    const static uint64_t mask = (1UL << 2*(ksize-1)) - 1;
+	static const char nts[] = {'A', 'C', 'G', 'T', 'a', 'c', 'g', 't'};
+    static const uint64_t mask = (1UL << 2*(ksize-1)) - 1;
     const size_t nkmers = kmers.size();
     const size_t maxskipcount = (nkmers >= thread_cth ? nkmers - thread_cth : 0);
     const size_t maxcorrectioncount = 2;
     size_t nskip = 0, ncorrection = 0;
     size_t kmer = kmers[nskip];
+	if (aln) { ops.resize(kmers.size()); }
 
     while (not g.count(kmer)) { // find the first matching node
+		if (aln) { ops[nskip] = 'S'; }
         if (++nskip >= nkmers) { // FIXME
             return 0;
         }
         kmer = kmers[nskip];
     }
+	if (aln) { ops[nskip] = trKmers.count(toCaKmer(kmer, ksize)) ? '=' : '.'; }
     unordered_set<size_t> feasibleNodes = {kmer};
 
     for (size_t i = nskip + 1; i < nkmers; ++i) {
         if (kmers[i] == kmers[i-1]) { // skip homopolymer run
+			if (aln) { ops[i] = trKmers.count(toCaKmer(kmers[i], ksize)) ? 'H' : 'h'; }
             ++nskip;
             continue;
         }
@@ -367,7 +379,10 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t th
                     break;
                 }
             }
-            if (not skip) { break; }
+            if (not skip) { 
+				if (aln) { ops[i] = trKmers.count(toCaKmer(kmers[i], ksize)) ? '=' : '.'; }
+				break; 
+			}
         }
 
         if (skip) { // read kmer has no matching node in the graph, try error correction
@@ -387,6 +402,7 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t th
             }
 
             if (skip) {
+				if (aln) { ops[i] = 'S'; }
                 if (++nskip > maxskipcount) {
                     return 0;
                 }
@@ -417,6 +433,7 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t th
                     ++ncorrection;
                     kmers[i] -= oldnt;
                     kmers[i] += candnts[0];
+					if (aln) { ops[i] = trKmers.count(toCaKmer(kmers[i], ksize)) ? nts[candnts[0]] : nts[candnts[0]+4]; }
 
                     for (size_t j = 1; j < std::min(ksize, nkmers-i); ++j) {
                         size_t nextkmer = kmers[i+j] - (oldnt << (j << 1)) + (candnts[0] << (j << 1));
@@ -426,35 +443,38 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& kmers, size_t th
                     nextFeasibleNodes.clear();
                     nextFeasibleNodes.insert(kmers[i]);
                 }
-                else { ++nskip; } // no feasible correction
+                else { // no feasible correction
+					if (aln) { ops[i] = 'S'; }
+					++nskip;
+				}
             }
         }
         feasibleNodes.swap(nextFeasibleNodes);
     }
-    return (nskip < maxskipcount and ncorrection < maxcorrectioncount ? (ncorrection ? 2 : 1) : 0);
+    return (nskip < maxskipcount and ncorrection < maxcorrectioncount ? (ncorrection ? 2 : 1) : 0); // XXX <= or <
 }
 
-void countFPFN(size_t srcLocus, size_t destLocus, err_umap& errdb, vector<kmer_aCount_umap>& trdb, vector<size_t>& kmers, 
+void countFPFN(size_t srcLocus, size_t destLocus, err_umap& err, vector<kmer_aCount_umap>& trdb, vector<size_t>& kmers, 
 			   vector<PE_KMC>& dup, kmerCount_umap& cakmers) {
 	size_t nloci = trdb.size();
 	for (size_t i = 0; i < kmers.size(); ++i) {
 		size_t c = dup[i].first + dup[i].second;
 		// FN
-		if (srcLocus == nloci) { errdb[srcLocus][destLocus][0] += c; }
+		if (srcLocus == nloci) { std::get<0>(err[srcLocus][destLocus]) += c; }
 		else {
-            if (trdb[srcLocus].count(kmers[i])) { errdb[srcLocus][destLocus][0] += c; }
+            if (trdb[srcLocus].count(kmers[i])) { std::get<0>(err[srcLocus][destLocus]) += c; }
 		}
 		// FP from uncorrected reads
-		if (destLocus == nloci) { errdb[srcLocus][destLocus][1] += c; }
+		if (destLocus == nloci) { std::get<1>(err[srcLocus][destLocus]) += c; }
 		else {
-            if (trdb[destLocus].count(kmers[i])) { errdb[srcLocus][destLocus][1] += c; }
+            if (trdb[destLocus].count(kmers[i])) { std::get<1>(err[srcLocus][destLocus]) += c; }
 		}
 	}
 	for (auto& p : cakmers) {
 		// FP from corrected reads
-		if (destLocus == nloci) { errdb[srcLocus][destLocus][2] += p.second; }
+		if (destLocus == nloci) { std::get<2>(err[srcLocus][destLocus]) += p.second; }
 		else {
-            if (trdb[destLocus].count(p.first)) { errdb[srcLocus][destLocus][2] += p.second; }
+            if (trdb[destLocus].count(p.first)) { std::get<2>(err[srcLocus][destLocus]) += p.second; }
 		}
 	}
 }
@@ -471,9 +491,30 @@ void writeExtractedReads(int extractFasta, vector<string>& seqs, vector<string>&
 	}
 }
 
+inline void writeOps(vector<char>& ops) {
+	for (char c : ops) { cout << c; }
+}
+
+void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<size_t>& alnindices, vector<EDIT>& sam) {
+	for (size_t i = 0; i < sam.size(); ++i) {
+		string& title1 = titles[--alnindices[i]];
+		cout << sam[i].map.first << '\t'
+			 << sam[i].map.second << '\t'
+			 << title1.substr(1,title1.size()-1) << '\t'
+			 << seqs[alnindices[i]] << '\t';
+		writeOps(sam[i].ops2); // read2
+		string& title2 = titles[--alnindices[i]];
+		cout << '\t'
+			 << title2.substr(1,title2.size()-1) << '\t'
+			 << seqs[alnindices[i]] << '\t';
+		writeOps(sam[i].ops1); // read1
+		cout << '\n';
+	}
+}
+
 class Counts {
 public:
-    bool isFastq, bait, threading, correction;
+    bool isFastq, bait, threading, correction, aln;
     uint16_t Cthreshold, thread_cth;
     size_t *nReads, *nThreadingReads, *nFeasibleReads;
     size_t nloci;
@@ -505,6 +546,7 @@ void CountWords(void *data) {
     bool bait = ((Counts*)data)->bait;
     bool threading = ((Counts*)data)->threading;
     bool correction = ((Counts*)data)->correction;
+    bool aln = ((Counts*)data)->aln;
     int simmode = ((Counts*)data)->simmode;
     int extractFasta = ((Counts*)data)->extractFasta;
     size_t nReads_ = 0, nThreadingReads_ = 0, nFeasibleReads_ = 0;
@@ -522,6 +564,7 @@ void CountWords(void *data) {
     vector<kmer_aCount_umap>& trResults = *((Counts*)data)->trResults;
     vector<msa_umap>& msaStats = *((Counts*)data)->msaStats;
     err_umap& errdb = *((Counts*)data)->errdb;
+	err_umap err;
 	vector<size_t>& locusmap = *((Counts*)data)->locusmap;
     // simmode only
     // loci: loci that are processed in this batch
@@ -535,12 +578,14 @@ void CountWords(void *data) {
         vector<string> seqs(readsPerBatch);
         // for simmode only
         // locusReadi: map locus to nReads_. 0th item = number of reads for 0th item in loci; last item = nReads_; has same length as loci
-        vector<size_t> locusReadi;
         size_t startpos;
+        vector<size_t> locusReadi;
 		vector<std::pair<int, size_t>> meta;
         // extractFasta only
         vector<size_t> extractindices, assignedloci;
 		vector<string> titles(readsPerBatch);
+		// aln only
+		vector<size_t> alnindices;
 
         //
         // begin thread locking
@@ -562,6 +607,14 @@ void CountWords(void *data) {
             srcLoci.clear();
             msa.clear();
         }
+		else if (simmode == 2) {
+			for (auto& u : err) {
+				for (auto& v : u.second) {
+					errdb[u.first][v.first] = v.second;
+				}
+			}
+			err.clear();
+		}
 
         if (in->peek() == EOF) {
             sem_post(semreader);
@@ -587,12 +640,11 @@ void CountWords(void *data) {
             }
 
             if (simmode == 1) { parseReadName(title, nReads_, srcLoci, locusReadi); }
-            else if (simmode == 2) { parseReadName(title, meta, nloci); } // XXX check once for a read pair
-			//else if (simmode == 2) { parseReadName(title, nReads_, poss, srcLoci, locusReadi); }
+            else if (simmode == 2) { parseReadName(title, meta, nloci); }
 
-			if (extractFasta) { titles[nReads_] = title; }
+			if (extractFasta or aln) { titles[nReads_] = title; }
             seqs[nReads_++] = seq;
-			if (extractFasta) { titles[nReads_] = title1; }
+			if (extractFasta or aln) { titles[nReads_] = title1; }
             seqs[nReads_++] = seq1;
         } 
         nReads += nReads_;
@@ -608,6 +660,8 @@ void CountWords(void *data) {
 
         time_t time2 = time(nullptr);
         size_t seqi = 0;
+		// aln only TODO define SAM structure
+		vector<EDIT> sam;
         // simmode only
         size_t simi = 0;
         ValueType srcLocus;
@@ -634,6 +688,7 @@ void CountWords(void *data) {
 
             size_t destLocus = countHit(kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold, Rthreshold);
 			kmerCount_umap cakmers;
+			EDIT edit;
 
             if (destLocus != nloci) {
                 int feasibility0 = 0, feasibility1 = 0;
@@ -641,8 +696,9 @@ void CountWords(void *data) {
 
                 if (threading) {
                     vector<size_t> noncakmers0, noncakmers1;
-                    feasibility0 = isThreadFeasible(graphDB[destLocus], seq, noncakmers0, thread_cth, correction);
-                    feasibility1 = isThreadFeasible(graphDB[destLocus], seq1, noncakmers1, thread_cth, correction);
+					// XXX test
+                    feasibility0 = isThreadFeasible(graphDB[destLocus], seq, noncakmers0, thread_cth, correction, aln, edit.ops1, trResults[destLocus]);
+                    feasibility1 = isThreadFeasible(graphDB[destLocus], seq1, noncakmers1, thread_cth, correction, aln, edit.ops2, trResults[destLocus]);
                     if (feasibility0 and feasibility1) {
                         noncaVec2CaUmap(noncakmers0, cakmers, ksize);
                         noncaVec2CaUmap(noncakmers1, cakmers, ksize);
@@ -662,7 +718,7 @@ void CountWords(void *data) {
 						}
                     }
 
-					if (not extractFasta or extractFasta == 2) { // accumulate trKmers for output
+					if (extractFasta != 1) { // accumulate trKmers for output
 						if (not threading) {
 							for (size_t i = 0; i < kmers1.size(); ++i) {
 								if (trKmers.count(kmers1[i])) {
@@ -677,25 +733,34 @@ void CountWords(void *data) {
 						}
 					}
                 }
-                else { // removed by threading
-					destLocus = nloci;
-                }
+                else { destLocus = nloci; } // removed by threading
             }
+
+			if (aln and threading and simmode == 2 and (srcLocus != nloci or destLocus != nloci)) {
+				alnindices.push_back(seqi); // work the same as extractindices
+				edit.map = std::make_pair(srcLocus, destLocus);
+				sam.push_back(edit);
+			}
 
 			if (simmode == 1 and srcLocus != destLocus and extractFasta != 1) {
 				++msa[srcLocus][destLocus];
 			}
 			else if (simmode == 2 and srcLocus != destLocus and extractFasta != 1) {
 				assert(threading);
-				countFPFN(srcLocus, destLocus, errdb, trResults, kmers1, dup, cakmers);
+				countFPFN(srcLocus, destLocus, err, trResults, kmers1, dup, cakmers);
 			}
         }
 
-        if (extractFasta) {
-            // write reads to STDOUT
+        if (extractFasta or aln) {
+            // write reads or alignments to STDOUT
             // begin thread lock
             sem_wait(semwriter); 
-			writeExtractedReads(extractFasta, seqs, titles, extractindices, assignedloci);
+			if (extractFasta) {
+				writeExtractedReads(extractFasta, seqs, titles, extractindices, assignedloci);
+			}
+			else if (aln) {
+				writeAlignments(seqs, titles, alnindices, sam); // XXX
+			}
             sem_post(semwriter);
             //
             // end of thread lock
@@ -824,6 +889,7 @@ int main(int argc, char* argv[]) {
          << "trim mode: " << trim << endl
          << "augmentation mode: " << aug << endl
          << "graph threading mode: " << threading << endl
+		 << "output alignment" << aln << endl
          << "k: " << ksize << endl
          << "Cthreshold: " << Cthreshold << endl
          << "Rthreshold: " << Rthreshold << endl
@@ -902,6 +968,7 @@ int main(int argc, char* argv[]) {
         counts.simmode = simmode;
         counts.threading = threading;
         counts.correction = correction;
+		counts.aln = aln;
 
         counts.Cthreshold = Cthreshold;
         counts.Rthreshold = Rthreshold;

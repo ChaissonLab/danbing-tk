@@ -166,6 +166,11 @@ size_t getNuRC(size_t num, size_t k) {
     return num_rc;
 }
 
+inline size_t toCaKmer(size_t kmer, size_t k) {
+	size_t rckmer = getNuRC(kmer, k);
+	return kmer < rckmer ? kmer : rckmer;
+}
+
 template <typename T>
 void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0, bool count = true) {
     size_t rlen = read.size();
