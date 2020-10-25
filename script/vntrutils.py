@@ -71,24 +71,6 @@ def getRCstring(string):
 
     return ''.join(RCstring)
 
-def encodeString(string):
-    numericString = 0
-    for i in range(len(string)):
-        numericString = (numericString << 2) + base[string[i]]
-
-    return numericString
-
-
-def string2CaKmer(string):
-    k = len(string)
-    for i in range(k):
-        if base[string[i]] > 3 - base[string[(k - i - 1)]]:
-            return encodeString(string)
-        if base[string[i]] < 3 - base[string[(k - i - 1)]]:
-            return getRCkmer(encodeString(string), k)
-
-    return encodeString(string)
-
 
 def decodeNumericString(num, k):
     string = ''
@@ -110,6 +92,21 @@ def getRCkmer(kmer, k):
         rckmer <<= (k<<1)
         rckmer += (byteRC[kmer] >> ((4-k)<<1))
     return rckmer
+
+
+def encodeString(string):
+    """Direct encoding. Use string2CaKmer() for canonical encoding"""
+    numericString = 0
+    for i in range(len(string)):
+        numericString = (numericString << 2) + base[string[i]]
+
+    return numericString
+
+
+def string2CaKmer(string):
+    kmer = encodeString(string)
+    rckmer = getRCkmer(kmer, len(string))
+    return kmer if kmer <= rckmer else rckmer
 
 
 def getNextKmer(beg, seq, k):
