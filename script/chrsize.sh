@@ -10,4 +10,4 @@ awk 'BEGIN {OFS="\t"}
 }
 END {
     print name, size
-}' $1
+}' $1 | sort
