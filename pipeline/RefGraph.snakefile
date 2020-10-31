@@ -100,7 +100,7 @@ bedtools map -c 1 -o count -a $bed5 -b {params.refTR} | awk '$8 != 1' | cut -f 4
 bedtools map -c 1,4 -o count,collapse -a <(cut -f 1-3 {params.refTR}) -b $bed5 | awk '$4 > 1' | cut -f 5 >> $loci0
 sort -n $loci0 | awk 'BEGIN {{u = -1}} {{ if (u != $1) {{print $1; u = $1}} }}' > $loci1 # ref-ordered asm locus
 
-{params.sd}/script/rmLinebyIndFile.py $loci1 $bed4 | bedtools sort -i /dev/stdin |
+{params.sd}/script/rmLinebyIndFile.py $loci1 $bed4 | sort -k1,1 -k2,2n -k3,3n |
 awk 'BEGIN {{OFS="\t"}} {{print $5, $6, $7, $1, $2, $3}}' > {output.TRbed}
 cd ..
 

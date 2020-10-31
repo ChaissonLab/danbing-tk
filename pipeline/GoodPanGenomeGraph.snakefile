@@ -7,8 +7,9 @@ srcdir = config["srcDir"]
 indir = config["inputDir"]
 outdir = config["outputDir"]
 
-genomes = np.loadtxt(config["genomes"], dtype=object, ndmin=1).tolist()
-bams = dict(zip(genomes, np.loadtxt(config["bams"], dtype=object, ndmin=1).tolist()))
+gbpair = np.loadtxt(config["pairs"], dtype=object)
+genomes = gbpair[:,0].tolist()
+bams = dict(gbpair)
 haps = ["0", "1"]
 kmerTypes = ["tr", "lntr", "rntr", "graph"]
 
@@ -188,10 +189,11 @@ if [[ {params.aligner} == "lra" ]]; then
 else
 	cp ref.bed tmp0.m.bed
 	for hap in 0 1; do
-		paftools.js liftover -l 50 ${{pafs[$hap]}} ref.bed | bedtools sort > tmp0.l"$hap".bed
+		paftools.js liftover -l 50 ${{pafs[$hap]}} ref.bed | sort -k1,1 -k2,2n -k3,3n > tmp0.l"$hap".bed
 		{params.sd}/script/liftbed.clean.py tmp0.l"$hap".bed > tmp0."$hap".bed
-		bedtools map -c 4 -o collapse -a tmp0.m.bed \
-									  -b <(awk 'BEGIN {{OFS="\t"}} {{print $4,$5,$6,$1"/"$2"/"$3}}' tmp0.$hap.bed | bedtools sort) > tmp0.m.bed.tmp &&
+		bedtools map -c 4 -o collapse \
+                -a tmp0.m.bed \
+                -b <(awk 'BEGIN {{OFS="\t"}} {{print $4,$5,$6,$1"/"$2"/"$3}}' tmp0.$hap.bed | sort -k1,1 -k2,2n -k3,3n ) > tmp0.m.bed.tmp &&
 		mv tmp0.m.bed.tmp tmp0.m.bed
 	done
 	awk '$4 != "." && $5 != "." && $4 !~ /,/ && $5 !~ /,/' tmp0.m.bed > tmp0.mc.bed
@@ -244,7 +246,7 @@ for hap in 0 1; do
     bedtools map -c 1,4 -o count,collapse -a <(cut -f 1-3 {params.refTR}) -b $bed5 | awk '$4 > 1' | cut -f 5 >> $loci0
     sort -n $loci0 | uniq > $loci1 # ref-ordered asm locus
 
-    {params.sd}/script/rmLinebyIndFile.py $loci1 $bed4 | bedtools sort -i /dev/stdin |
+    {params.sd}/script/rmLinebyIndFile.py $loci1 $bed4 | sort -k1,1 -k2,2n -k3,3n |
     awk 'BEGIN {{OFS="\t"}} {{print $5, $6, $7, $1, $2, $3}}' > ${{TRbeds[$hap]}}
 done
 cd ..
