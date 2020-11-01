@@ -1,5 +1,7 @@
 import numpy as np
 from sklearn.linear_model import LinearRegression
+import matplotlib
+import matplotlib.pyplot as plt
 
 base = {'A':0, 'C':1,  'G':2,  'T':3}
 baseinv = ['A', 'C', 'G', 'T']
@@ -438,3 +440,121 @@ def KmersLinReg(PBfname, ILfname, out, threshold=10, R2threshold=0, plot=False):
     PlotRegression(results[:,0:1], results[:,1:2], "TrueLength", "PredictedLength",
                         title="True.PredictedLength.Sample"+str(nloci) ,fname='.'.join([out,"sum",str(R2threshold)]),
                         outlier="strict", plot=True)
+
+
+def getrectangle(xs, ys):
+    return  [xs[0], xs[0], xs[1], xs[1], xs[0]], [ys[0], ys[1], ys[1], ys[0], ys[0]]    
+
+def getcokmersindex(cokmers, kmers0, kmers1):
+    kmersi = [{}, {}]
+    invalid = 0xffffffffffffffff
+    kmersDB = [kmers0, kmers1]
+    for hap, kmers in enumerate(kmersDB):
+        for i, kmer in enumerate(kmers):
+            if kmer == invalid: continue
+            if kmer not in cokmers: continue
+            if kmer not in kmersi[hap]: 
+                kmersi[hap][kmer] = []
+            kmersi[hap][kmer].append(i)
+    return kmersi
+
+def inregion(x, y, region): # region = ([x0,x1), [y0,y1))
+    return x >= region[0][0] and x < region[0][1] and y >= region[1][0] and y < region[1][1]
+
+def getbadkmc_bothhaps(indices0, indices1, region0, region1, fs=700, getindices=False):
+    s0, e0 = region0
+    ss0, ee0 = s0-fs, e0+fs
+    s1, e1 = region1
+    ss1, ee1 = s1-fs, e1+fs
+    badregions = [((ss0,s0), (s1,e1)), # 0L
+                  ((e0,ee0), (s1,e1)), # 0R
+                  ((s0,e0), (ss1,s1)), # 1L
+                  ((s0,e0), (e1,ee1))] # 1R
+
+    badkmc = np.zeros(4, dtype=int) # 0L, 0R, 1L, 1R
+    badindices = [[], []] # [[x0,...], [y0,...]]
+
+    for i0 in indices0:
+        if i0 < ss0 or i0 > ee0: continue
+        for i1 in indices1:
+            if i1 < ss1 or i1 > ee1: continue
+            
+            for j, badregion in enumerate(badregions):
+                if inregion(i0, i1, badregion):
+                    badkmc[j] += 1
+                    if getindices:
+                        badindices[0].append(i0)
+                        badindices[1].append(i1)
+    
+    return (badkmc, badindices) if getindices else badkmc
+
+def plotCrossContamination(ctg0, ctg1, locus=None, ksize=21, ax=None, zoomoutsize=(0,0), offset=(0,0), 
+                           silent=False, showcontam=True, reportcontam=False):
+    """plot loci w/ primary contamination only"""
+    
+    start0, end0 = 700, len(ctg0)-700
+    start1, end1 = 700, len(ctg1)-700
+    TRsize0 = end0 - start0
+    TRsize1 = end1 - start1
+
+    relpos0 = (700+zoomoutsize[0]-offset[0], end0+700-start0+zoomoutsize[0]-offset[0])
+    relpos1 = (700+zoomoutsize[1]-offset[1], end1+700-start1+zoomoutsize[1]-offset[1])
+    kmers0 = read2kmers(ctg0[start0-700-zoomoutsize[0]+offset[0]: end0+700+zoomoutsize[0]+offset[0]], ksize)
+    kmers1 = read2kmers(ctg1[start1-700-zoomoutsize[1]+offset[1]: end1+700+zoomoutsize[1]+offset[1]], ksize)
+    cokmers = (set(kmers0) & set(kmers1)) - set([0xffffffffffffffff])
+    cokmersi = getcokmersindex(cokmers, kmers0, kmers1)
+
+    xs, ys, badxs, badys = [], [], [], []
+    badkmc = np.zeros(4, dtype=int) # 0L, 0R, 1L, 1R
+    for kmer in cokmers:
+        indices0 = cokmersi[0][kmer]
+        indices1 = cokmersi[1][kmer]
+
+        # analyze contamination
+        badkmc_, badindices = getbadkmc_bothhaps(indices0, indices1, relpos0, relpos1, getindices=True)
+        badkmc += badkmc_
+
+        # for plotting
+        if ax is not None:
+            for i in indices0:
+                for j in indices1:
+                    xs.append(i)
+                    ys.append(j)
+
+            for i in badindices[0]: badxs.append(i)
+            for j in badindices[1]: badys.append(j)
+                
+    if reportcontam:
+        print(f"{len(badxs)},{len(badys)}", end="; ")
+
+    if ax is not None:
+        if not silent:
+            ax.set_title("{} contam={}, {:.1f}%".format(locus, badkmc, 100*np.sum(badkmc)/(TRsize0+TRsize1)))
+
+        # TR + NTR region
+        xlines, ylines = getrectangle((relpos0[0]-700, relpos0[1]+700), relpos1)
+        ax.plot(xlines, ylines, '-r', linewidth=1, alpha=0.8)
+        xlines, ylines = getrectangle(relpos0, (relpos1[0]-700, relpos1[1]+700))
+        ax.plot(xlines, ylines, '-r', linewidth=1, alpha=0.8)
+
+        ax.scatter(xs, ys, c='k', s=0.1, linewidths=0)
+        if showcontam:
+            ax.plot(badxs, badys, '.r')
+
+        xmax = end0 - start0 + 1400 + 2*zoomoutsize[0]
+        ymax = end1 - start1 + 1400 + 2*zoomoutsize[1]
+        ax.set_xlim((0, xmax))
+        ax.set_ylim((0, ymax))
+        ax.set_yticks((0, ymax//500*500))
+        ax.set_yticklabels([0, ymax//500*500], rotation=90)
+
+def visSelfRepeat(seq, ksize=13, figsize=(8,6), dpi=100):
+    fig, ax = plt.subplots(1,1, figsize=figsize, dpi=dpi)
+    plotCrossContamination(seq, seq, locus=None, ksize=ksize, ax=ax, zoomoutsize=(0,0), offset=(0,0), silent=False, showcontam=True, reportcontam=True)
+    plt.show(); plt.close()
+
+def visPairedRepeat(seq1, seq2, ksize=21, figsize=(6,15), dpi=100):
+    fig, axes = plt.subplots(3,1, figsize=figsize, dpi=dpi)
+    for i, pair in enumerate([(seq1,seq1), (seq1,seq2), (seq2,seq2)]):
+        plotCrossContamination(pair[0], pair[1], ax=axes[i])
+    plt.show(); plt.close()
