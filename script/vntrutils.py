@@ -553,8 +553,8 @@ def visSelfRepeat(seq, ksize=13, figsize=(8,6), dpi=100):
     plotCrossContamination(seq, seq, locus=None, ksize=ksize, ax=ax, zoomoutsize=(0,0), offset=(0,0), silent=False, showcontam=True, reportcontam=True)
     plt.show(); plt.close()
 
-def visPairedRepeat(seq1, seq2, ksize=21, figsize=(6,15), dpi=100):
-    fig, axes = plt.subplots(3,1, figsize=figsize, dpi=dpi)
+def visPairedRepeat(seq1, seq2, ksize=21, figsize=(15,4), dpi=100):
+    fig, axes = plt.subplots(1, 3, figsize=figsize, dpi=dpi)
     for i, pair in enumerate([(seq1,seq1), (seq1,seq2), (seq2,seq2)]):
         plotCrossContamination(pair[0], pair[1], ax=axes[i])
     plt.show(); plt.close()
