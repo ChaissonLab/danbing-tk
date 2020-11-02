@@ -190,16 +190,19 @@ else
 	cp ref.bed tmp0.m.bed
 	for hap in 0 1; do
 		paftools.js liftover -l 50 ${{pafs[$hap]}} ref.bed | sort -k1,1 -k2,2n -k3,3n > tmp0.l"$hap".bed
-		{params.sd}/script/liftbed.clean.py tmp0.l"$hap".bed > tmp0."$hap".bed
-		bedtools map -c 4 -o collapse \
+		{params.sd}/script/liftbed.clean.py tmp0.l"$hap".bed |
+        sort -k1,1 -k2,2n -k3,3n |
+        bedtools merge -c 1,4,5,6,7 -o count,collapse,collapse,collapse,collapse |
+        awk '$4 == 1' | cut -f 1-3,5-8 >tmp0."$hap".bed
+		bedtools map -c 4,5 -o collapse \
                 -a tmp0.m.bed \
-                -b <(awk 'BEGIN {{OFS="\t"}} {{print $4,$5,$6,$1"/"$2"/"$3}}' tmp0.$hap.bed | sort -k1,1 -k2,2n -k3,3n ) > tmp0.m.bed.tmp &&
+                -b <(awk 'BEGIN {{OFS="\t"}} {{print $4,$5,$6,$1"/"$2"/"$3,$7}}' tmp0.$hap.bed | sort -k1,1 -k2,2n -k3,3n ) > tmp0.m.bed.tmp &&
 		mv tmp0.m.bed.tmp tmp0.m.bed
 	done
-	awk '$4 != "." && $5 != "." && $4 !~ /,/ && $5 !~ /,/' tmp0.m.bed > tmp0.mc.bed
+	awk '$4 != "." && $6 != "." && $4 !~ /,/ && $6 !~ /,/' tmp0.m.bed > tmp0.mc.bed
 	for hap in 0 1; do 
-		cut -f 1,2,3,$(($hap+4)) tmp0.mc.bed |
-		tr '/' '\t' | awk 'BEGIN {{OFS="\t"}} {{print $4,$5,$6,$1,$2,$3}}' > tmp1.$hap.bed
+		cut -f 1,2,3,$(($hap*2+4)),$(($hap*2+5)) tmp0.mc.bed |
+		tr '/' '\t' | awk 'BEGIN {{OFS="\t"}} {{print $4,$5,$6,$1,$2,$3,$7}}' > tmp1.$hap.bed
 	done
 fi
 
