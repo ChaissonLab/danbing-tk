@@ -99,7 +99,7 @@ def individualTRexpansion(seqs, poss, hap, locus, ksize=KSIZE, zoomout=False, ve
             if badindices[0]:
                 newregion = min(*(badindices[0]), newregion[0]), max(max(badindices[0])+1, newregion[1]) # half open at the end
 
-    while np.sum(badkmc) and start - newregion[0] + newregion[1] - end < UB:
+    while np.sum(badkmc) and start - newregion[0] < UB and newregion[1] - end < UB:
         if verbose: print(newregion, badkmc)
         prevregion = newregion
         badfrom, badto = [], []
@@ -136,9 +136,9 @@ def minibatch_both_hap_expansion(minibatch):
 
             if expanded:
                 nexpanded += 1
+                nresolved += resolved
                 if nexpanded % 100 == 0:
                     print(minibatch, hap, nexpanded, nresolved)
-                nresolved += resolved
         
         stats[hap] = nexpanded, nresolved
     

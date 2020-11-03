@@ -6,7 +6,7 @@ import pickle
 
 nprocess, KSIZE, FS, UB, TRWINDOW, nloci = [int(v) for v in sys.argv[1:7]]
 fastafiles = sys.argv[7:9]
-beds = [np.loadtxt(bed, dtype=object).reshape(-1,6) for bed in sys.argv[9:11]]
+beds = [np.loadtxt(bed, dtype=object, ndmin=2) for bed in sys.argv[9:11]]
 
 weirdloci = [set(np.arange(nloci)), set(np.arange(nloci))]
 

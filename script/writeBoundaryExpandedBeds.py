@@ -5,7 +5,7 @@ import numpy as np
 import pickle
 
 nprocess, KSIZE, FS, UB, TRWINDOW, nloci = [int(v) for v in sys.argv[1:7]]
-beds = [np.loadtxt(bed, dtype=object).reshape(-1,6) for bed in sys.argv[7:9]]
+beds = [np.loadtxt(bed, dtype=object, ndmin=2) for bed in sys.argv[7:9]]
 chrsizefnames = sys.argv[9:11]
 outbednames = sys.argv[11:13]
 

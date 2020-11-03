@@ -88,10 +88,10 @@ def jointTRexpansion(seqs, poss, oldposs, locus, ksize=KSIZE, ax=None, verbose=F
             newregion0 = min(*(badindices[0]), newregion0[0]), max(max(badindices[0])+1, newregion0[1]) # half open at the end
             newregion1 = min(*(badindices[1]), newregion1[0]), max(max(badindices[1])+1, newregion1[1]) # half open at the end
 
-    expansionsize0 = newregion0[1] - oldpos0[1] + oldpos0[0] - newregion0[0]
-    expansionsize1 = newregion1[1] - oldpos1[1] + oldpos1[0] - newregion1[0]
-    if verbose and np.any(badkmc): print(expansionsize0, expansionsize1, badkmc)
-    while np.any(badkmc) and expansionsize0 < UB and expansionsize1 < UB:
+    es0 = (newregion0[1] - oldpos0[1], oldpos0[0] - newregion0[0]) # expansionsize h0
+    es1 = (newregion1[1] - oldpos1[1], oldpos1[0] - newregion1[0]) # expansionsize h1
+    if verbose and np.any(badkmc): print(es0, es1, badkmc)
+    while np.any(badkmc) and es0[0] < UB and es0[1] < UB and es1[0] < UB and es1[1] < UB:
         prevregion0, prevregion1 = newregion0, newregion1
         badkmc = np.zeros(4, dtype=int) # 0L, 0R, 1L, 1R
         for kmer in cokmers:
@@ -107,9 +107,9 @@ def jointTRexpansion(seqs, poss, oldposs, locus, ksize=KSIZE, ax=None, verbose=F
                 newregion0 = min(*(badindices[0]), newregion0[0]), max(max(badindices[0])+1, newregion0[1]) # half open at the end
                 newregion1 = min(*(badindices[1]), newregion1[0]), max(max(badindices[1])+1, newregion1[1]) # half open at the end
 
-        expansionsize0 = newregion0[1] - oldpos0[1] + oldpos0[0] - newregion0[0]
-        expansionsize1 = newregion1[1] - oldpos1[1] + oldpos1[0] - newregion1[0]
-        if verbose: print(expansionsize0, expansionsize1, badkmc)
+        es0 = (newregion0[1] - oldpos0[1], oldpos0[0] - newregion0[0])
+        es1 = (newregion1[1] - oldpos1[1], oldpos1[0] - newregion1[0])
+        if verbose: print(es0, es1, badkmc)
 
     if newregion0 == pos0 and newregion1 == pos1: return False, None, newregion0, newregion1 # good locus after bothhap_expansion
     if not np.any(badkmc): return True, True, newregion0, newregion1
