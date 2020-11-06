@@ -218,19 +218,20 @@ params="{resources.cores} {params.ksize} {params.FS} {params.UB} {params.TRwindo
 {params.sd}/script/jointExpansion.py $params $nloci
 {params.sd}/script/prepareQCDatasets.py $params $nloci
 {params.sd}/script/QC.py $params $nloci
-
+{params.sd}/script/writeBEbed.py {resources.cores} tmp1.?.bed tmp2.0.v0.bed tmp2.1.v0.bed
+for h in 0 1; do
+    awk 'BEGIN {{OFS="\t"}} {{print $0, NR-1}}' tmp2."$h".v0.bed |
+    sort -k1,1 -k2,2n -k3,3n |
+    bedtools merge -c 8 -o collapse |
+    cut -f 4 | grep "," >tmp2."$h".m.loci
+done
+cmp <(awk '{{split($1,vs,","); for (i in vs) {{print vs[i]}} }}' tmp2.0.m.loci | sort) 
+    <(awk '{{split($1,vs,","); for (i in vs) {{print vs[i]}} }}' tmp2.1.m.loci | sort) >/dev/null 2>&1 || echo "h0/1 report different merging set"
+{params.sd}/script/mergeBEbed.py <(cat tmp2.?.m.loci) tmp2.?.v0.bed tmp2.0.v1.bed tmp2.1.v1.bed
 
 ### QC, write new bed
 TRfas=( {output.TRfa} )
 TRbeds=( {output.TRbed} )
-
-# asm region QC
-{params.sd}/script/writeBoundaryExpandedBeds.py $params tmp1.?.bed {input.chrsize} tmp2.0.bed tmp2.1.bed
-for hap in 0 1; do 
-    awk 'BEGIN {{ OFS="\t" }} {{ if ($7 ==0 && $8 == 1) {{ print "NA" }} else {{ print $0 }} }}' tmp2.$hap.bed > tmp2.$hap.bed.tmp &&
-    mv tmp2.$hap.bed.tmp tmp2.$hap.bed
-done
-{params.sd}/script/rmNAforBothBeds.py tmp2.?.bed tmp3.0.bed tmp3.1.bed
 
 # ref region QC
 for hap in 0 1; do

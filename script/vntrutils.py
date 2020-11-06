@@ -441,15 +441,23 @@ def KmersLinReg(PBfname, ILfname, out, threshold=10, R2threshold=0, plot=False):
                         title="True.PredictedLength.Sample"+str(nloci) ,fname='.'.join([out,"sum",str(R2threshold)]),
                         outlier="strict", plot=True)
 
-
 def getrectangle(xs, ys):
     return  [xs[0], xs[0], xs[1], xs[1], xs[0]], [ys[0], ys[1], ys[1], ys[0], ys[0]]    
+
+def getkmersindex(kmers):
+    kmersi = {}
+    invalid = 0xffffffffffffffff
+    for i, kmer in enumerate(kmers):
+        if kmer == invalid: continue
+        if kmer not in kmersi:
+            kmersi[kmer] = []
+        kmersi[kmer].append(i)
+    return kmersi
 
 def getcokmersindex(cokmers, kmers0, kmers1):
     kmersi = [{}, {}]
     invalid = 0xffffffffffffffff
-    kmersDB = [kmers0, kmers1]
-    for hap, kmers in enumerate(kmersDB):
+    for hap, kmers in enumerate([kmers0, kmers1]):
         for i, kmer in enumerate(kmers):
             if kmer == invalid: continue
             if kmer not in cokmers: continue
@@ -460,6 +468,26 @@ def getcokmersindex(cokmers, kmers0, kmers1):
 
 def inregion(x, y, region): # region = ([x0,x1), [y0,y1))
     return x >= region[0][0] and x < region[0][1] and y >= region[1][0] and y < region[1][1]
+
+def binarysearch(vec, val):
+    """ind returned satisfies vec[ind-1] <= val < vec[ind]"""
+    nitem = len(vec)
+    if nitem == 0: return 0
+
+    Li = 0
+    Ri = nitem
+    Mi = nitem//2
+    while True:
+        if vec[Mi] > val: # left search
+            if Mi == (Li+Mi)//2: return Mi
+            Ri = Mi
+            Mi = (Li+Mi)//2
+        elif vec[Mi] < val: # right search
+            if Mi == (Ri+Mi)//2: return Mi+1
+            Li = Mi
+            Mi = (Ri+Mi)//2
+        else:
+            return Mi+1
 
 def getbadkmc_bothhaps(indices0, indices1, region0, region1, fs=700, getindices=False):
     s0, e0 = region0
@@ -556,5 +584,5 @@ def visSelfRepeat(seq, ksize=13, figsize=(8,6), dpi=100):
 def visPairedRepeat(seq1, seq2, ksize=21, figsize=(15,4), dpi=100):
     fig, axes = plt.subplots(1, 3, figsize=figsize, dpi=dpi)
     for i, pair in enumerate([(seq1,seq1), (seq1,seq2), (seq2,seq2)]):
-        plotCrossContamination(pair[0], pair[1], ax=axes[i])
+        plotCrossContamination(pair[0], pair[1], ksize=ksize, ax=axes[i])
     plt.show(); plt.close()
