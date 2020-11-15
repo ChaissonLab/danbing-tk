@@ -43,10 +43,11 @@ int main(int argc, const char * argv[]) {
 
     if (argc < 2){
         cerr << endl
-             << "usage: vntr2kmers_thread [-th] [-g] [-p] -k -fs -ntr -o -fa \n"
+             << "usage: vntr2kmers_thread [-th] [-g] [-p] [-m] -k -fs -ntr -o -fa \n"
              << "  -th <INT>        Filter out kmers w/ count below this threshold. Default: 0, i.e. no filtering\n"
              << "  -g               output *graph.kmers for threading-based kmer query.\n"
              << "  -p <FILE>        Prune tr/graph kmers with the given kmers file.\n"
+			 << "  -m <FILE>        Use orthology map to merge haps.\n"
              << "  -k <INT>         Kmer size\n"
              << "  -fs <INT>        Length of flanking sequence in *.tr.fasta.\n"
              << "  -ntr <INT>       Length of desired NTR in *kmers.\n"
@@ -57,9 +58,9 @@ int main(int argc, const char * argv[]) {
         return 0;
     }
     vector<string> args(argv, argv+argc);
-    bool genGraph = false, prune = false;
+    bool genGraph = false, prune = false, usemap = false;
     size_t argi = 1, threshold = 0, nhap = 0, NTRsize, fs, nfile2count, nloci;
-    string pruneFname, outPref;
+    string pruneFname, outPref, mapf;
     vector<string> infnames;
 
     while (argi < argc) {
@@ -72,6 +73,10 @@ int main(int argc, const char * argv[]) {
             assert(tmp);
             tmp.close();
         }
+		else if (args[argi] == "-m") { 
+			usemap = true;
+			mapf = args[++argi];
+		}
         else if (args[argi] == "-k") { ksize = stoi(args[++argi]); }
         else if (args[argi] == "-fs") { fs = stoi(args[++argi]); }
         else if (args[argi] == "-ntr") {
@@ -95,9 +100,12 @@ int main(int argc, const char * argv[]) {
                 inf.close();
             }
             nhap = infnames.size();
-            cerr << "total number of loci in " << infnames[0] << ": ";
-            nloci = countLoci(infnames[0]);
-            cerr << nloci << endl;
+			if (not usemap) {
+				cerr << "Not using orthology map, assuming all fasta files have the same number of loci\n"
+				     << "Total number of loci in " << infnames[0] << ": ";
+				nloci = countLoci(infnames[0]);
+				cerr << nloci << endl;
+			}
         }
         else {
             cerr << "invalid option" << endl;
@@ -105,19 +113,25 @@ int main(int argc, const char * argv[]) {
         }
         ++argi;
     }
-
+	vector<vector<bool>> omap;
+	if (usemap) {
+		readOrthoMap(mapf, omap, nhap);
+		nloci = omap.size();
+		cerr << "Using orthology map, total number of loci: " << nloci << endl;
+	}
+	
 
     // -----
     // open each file and create a kmer database for each loci
     // combine the kmer databases of the same loci across different files
     // -----
     vector<kmerCount_umap> TRkmersDB(nloci);
-    vector<kmerCount_umap> lNTRkmersDB(nloci);
-    vector<kmerCount_umap> rNTRkmersDB(nloci);
+    vector<kmerCount_umap> NTRkmersDB(nloci);
     vector<GraphType> graphDB(nloci);
     for (size_t n = 0; n < nhap; ++n) {
         bool count = n < nfile2count;
         size_t locus = 0;
+		
         string read, line;
         ifstream fin(infnames[n]);
         assert(fin.is_open());
@@ -129,6 +143,8 @@ int main(int argc, const char * argv[]) {
             }
             if (fin.peek() == '>' or fin.peek() == EOF) {
                 if (read != "") {
+					while (not omap[locus][n]) { ++locus; }
+
                     size_t tr_l = fs;
                     size_t tr_r = fs;
                     size_t lntr_l = fs - NTRsize;
@@ -137,8 +153,8 @@ int main(int argc, const char * argv[]) {
                     size_t rntr_r = fs - NTRsize;
 
                     buildNuKmers(TRkmersDB[locus], read, ksize, tr_l, tr_r, count); // (begin_pos, right_flank_size)
-                    buildNuKmers(lNTRkmersDB[locus], read, ksize, lntr_l, lntr_r, count); // bug: one kmer less?
-                    buildNuKmers(rNTRkmersDB[locus], read, ksize, rntr_l, rntr_r, count); // bug: one kmer less?
+                    buildNuKmers(NTRkmersDB[locus], read, ksize, lntr_l, lntr_r, count);
+                    buildNuKmers(NTRkmersDB[locus], read, ksize, rntr_l, rntr_r, count);
                     if (genGraph) {
                         buildKmerGraph(graphDB[locus], read, ksize); // no self loop
                     }
@@ -177,8 +193,7 @@ int main(int argc, const char * argv[]) {
     // -----
     cerr << "writing outputs" << endl;
     writeKmers(outPref + ".tr", TRkmersDB, threshold);
-    writeKmers(outPref + ".lntr", lNTRkmersDB, threshold);
-    writeKmers(outPref + ".rntr", rNTRkmersDB, threshold);
+    writeKmers(outPref + ".ntr", NTRkmersDB, threshold);
     if (genGraph) {
         writeKmers(outPref + ".graph", graphDB);
     }

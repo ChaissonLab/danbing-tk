@@ -59,6 +59,16 @@ void readKmersLocus(kmerCount_umap& kmers, ifstream& fin, size_t& current, size_
     }
 }
 
+void getgmap(vector<vector<bool>>& omap, vector<bool>& gmap, vector<size_t> his) {
+	for (size_t i = 0; i < gmap.size(); ++i) {
+		bool good = false;
+		for (size_t hi : his) {
+			good |= omap[i][hi];
+		}
+		gmap[i] = good;
+	}
+}
+
 int main(int argc, const char * argv[]) {
 
     if (argc < 2) {
@@ -66,7 +76,7 @@ int main(int argc, const char * argv[]) {
              << "  -m       if is '-', the program assumes no missing loci\n"
              << "           full path name for <mapping> is required in any case\n"
              << "  -k       requires PREFIX.TYPE.kmers\n"
-             << "           TYPE = tr, lntr, rntr or graph\n"
+             << "           TYPE = tr, ntr or graph\n"
              << "mapping file format:\n"
              << "   N columns; each column is a genome; order should be the same as specified in -k\n"
              << "   M rows; each row is a locus in the pan-genome (pan locus)\n"
@@ -98,14 +108,15 @@ int main(int argc, const char * argv[]) {
         ++argi;
     }
 
-    nloci = countBedLoci(mapfname);
+	vector<vector<bool>> omap;
+	readOrthoMap(mapfname, omap, 2*ngenome);
+    nloci = omap.size();
     cerr << "# loci in pangenome: " << nloci << endl
          << ngenome << " genomes to merge" << endl;
 
-    vector<string> filetypes = {"tr", "lntr", "rntr", "graph"};
+    vector<string> filetypes = {"tr", "ntr", "graph"};
     for (string& filetype : filetypes) {
-        ifstream mapping(mapfname);
-        assert(mapping);
+        cerr << "merging " << filetype << ".kmers" << endl;
 
         bool graphmode = (filetype == "graph");
         vector<kmerCount_umap> kmersDB;
@@ -113,50 +124,24 @@ int main(int argc, const char * argv[]) {
         if (graphmode) { graphDB.resize(nloci); }
         else { kmersDB.resize(nloci); }
 
-        vector<ifstream> fins(ngenome);
-        vector<size_t> currentloci(ngenome, 0);
-        string tmp;
-        for (size_t ind = 0; ind < ngenome; ++ind) {
-            fins[ind].open(kmerpref[ind] + "." + filetype + ".kmers");
-            assert(fins[ind]);
-            getline(fins[ind], tmp); // skip the first ">" for implementatino purpose
+        for (size_t gi = 0; gi < ngenome; ++gi) {
+			vector<bool> gmap(nloci, 1);
+			if (not nomissing) {
+				getgmap(omap, gmap, vector<size_t>{2*gi,2*gi+1});
+			}
+			if (graphmode) {
+				mapKmersFile2DB(graphDB, kmerpref[gi]+"."+filetype+".kmers", gmap, true);
+			} else {
+				mapKmersFile2DB(kmersDB, kmerpref[gi]+"."+filetype+".kmers", gmap);
+			}
         } 
 
-        cerr << "merging " << filetype << ".kmers" << endl;
-        size_t locus = 0;
-        while (mapping.peek() != EOF) {
-
-            vector<string> locimapping(ngenome);
-            if (nomissing) {
-                getline(mapping, tmp);
-            }
-            else {
-               for (size_t ind = 0; ind < ngenome-1; ++ind) {
-                   getline(mapping, locimapping[ind], '\t');
-               }
-               getline(mapping, locimapping[ngenome-1], '\n');
-            }
-
-            for (size_t ind = 0; ind < ngenome; ++ind) {
-
-                if (locimapping[ind] != ".") {
-                    size_t mloci = nomissing ? locus : stoul(locimapping[ind]);
-                    if (graphmode) {
-                        readGraphLocus(graphDB[locus], fins[ind], currentloci[ind], mloci); // read kmers as GraphType
-                    }
-                    else {
-                        readKmersLocus(kmersDB[locus], fins[ind], currentloci[ind], mloci); // read kmers as unordered_set
-                    }
-                }
-            }
-            ++locus;
-        }
-        mapping.close();
-
-        // write outputs
         cerr << "writing " << filetype << ".kmers" << endl;
-        if (graphmode) { writeKmers(outpref+"."+filetype, graphDB); }
-        else { writeKmers(outpref+"."+filetype, kmersDB); }
+        if (graphmode) { 
+			writeKmers(outpref+"."+filetype, graphDB);
+		} else { 
+			writeKmers(outpref+"."+filetype, kmersDB);
+		}
     }
     
     

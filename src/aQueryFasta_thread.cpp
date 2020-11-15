@@ -792,7 +792,7 @@ int main(int argc, char* argv[]) {
              << "               Discard pe reads if # of matching kmers < [INT]" << endl
 			 << "  -a           Output read alignments. Only work with -g or -gc." << endl
              << "  -k <INT>     Kmer size" << endl
-             << "  -qs <str>    Prefix for *.tr.kmers, *.lntr.kmers, *.rntr.kmers, *.graph.kmers files" << endl
+             << "  -qs <str>    Prefix for *.tr.kmers, *.ntr.kmers, *.graph.kmers files" << endl
              << "  -fqi <str>   Interleaved pair-end fastq file" << endl // deprecated
              << "  -fai <str>   interleaved pair-end fasta file" << endl
              << "  -o <str>     Output prefix" << endl
@@ -810,7 +810,7 @@ int main(int argc, char* argv[]) {
     size_t argi = 1, trim = 0, thread_cth = 0, nproc, Cthreshold;
     float Rthreshold;
     string trPrefix, trFname, fastxFname, outPrefix;
-    ifstream fastxFile, trFile, lntrFile, rntrFile, augFile, baitFile, mapFile;
+    ifstream fastxFile, trFile, ntrFile, augFile, baitFile, mapFile;
     ofstream outfile, baitOut;
     while (argi < argc) {
         if (args[argi] == "-b") {
@@ -839,12 +839,10 @@ int main(int argc, char* argv[]) {
             trPrefix = args[++argi];
             trFname = (trim ? trPrefix+".tr.trim"+std::to_string(trim)+".kmers" : trPrefix+".tr.kmers");
             trFile.open(trFname);
-            lntrFile.open(trPrefix+".lntr.kmers");
-            rntrFile.open(trPrefix+".rntr.kmers"); 
-            assert(trFile and lntrFile and rntrFile);
+            ntrFile.open(trPrefix+".ntr.kmers");
+            assert(trFile and ntrFile);
             trFile.close();
-            lntrFile.close();
-            rntrFile.close();
+            ntrFile.close();
             if (aug) {
                 augFile.open(trPrefix+".tr.aug.kmers");
                 assert(augFile);
@@ -895,7 +893,7 @@ int main(int argc, char* argv[]) {
          << "Rthreshold: " << Rthreshold << endl
          << "threading Cthreshold: " << thread_cth << endl
          << "fastx: " << fastxFname << endl
-         << "query: " << trPrefix << ".(tr/rntr/lntr).kmers"<< endl
+         << "query: " << trPrefix << ".(tr/ntr).kmers"<< endl
          << endl
          << "total number of loci in " << trFname << ": ";
     size_t nloci = countLoci(trFname);
@@ -914,15 +912,16 @@ int main(int argc, char* argv[]) {
     readKmersFile(trKmerDB, kmerDBi, trFname, 0, false); // start from index 0, do not count
     cerr << "# unique kmers in trKmerDB: " << kmerDBi.size() << '\n';
 
-    readKmersFile2DBi(kmerDBi, trPrefix+".lntr.kmers", 0); // start from index 0
-    readKmersFile2DBi(kmerDBi, trPrefix+".rntr.kmers", 0); // start from index 0
+    readKmersFile2DBi(kmerDBi, trPrefix+".ntr.kmers", 0); // start from index 0
     cerr << "# unique kmers in tr/ntrKmerDB: " << kmerDBi.size() << '\n';
 
     if (aug) {
         readKmersFile2DBi(kmerDBi, trPrefix+".tr.aug.kmers", 0); // start from index 0
+    	cerr << "# unique kmers in tr/ntr/augKmerDB: " << kmerDBi.size() << '\n';
     }
-    cerr << "# unique kmers in tr/ntr/augKmerDB: " << kmerDBi.size() << '\n'
-         << "read *.kmers file in " << (time(nullptr) - time1) << " sec." << endl;
+	else {
+	    cerr << "# unique kmers in tr/ntr: " << kmerDBi.size() << '\n';
+	}
 
     if (bait) {
         readKmersFile2DBi(kmerDBi, "baitDB.kmers", nloci); // record kmerDBi only, start from index nloci, do not count
@@ -931,6 +930,7 @@ int main(int argc, char* argv[]) {
     if (threading) {
         readKmersFile2DB(graphDB, trPrefix+".graph.kmers", 0, true); // start from index 0, record counts
     }
+	cerr << "read *.kmers file in " << (time(nullptr) - time1) << " sec." << endl;
 
     if (simmode == 1) {
         msaStats.resize(nloci);

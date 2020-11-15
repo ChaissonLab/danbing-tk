@@ -6,6 +6,7 @@
 #include <string>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <numeric>
 #include <fcntl.h>
 #include <errno.h>
@@ -121,13 +122,11 @@ size_t encodeSeq(string& seq, size_t start, size_t k) { // no extra copy
 size_t getNextKmer(size_t& kmer, size_t beg, string& read, size_t k){
     size_t rlen = read.size();
     if (beg + k > rlen){
-        kmer = 0;
         return rlen;
     }
     size_t validlen = 0;
     while (validlen != k){
         if (beg + k > rlen){
-            kmer = 0;
             return rlen;
         }
         if (find(alphabet, alphabet+4, read[beg + validlen]) == alphabet+4){
@@ -326,6 +325,46 @@ void readKmersFile2DB(T& kmerDB, string fname, size_t startInd = 0, bool count =
     f.close();
 }
 
+// record kmerDB only; use orthology map to assign locus
+template <typename T>
+void mapKmersFile2DB(T& kmerDB, string fname, vector<bool>& omap, bool count=true, bool graph=false, uint16_t threshold=0, uint16_t offset=0) {
+    ifstream f(fname);
+    assert(f);
+    string line;
+    getline(f, line);
+    cerr <<"reading kmers from " << fname << endl;
+	int idx = -1;
+    while (true){
+        if (f.peek() == EOF or f.peek() == '>'){
+            ++idx;
+			while (not omap[idx]) { ++idx; }
+            if (f.peek() == EOF){
+                f.close();
+                break;
+            } else {
+                getline(f, line);
+            }
+        } else {
+            getline(f, line, '\t');
+            size_t kmer = stoul(line);
+            getline(f, line);
+            size_t c = stoul(line);
+
+            if (c < threshold) { continue; }
+            if (count) {
+				if (graph) {
+					kmerDB[idx][kmer] |= c;
+				} else {
+                	kmerDB[idx][kmer] += (c + offset);
+				}
+            } else {
+                kmerDB[idx][kmer] += 0;
+            }
+        }
+    }
+    f.close();
+}
+
 // record kmerIndex_dict kmerDBi only
 void readKmersFile2DBi(kmeruIndex_umap& kmerDBi, string fname, size_t startInd = 0, uint16_t threshold = 0) {
     ifstream f(fname);
@@ -399,7 +438,7 @@ void writeKmers(string outfpref, T& kmerDB, size_t threshold = 0) {
     ofstream fout(outfpref+".kmers");
     assert(fout);
     for (size_t i = 0; i < kmerDB.size(); ++i) {
-        fout << ">locus " << i <<"\n";
+        fout << ">" << i <<"\n";
         for (auto &p : kmerDB[i]) {
             if (p.second < threshold) { continue; }
             fout << p.first << '\t' << (size_t)p.second << '\n';
@@ -412,7 +451,7 @@ void writeKmers(string outfpref, vector<kmerAttr_dict>& kmerAttrDB) {
     ofstream fout(outfpref+".kmers");
     assert(fout);
     for (size_t i = 0; i < kmerAttrDB.size(); ++i) {
-        fout << ">locus " << i <<"\n";
+        fout << ">" << i <<"\n";
         for (auto &p : kmerAttrDB[i]) {
             fout << p.first;
             for (auto &q : p.second) {
@@ -422,6 +461,24 @@ void writeKmers(string outfpref, vector<kmerAttr_dict>& kmerAttrDB) {
         }
     }
     fout.close();
+}
+
+void readOrthoMap(string& mapf, vector<vector<bool>>& omap, size_t nhap) {
+    ifstream fin(mapf);
+    assert(fin);
+    string line;
+    size_t idx = 0;
+    while (getline(fin, line)) {
+        omap.push_back(vector<bool>(nhap));
+        stringstream ss(line);
+        for (size_t i = 0; i < nhap; ++i) {
+            string v;
+            ss >> v;
+            omap[idx][i] = v != ".";
+        }
+        ++idx;
+    }
+    fin.close();
 }
 
 tuple<adj_dict, size_t> buildAdjDict(kmerCount_umap& kmers, size_t k) {
