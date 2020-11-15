@@ -7,22 +7,23 @@ srcdir = config["srcDir"]
 indir = config["inputDir"]
 outdir = config["outputDir"]
 
+genomefile = config["genomefile"]
 gbpair = np.loadtxt(config["pairs"], dtype=object)
 genomes = gbpair[:,0].tolist()
 bams = dict(gbpair)
 haps = ["0", "1"]
-kmerTypes = ["tr", "lntr", "rntr", "graph"]
+kmerTypes = ["tr", "ntr", "graph"]
 
 aligner = config["AsmAligner"]
 ksize = config["ksize"]
-FS = config["flankSize"]
+FS = int(config["flankSize"])
 cth = config["countThreashold"]
 rth = config["ratioThreashold"]
 rstring = f'{rth*100:.0f}'
 thcth = config["threadingCountThreshold"]
-LB = config["sizeLowerBound"]
-UB = config["sizeUpperBound"]
-TRwindow = config["TRwindow"]
+TRwindow = int(config["TRwindow"])
+LB = int(config["sizeLowerBound"])
+UB = TRwindow - FS
 copts = config["clusterOpts"]
 
 
@@ -30,12 +31,10 @@ rule all:
     input:
         chrsize = expand(outdir + "{genome}.{hap}.chrSize", genome=genomes, hap=haps),
         faAln = expand(outdir + "{genome}.{hap}.aln.foo", genome=genomes, hap=haps),
+        lift = expand(outdir + "{genome}/lift.foo", genome=genomes),
         TRfa = expand(outdir + "{genome}.{hap}.tr.fasta", genome=genomes, hap=haps),
-        TRbed = expand(outdir + "{genome}.{hap}.bed", genome=genomes, hap=haps),
         PBkmers = expand(outdir + "{genome}.PB.{kmerType}.kmers", genome=genomes, kmerType=kmerTypes),
         rawPred = expand(outdir + "{genome}.rawLR.pred", genome=genomes),
-        panbed = outdir + "pan.tr.bed",
-        mapping = outdir + "locusMap.tbl",
         panKmers = expand(outdir + "pan.{kmerType}.kmers", kmerType=kmerTypes),
         #panILkmers = expand(outdir + "pan.{genome}.IL.tr.kmers", genome=genomes),
         #pred = expand(outdir + "{genome}.LR.pred", genome=genomes),
@@ -138,16 +137,13 @@ fi
 """
 
 
-rule AnnotateTR:
+rule LiftTR:
     input:
-        fa = expand(indir + "{{genome}}.{hap}.fa", hap=haps),
-        chrsize = expand(outdir + "{{genome}}.{hap}.chrSize", hap=haps),
         faAln = expand(outdir + "{{genome}}.{hap}.aln.foo", hap=haps)
     output:
-        TRfa = expand(outdir + "{{genome}}.{hap}.tr.fasta", hap=haps),
-        TRbed = expand(outdir + "{{genome}}.{hap}.bed", hap=haps)
+        lift = outdir + "{genome}/lift.foo"
     resources:
-        cores = 24,
+        cores = 6,
         mem = lambda wildcards, attempt: 24 + 16*(attempt-1)
     priority: 97
     params:
@@ -158,11 +154,7 @@ rule AnnotateTR:
         aligner = aligner,
         faBam = expand(outdir + "{{genome}}.{hap}.srt.bam", hap=haps),
         faPaf = expand(outdir + "{{genome}}.{hap}.r2a.paf", hap=haps),
-        ksize = ksize,
-        FS = FS,
-        LB = LB,
-        UB = UB,
-        TRwindow = TRwindow
+        LB = LB
     shell:"""
 set -eu
 ulimit -c 20000
@@ -172,8 +164,6 @@ cd {params.od}/{wildcards.genome}
 ### get asm TR regions
 echo "Liftover asm regions"
 
-fas=( {input.fa} )
-chrsizes=( {input.chrsize} )
 bams=( {params.faBam} )
 pafs=( {params.faPaf} )
 cut -f 1-3 {params.refTR} > ref.bed
@@ -196,76 +186,87 @@ else
         awk '$4 == 1' | cut -f 1-3,5-8 >tmp0."$hap".bed
 		bedtools map -c 4,5 -o collapse \
                 -a tmp0.m.bed \
-                -b <(awk 'BEGIN {{OFS="\t"}} {{print $4,$5,$6,$1"/"$2"/"$3,$7}}' tmp0.$hap.bed | sort -k1,1 -k2,2n -k3,3n ) > tmp0.m.bed.tmp &&
+                -b <(awk 'BEGIN {{OFS="\t"}} {{print $4,$5,$6,$1":"$2":"$3,$7}}' tmp0.$hap.bed | sort -k1,1 -k2,2n -k3,3n ) > tmp0.m.bed.tmp &&
 		mv tmp0.m.bed.tmp tmp0.m.bed
 	done
 	awk '$4 != "." && $6 != "." && $4 !~ /,/ && $6 !~ /,/' tmp0.m.bed > tmp0.mc.bed
 	for hap in 0 1; do 
 		cut -f 1,2,3,$(($hap*2+4)),$(($hap*2+5)) tmp0.mc.bed |
-		tr '/' '\t' | awk 'BEGIN {{OFS="\t"}} {{print $4,$5,$6,$1,$2,$3,$7}}' > tmp1.$hap.bed
+        tr ':' '\t' | awk 'BEGIN {{OFS="\t"}} {{print $4,$5,$6,$1,$2,$3,$7}}' > tmp1.$hap.bed
 	done
+    touch lift.foo
 fi
+"""
 
+rule JointTRAnnotation:
+    input:
+        fa = expand(indir + "{genome}.{hap}.fa", genome=genomes, hap=haps),
+        lift = expand(outdir + "{genome}/lift.foo", genome=genomes)
+    output:
+        mapping = outdir + "OrthoMap.v2.tsv",
+        TRfa = expand(outdir + "{genome}.{hap}.tr.fasta", genome=genomes, hap=haps),
+    resources:
+        cores = 6,
+        mem = lambda wildcards, attempt: 40 + 8*(attempt-1)
+    priority: 96
+    params:
+        copts = copts,
+        sd = srcdir,
+        od = outdir,
+        refTR = config["refTR"],
+        ksize = ksize,
+        FS = FS,
+        LB = LB,
+        UB = UB,
+        TRwindow = TRwindow,
+        gf = genomefile,
+        genomes = genomes
+    shell:"""
+set -eu
+ulimit -c 20000
+cd {params.od}
 
-### TR boundary expansion
-echo "Expand TR boundary"
-
-nloci=$(cat tmp1.0.bed | wc -l)
-params="{resources.cores} {params.ksize} {params.FS} {params.UB} {params.TRwindow}"" ""$nloci"
-{params.sd}/script/prepareIndividualDatasets.py $params {input.fa} tmp1.?.bed
-{params.sd}/script/individualExpansion.py $params $nloci
-{params.sd}/script/prepareJointDatasets.py $params $nloci
-{params.sd}/script/jointExpansion.py $params $nloci
-{params.sd}/script/prepareQCDatasets.py $params $nloci
-{params.sd}/script/QC.py $params $nloci
-{params.sd}/script/writeBEbed.py {resources.cores} tmp1.?.bed tmp2.0.v0.bed tmp2.1.v0.bed
-for h in 0 1; do
-    awk 'BEGIN {{OFS="\t"}} {{print $0, NR-1}}' tmp2."$h".v0.bed |
-    sort -k1,1 -k2,2n -k3,3n |
-    bedtools merge -c 8 -o collapse |
-    cut -f 4 | grep "," >tmp2."$h".m.loci
+echo "Generating panbed"
+cut -f 1-3 {params.refTR} >pan.tr.mbe.v0.bed
+for g in {params.genomes}; do 
+    bedtools map -c 1 -o count -a pan.tr.mbe.v0.bed -b <(cut -f 4-6 $g/tmp1.0.bed) >pan.tr.mbe.v0.bed.tmp && 
+    mv pan.tr.mbe.v0.bed.tmp pan.tr.mbe.v0.bed
 done
-cmp <(awk '{{split($1,vs,","); for (i in vs) {{print vs[i]}} }}' tmp2.0.m.loci | sort) 
-    <(awk '{{split($1,vs,","); for (i in vs) {{print vs[i]}} }}' tmp2.1.m.loci | sort) >/dev/null 2>&1 || echo "h0/1 report different merging set"
-{params.sd}/script/mergeBEbed.py <(cat tmp2.?.m.loci) tmp2.?.v0.bed tmp2.0.v1.bed tmp2.1.v1.bed
-
-### QC, write new bed
-TRfas=( {output.TRfa} )
-TRbeds=( {output.TRbed} )
-
-# ref region QC
-for hap in 0 1; do
-    bed4=tmp4.$hap.bed
-    bed5=tmp5.$hap.bed
-    loci0=tmp0.loci
-    loci1=tmp1.loci
-
-    # check no overlap between ref regions
-    awk 'BEGIN {{OFS="\t"}} {{print $4, $5, $6, NR-1, $1, $2, $3}}' tmp3.$hap.bed > $bed4
-    bedtools merge -c 1,4 -o count,first -i $bed4 | awk '$4 != 1' | cut -f 5 > $loci0
-    {params.sd}/script/rmLinebyIndFile.py $loci0 $bed4 > $bed5
-
-    # check one-to-one mapping for each locus for each genome
-    bedtools map -c 1 -o count -a $bed5 -b {params.refTR} | awk '$8 != 1' | cut -f 4 >> $loci0
-    bedtools map -c 1,4 -o count,collapse -a <(cut -f 1-3 {params.refTR}) -b $bed5 | awk '$4 > 1' | cut -f 5 >> $loci0
-    sort -n $loci0 | uniq > $loci1 # ref-ordered asm locus
-
-    {params.sd}/script/rmLinebyIndFile.py $loci1 $bed4 | sort -k1,1 -k2,2n -k3,3n |
-    awk 'BEGIN {{OFS="\t"}} {{print $5, $6, $7, $1, $2, $3}}' > ${{TRbeds[$hap]}}
-done
-cd ..
+{params.sd}/script/preMBE.py {params.gf} pan.tr.mbe.v0.bed
+{params.sd}/script/multiBoundaryExpansion.py 
+{params.sd}/script/writeMBEbed.py
+hi=0
+for g in {params.genomes}; do
+    for h in 0 1; do
+        echo ">""$g"".""$h"
+        cut -f $((4+4*hi))-$((6+4*hi)) pan.tr.mbe.v1.bed |
+        awk 'BEGIN {{OFS="\t"}} {{print $0, NR-1}}' |
+        grep -v "None" |
+        sort -k1,1 -k2,2n -k3,3n |
+        bedtools merge -d 700 -c 4 -o collapse |
+        cut -f 4 | grep ","
+        ((++hi))
+    done
+done >mbe.m0.loci
+{params.sd}/script/mergeMBEbed.py 
 
 ### write fasta
-for hap in 0 1; do
-    awk 'BEGIN {{OFS="\t"}} {{
-        $2=$2-700
-        $3=$3+700
-        print $0
-    }}' ${{TRbeds[$hap]}} |
-    {params.sd}/script/SelectRegions.py /dev/stdin ${{fas[$hap]}} /dev/stdout | 
-    awk '{{if ($1 ~ />/) {{print}} else {{print toupper($0)}} }}' > ${{TRfas[$hap]}}
+echo "Fetching TR+flank"
+hi=0
+for g in {params.genomes}; do
+    for h in 0 1; do
+        cut -f $((4+4*hi))-$((6+4*hi)) pan.tr.mbe.v2.bed |
+        grep -v "None" |
+        awk 'BEGIN {{OFS="\t"}} {{
+            $2=$2-700
+            $3=$3+700
+            print $0
+        }}' |
+        {params.sd}/script/SelectRegions.py /dev/stdin "$g"."$h".fa /dev/stdout | 
+        awk '{{if ($1 ~ />/) {{print}} else {{print toupper($0)}} }}' >"$g"."$h".tr.fasta
+        ((++hi))
+    done
 done
-rm -f {wildcards.genome}/*.dat
 """
 
 
@@ -273,13 +274,14 @@ rule GenRawGenomeGraph:
     input:
         TRfa = expand(outdir + "{{genome}}.{hap}.tr.fasta", hap=haps),
         ILbam = lambda wildcards: bams[wildcards.genome],
+        mapping = outdir + "OrthoMap.v2.tsv",
     output:
         rawPBkmers = expand(outdir + "{{genome}}.rawPB.{kmerType}.kmers", kmerType=kmerTypes),
         rawILkmers = outdir + "{genome}.rawIL.tr.kmers"
     resources:
         cores = 16,
         mem = lambda wildcards, attempt: 20 + 20*(attempt-1)
-    priority: 96
+    priority: 95
     params:
         copts = copts,
         sd = srcdir,
@@ -290,12 +292,13 @@ rule GenRawGenomeGraph:
         rth = rth,
         rstring = rstring,
         thcth = thcth,
+        hi = lambda wildcards: 2*genomes.index(wildcards.genome)
     shell:"""
 set -eu
 ulimit -c 20000
 cd {params.od}
 
-{params.sd}/bin/vntr2kmers_thread -g -k {params.ksize} -fs {params.FS} -ntr {params.FS} -o {wildcards.genome}.rawPB -fa 2 {input.TRfa}
+{params.sd}/bin/vntr2kmers_thread -g -m <(cut -f $(({params.hi}+1)),$(({params.hi}+2)) {input.mapping}) -k {params.ksize} -fs {params.FS} -ntr {params.FS} -o {wildcards.genome}.rawPB -fa 2 {input.TRfa}
 
 samtools fasta -@2 -n {input.ILbam} |
 {params.sd}/bin/bam2pe -fai /dev/stdin |
@@ -312,7 +315,7 @@ rule EvalRawGenomeGraph:
     resources:
         cores = 12,
         mem = 8
-    priority: 95
+    priority: 94
     params:
         copts = copts,
         sd = srcdir,
@@ -329,61 +332,34 @@ cd {params.od}
 rule GenPrunedGenomeGraph:
     input:
         rawILkmers = outdir + "{genome}.rawIL.tr.kmers",
-        TRfa = expand(outdir + "{{genome}}.{hap}.tr.fasta", hap=haps)
+        TRfa = expand(outdir + "{{genome}}.{hap}.tr.fasta", hap=haps),
+        mapping = outdir + "OrthoMap.v2.tsv",
     output:
         PBkmers = expand(outdir + "{{genome}}.PB.{kmerType}.kmers", kmerType=kmerTypes)
     resources:
         cores = 2,
         mem = 10
-    priority: 94
+    priority: 93
     params:
         copts = copts,
         sd = srcdir,
         od = outdir,
         ksize = ksize,
-        FS = FS
+        FS = FS,
+        hi = lambda wildcards: 2*genomes.index(wildcards.genome)
     shell:"""
 cd {params.od}
 ulimit -c 20000
 
 awk '$1 ~ />/ || $2 == 0' {input.rawILkmers} |
-{params.sd}/bin/vntr2kmers_thread -g -p /dev/stdin -k {params.ksize} -fs {params.FS} -ntr {params.FS} -o {wildcards.genome}.PB -fa 2 {input.TRfa}
-"""
-
-
-rule GenPanBed:
-    input:
-        TRbed = expand(outdir + "{genome}.0.bed", genome=genomes)
-    output:
-        panbed = outdir + "pan.tr.bed",
-        mapping = outdir + "locusMap.tbl"
-    resources:
-        cores = 2,
-        mem = 4
-    priority: 93
-    params:
-        copts = copts,
-        od = outdir,
-        refTR = config["refTR"],
-        genomes = genomes
-    shell:"""
-set -eu
-cd {params.od}
-
-awk 'BEGIN {{OFS="\t"}} {{$4=$4"\t"(NR-1); print $0}}' {params.refTR} > {output.panbed}
-for g in {params.genomes}; do
-    bedtools map -c 4 -o collapse -a {output.panbed} -b <(awk 'BEGIN {{OFS="\t"}} {{print $4, $5, $6, NR-1}}' $g.0.bed) > {output.panbed}.tmp
-    mv {output.panbed}.tmp {output.panbed}
-done
-
-cut -f 6- {output.panbed} > {output.mapping}
+{params.sd}/bin/vntr2kmers_thread -g -p /dev/stdin -m <(cut -f $(({params.hi}+1)),$(({params.hi}+2)) {input.mapping}) -k {params.ksize} -fs {params.FS} -ntr {params.FS} -o {wildcards.genome}.PB -fa 2 {input.TRfa}
 """
 
 
 rule GenPanGenomeGraph:
     input:
         PBkmers = expand(outdir + "{genome}.PB.{kmerType}.kmers", genome=genomes, kmerType=kmerTypes),
-        mapping = outdir + "locusMap.tbl"
+        mapping = outdir + "OrthoMap.v2.tsv"
     output:
         panKmers = expand(outdir + "pan.{kmerType}.kmers", kmerType=kmerTypes)
     resources:
@@ -394,7 +370,7 @@ rule GenPanGenomeGraph:
         copts = copts,
         sd = srcdir,
         od = outdir,
-        kmerpref = " ".join([f'{outdir}/{g}.PB' for g in genomes])
+        kmerpref = " ".join([f'{g}.PB' for g in genomes])
     shell:"""
 cd {params.od}
 ulimit -c 20000
