@@ -172,7 +172,7 @@ def read2kmers(read, k, leftflank=0, rightflank=0, dtype='uint64', canonical=Tru
     it = iter(range(beg, rlen-k-rightflank+1))
     for i in it:
         canonicalkmer = rckmer if kmer > rckmer else kmer
-        kmers[i] = canonicalkmer if canonical else kmer
+        kmers[i-beg] = canonicalkmer if canonical else kmer
 
         if i + k >= rlen: return kmers
         if read[i + k] not in baseinv:
@@ -516,19 +516,19 @@ def getbadkmc_bothhaps(indices0, indices1, region0, region1, fs=700, getindices=
     
     return (badkmc, badindices) if getindices else badkmc
 
-def plotCrossContamination(ctg0, ctg1, locus=None, ksize=21, ax=None, zoomoutsize=(0,0), offset=(0,0), 
-                           silent=False, showcontam=True, reportcontam=False):
+def plotCrossContamination(ctg0, ctg1, ksize=21, FS=700, ax=None, zoomoutsize=(0,0), offset=(0,0), 
+                           silent=False, showcontam=True, reportcontam=False, reportbad=False):
     """plot loci w/ primary contamination only"""
     
-    start0, end0 = 700, len(ctg0)-700
-    start1, end1 = 700, len(ctg1)-700
+    start0, end0 = FS, len(ctg0)-FS
+    start1, end1 = FS, len(ctg1)-FS
     TRsize0 = end0 - start0
     TRsize1 = end1 - start1
 
-    relpos0 = (700+zoomoutsize[0]-offset[0], end0+700-start0+zoomoutsize[0]-offset[0])
-    relpos1 = (700+zoomoutsize[1]-offset[1], end1+700-start1+zoomoutsize[1]-offset[1])
-    kmers0 = read2kmers(ctg0[start0-700-zoomoutsize[0]+offset[0]: end0+700+zoomoutsize[0]+offset[0]], ksize)
-    kmers1 = read2kmers(ctg1[start1-700-zoomoutsize[1]+offset[1]: end1+700+zoomoutsize[1]+offset[1]], ksize)
+    relpos0 = (start0, end0-ksize+1)
+    relpos1 = (start1, end1-ksize+1)
+    kmers0 = read2kmers(ctg0, ksize, leftflank=-zoomoutsize[0]+offset[0], rightflank=ksize-1-zoomoutsize[0]-offset[0])
+    kmers1 = read2kmers(ctg1, ksize, leftflank=-zoomoutsize[1]+offset[1], rightflank=ksize-1-zoomoutsize[1]-offset[1])
     cokmers = (set(kmers0) & set(kmers1)) - set([0xffffffffffffffff])
     cokmersi = getcokmersindex(cokmers, kmers0, kmers1)
 
@@ -552,33 +552,36 @@ def plotCrossContamination(ctg0, ctg1, locus=None, ksize=21, ax=None, zoomoutsiz
             for i in badindices[0]: badxs.append(i)
             for j in badindices[1]: badys.append(j)
                 
-    if reportcontam:
-        print(f"{len(badxs)},{len(badys)}", end="; ")
-
     if ax is not None:
         if not silent:
-            ax.set_title("{} contam={}, {:.1f}%".format(locus, badkmc, 100*np.sum(badkmc)/(TRsize0+TRsize1)))
+            ax.set_title("contam={}, {:.1f}%".format(badkmc, 100*np.sum(badkmc)/(TRsize0+TRsize1)))
 
         # TR + NTR region
-        xlines, ylines = getrectangle((relpos0[0]-700, relpos0[1]+700), relpos1)
+        xlines, ylines = getrectangle((relpos0[0]-FS, relpos0[1]+FS), relpos1)
         ax.plot(xlines, ylines, '-r', linewidth=1, alpha=0.8)
-        xlines, ylines = getrectangle(relpos0, (relpos1[0]-700, relpos1[1]+700))
+        xlines, ylines = getrectangle(relpos0, (relpos1[0]-FS, relpos1[1]+FS))
         ax.plot(xlines, ylines, '-r', linewidth=1, alpha=0.8)
 
         ax.scatter(xs, ys, c='k', s=0.1, linewidths=0)
         if showcontam:
             ax.plot(badxs, badys, '.r')
 
-        xmax = end0 - start0 + 1400 + 2*zoomoutsize[0]
-        ymax = end1 - start1 + 1400 + 2*zoomoutsize[1]
+        xmax = end0 - start0 + 2*FS + 2*zoomoutsize[0]
+        ymax = end1 - start1 + 2*FS + 2*zoomoutsize[1]
         ax.set_xlim((0, xmax))
         ax.set_ylim((0, ymax))
         ax.set_yticks((0, ymax//500*500))
         ax.set_yticklabels([0, ymax//500*500], rotation=90)
 
+    if reportbad:
+        return np.any(badkmc)
+
+    if reportcontam:
+        return badxs, badys
+
 def visSelfRepeat(seq, ksize=13, figsize=(8,6), dpi=100):
     fig, ax = plt.subplots(1,1, figsize=figsize, dpi=dpi)
-    plotCrossContamination(seq, seq, locus=None, ksize=ksize, ax=ax, zoomoutsize=(0,0), offset=(0,0), silent=False, showcontam=True, reportcontam=True)
+    plotCrossContamination(seq, seq, ksize=ksize, ax=ax, zoomoutsize=(0,0), offset=(0,0), silent=False, showcontam=True, reportcontam=True)
     plt.show(); plt.close()
 
 def visPairedRepeat(seq1, seq2, ksize=21, figsize=(15,4), dpi=100):

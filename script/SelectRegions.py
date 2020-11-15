@@ -14,7 +14,7 @@ outFile=open(sys.argv[3],'w')
 
 for line in bedFile:
     vals = line.split()
-    outFile.write(">"+"/".join(vals[3:])+"\n")
+    outFile.write(">"+":".join(vals)+"\n")
     if vals[0] == "NA": # NF does not have to be 6
         continue
     elif int(vals[1]) > int(vals[2]) or int(vals[1]) < 0 or int(vals[2]) < 0:
