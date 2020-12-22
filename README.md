@@ -61,7 +61,7 @@ danbing-tk -gc 50 -k 21 -qs pan -fai /dev/stdin -o $OUT_PREFIX \
            -p 24 -cth 45 -rth 0.5
 ```
 
-`danbing-tk align` takes ~85 cpu hours to genotype a 30x SRS sample.
+`danbing-tk align` takes ~42 cpu hours to genotype a 30x SRS sample.
 
 **Important note:** If outputs of `danbing-tk align` are intended to be used directly for downstream analyses e.g. association tests, please check the [distribution of LSB](#distribution-of-lsb) section below before running.
 
