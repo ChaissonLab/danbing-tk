@@ -17,8 +17,9 @@ for line in bedFile:
     outFile.write(">"+":".join(vals)+"\n")
     if vals[0] == "NA": # NF does not have to be 6
         continue
-    elif int(vals[1]) > int(vals[2]) or int(vals[1]) < 0 or int(vals[2]) < 0:
-        print("valError:\t", vals)
+    elif int(vals[1]) > int(vals[2]) or int(vals[1]) < 0 or int(vals[2]) < 0: # XXX use chrsize info, instead of only checking start pos
+        # XXX print empty seq or not
+        print("valError:\t", vals, file=sys.stderr)
         continue
     else:
 #        sys.stderr.write("/".join(vals[0:3])+"\n")
