@@ -32,13 +32,27 @@ def parseMergeSet():
             if line[0] == ">":
                 continue
             seq = sorted([int(v) for v in line.rstrip().split(",")])
+            skip = seq[0] in bs # check if good v reported by this hap is bad in another hap
             for i in range(1,len(seq)):
+                skip |= seq[i] in bs
                 if seq[i] != seq[i-1] + 1:
                     for v in seq:
+                        if v in v2si: # check if bad v reported by this hap is good in another hap
+                            si_ = v2si[v]
+                            ms[si_] = None
+                            v2si.pop(v)
                         bs.add(v)
                     print(f"bad {seq}")
                     break
             else:
+                if skip:
+                    for v in seq:
+                        bs.add(v)
+                        if v in v2si: # check if v was once reported good
+                            si_ = v2si[v]
+                            ms[si_] = None
+                            v2si.pop(v)
+                    continue
                 sis = set() # set index of existing v
                 for v in seq:
                     if v in v2si:
@@ -56,11 +70,14 @@ def parseMergeSet():
                         v2si[v] = si_
                 else:
                     assert False, f"{seq} indicates merging across sets defined in {ms}"
+    ms = np.array(ms, dtype=object)
+    ms = ms[ms!=None].tolist()
+    for i1s_ in ms:
+        assert len(i1s_ & bs) == 0
     return ms, bs
 
 def getdist(bed):
     """Get the distnace between two bed entries. Return 0 if overlapping"""
-    assert bed.shape[0] == 2, f"can only handle merging of two regions"
     if int(bed[0,0]) < int(bed[1,0]): # no inversion
         return max(0, int(bed[1,0]) - int(bed[0,1]))
     else:
@@ -75,6 +92,10 @@ def writeBed_MergeMBE():
     i1togood = {}
     qcb = [] # QC bad
     for i1s_ in ms:
+        if len(i1s_) > 2:
+            qcb.append(i1s_)
+            print(f"merging more than two regions: {i1s_}")
+            continue
         i1s = sorted(list(i1s_))
         dist = np.full(2*ng, np.nan)
         for hi in range(2*ng):
@@ -95,6 +116,7 @@ def writeBed_MergeMBE():
         else:
             i1togood[i1s[0]] = good # record hap to remove
     for i1s_ in qcb:
+        assert i1s_ in ms
         ms.remove(i1s_)
         for i1 in i1s_:
             bs.add(i1)
@@ -107,10 +129,13 @@ def writeBed_MergeMBE():
         
     # fill v2 bed
     nloci1, _ = panbed.shape
+    for i1s_ in ms:
+        assert len(i1s_ & bs) == 0
     pv2bed = np.full([nloci1-nmi+len(ms)-len(bs), 3+2*ng*4], None, dtype=object)
     nloci2, _ = pv2bed.shape
     i2toi1 = set(list(range(nloci1))) - mis - bs | set([sorted(list(i1s_))[0] for i1s_ in ms])
     i2toi1 = sorted(list(i2toi1)) # map v2 index to v1
+    assert nloci2 == len(i2toi1)
     i1toi2 = np.full(nloci1, None, dtype=object)
     i1toi2[i2toi1] = np.arange(nloci2) # map v1 index to v2
     pv2bed = panbed[i2toi1]
