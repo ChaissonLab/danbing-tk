@@ -106,10 +106,8 @@ class expStat:
 def gwMBE(target=None):
     nloci, ng = panmap.shape
     out = {}
-    indices = np.nonzero(np.sum(panmap, axis=1)>1)[0] if target is None else target
+    indices = np.nonzero(np.sum(panmap, axis=1)>0)[0] if target is None else target
     for idx in indices:
-        if idx % (nloci//1000) == 0:
-            print(".", end="", flush=True)
         nexpanded, nresolved = 0, 0
         expanded, failed, npos = multipleBoundaryExpansion(idx2seq, idx2pos, idx, TRWINDOW-FS, ksize=KSIZE)
         es = []
