@@ -6,11 +6,16 @@ configfile: "leaveOneOut.json"
 srcdir = os.path.dirname(workflow.snakefile)
 outdir = config["outputDir"]
 pdir = config["pangenomeDir"]
-pindir = config["pangenomeInputDir"]
+#pindir = config["pangenomeInputDir"] /home/cmb-17/mjc/vntr_genotyping/rpgg_k21_84k/input/
 
-genomes = np.loadtxt(config["genomes"], dtype=object).reshape(-1).tolist()
-LOOgenomes = np.loadtxt(config["LOOgenomes"], dtype=object).reshape(-1).tolist()
-kmerTypes = ["tr", "lntr", "rntr", "graph"]
+genomefile = config["genomefile"]
+gbpair = np.loadtxt(config["pairs"], dtype=object)
+genomes = gbpair[:,0].tolist()
+bams = dict(gbpair)
+LOOgenomes = np.loadtxt(config["LOOgenomefile"], dtype=object).tolist()
+LOOmask = np.isin(genomes, LOOgenomes)
+kmerTypes = ["tr", "ntr", "graph"]
+covbed = config["covbed"]
 
 ksize = config["ksize"]
 cth = config["countThreashold"]
@@ -24,44 +29,65 @@ localrules: all, all2LOO
 
 rule all:
     input:
-        mapping = outdir + "locusMap.tbl",
-        LOOPBkmers = expand(outdir + "LOO.{genome}.PB.{kmerType}.kmers", genome=LOOgenomes, kmerType=kmerTypes),
-        LOOILkmers = expand(outdir + "LOO.{genome}.IL.tr.kmers", genome=LOOgenomes),
-        panILkmers = expand(outdir + "pan.{genome}.IL.tr.kmers", genome=genomes),
-        mappedILkmers = expand(outdir + "{genome}.mappedIL.tr.kmers", genome=genomes),
+        mapping = outdir + "OrthoMap.v2.tsv",
+        extFoo = expand(outdir + "checkpoint/{genome}.extract.foo", genome=genomes),
+        panGTfoo = expand(outdir + "checkpoint/{genome}.pan.gt.foo", genome=genomes),
+        LOOGTfoo = expand(outdir + "checkpoint/{genome}.LOO.gt.foo", genome=LOOgenomes),
+        #LOOPBkmers = expand(outdir + "LOO.{genome}.PB.{kmerType}.kmers", genome=LOOgenomes, kmerType=kmerTypes),
+        #LOOILkmers = expand(outdir + "LOO.{genome}.IL.tr.kmers", genome=LOOgenomes),
+        #panILkmers = expand(outdir + "pan.{genome}.IL.tr.kmers", genome=genomes),
+        #mappedILkmers = expand(outdir + "{genome}.mappedIL.tr.kmers", genome=genomes),
         pred = expand(outdir + "{genome}.LR.pred", genome=genomes),
-        pickle = outdir + "analysis/step1_results.pickle",
-        relErr = outdir + "analysis/rel_err.txt",
+        #pickle = outdir + "analysis/step1_results.pickle",
+        #relErr = outdir + "analysis/rel_err.txt",
 
 
 rule all2LOO:
     input:
-        mapping = pdir + "locusMap.tbl",
+        mapping = pdir + "OrthoMap.v2.tsv",
     output:
-        mapping = outdir + "locusMap.tbl",
+        mapping = outdir + "OrthoMap.v2.tsv",
+        #LOOmap = expand(outdir + "LOO.{genome}.mapping", genome=LOOgenomes),
     resources:
         cores = 1,
         mem = 4,
     priority: 100
     params:
-        LC = config["LOOconf"],
+        m = LOOmask,
+        lgs = LOOgenomes,
+        od = outdir,
     run:
         import numpy as np
+        lgs = params.lgs
+        od = params.od
         tbl = np.loadtxt(input.mapping, dtype=object)
-        mask = np.array([int(s) for s in str(params.LC)], dtype=bool)
-        np.savetxt(output.mapping, tbl[:,mask], fmt='%s', delimiter='\t')
+        nloci, nh = tbl.shape
+        m = np.repeat(params.m, 2)
+        tbl = tbl[:,m]
+        np.savetxt(output.mapping, tbl, fmt='%s', delimiter='\t')
+        #ncol = len(lgs)
+        #out = np.full([nloci, ncol], ".", dtype=object)
+        #for i in range(ncol):
+        #    lm = np.logical_or(tbl[:,2*i] != ".", tbl[:,2*i+1] != ".")
+        #    out[lm,i] = np.nonzero(lm)[0]
+        #    out[~lm,i] = "."
+        #for i in range(ncol):
+        #    g = lgs[i]
+        #    om = np.ones(ncol, dtype=bool)
+        #    om[i] = False
+        #    np.savetxt(f"{od}/LOO.{g}.mapping", out[:,om], fmt='%s', delimiter="\t")
 
 
 rule GenLOOpgg:
     input:
         PBkmers = expand(pdir + "{genome}.PB.{kmerType}.kmers", genome=LOOgenomes, kmerType=kmerTypes),
-        mapping = outdir + "locusMap.tbl",
+        #mapping = outdir + "OrthoMap.v2.tsv",
+        #LOOmap = outdir + "LOO.{genome}.mapping",
     output:
         LOOPBkmers = expand(outdir + "LOO.{{genome}}.PB.{kmerType}.kmers", kmerType=kmerTypes),
-        LOOmap = temp(outdir + "tmp.{genome}.mapping"),
     resources:
         cores = 2,
-        mem = 8,
+        mem = 20,
     priority: 99
     params:
         copts = copts,
@@ -73,23 +99,56 @@ rule GenLOOpgg:
 cd {params.od}
 ulimit -c 20000
 
-awk -v gi={params.LOOgi} '{{ $(gi+1)=""; print }}' {input.mapping} | awk 'BEGIN {{OFS="\t"}} {{$1=$1; print}}' > {output.LOOmap}
-{params.sd}/bin/genPanKmers -o LOO.{wildcards.genome}.PB -m {output.LOOmap} -k {params.kmerpref}
+{params.sd}/bin/genPanKmers -o LOO.{wildcards.genome}.PB -m - -k {params.kmerpref}
 """
+
+
+rule Extract:
+    input:
+        panKmers = expand(pdir + "pan.{kmerType}.kmers", kmerType=kmerTypes),
+        ILbam = lambda wildcards: bams[wildcards.genome],
+    output:
+        ofoo = outdir + "checkpoint/{genome}.extract.foo",
+    resources:
+        cores = 32,
+        mem = lambda wildcards, attempt: 80 + 20*(attempt-1)
+    priority: 98
+    params:
+        copts = copts,
+        sd = srcdir,
+        od = outdir,
+        pd = pdir,
+        ksize = ksize,
+        cth = cth,
+        rth = rth,
+        rstring = rstring,
+    shell:"""
+set -eu 
+ulimit -c 20000
+cd {params.od}
+mkdir -p checkpoint
+
+samtools fasta -@2 -n {input.ILbam} |
+{params.sd}/bin/bam2pe -fai /dev/stdin |
+{params.sd}/bin/danbing-tk -e 1 -k {params.ksize} -qs {params.pd}/pan -fai /dev/stdin \
+                           -p {resources.cores} -cth {params.cth} -rth {params.rth} | gzip >{wildcards.genome}.e{params.cth}.fa.gz
+touch {output.ofoo}
+"""
+
 
 
 rule LOOGenotying:
     input:
+        ifoo = outdir + "checkpoint/{genome}.extract.foo",
         LOOPBkmers = expand(outdir + "LOO.{{genome}}.PB.{kmerType}.kmers", kmerType=kmerTypes),
-        ILbam = pindir + "{genome}.final.cram",
-        ILbai = pindir + "{genome}.final.cram.crai",
     output:
-        LOOILkmers = outdir + "LOO.{genome}.IL.tr.kmers",
+        ofoo = outdir + "checkpoint/{genome}.LOO.gt.foo"
     resources:
-        cores = 19,
+        cores = 32,
         mem = lambda wildcards, attempt: 20 + 20*(attempt-1),
-    priority: 98
+    priority: 97
     params:
+        fagz = outdir + "{genome}.e" + str(cth) + ".fa.gz",
         copts = copts,
         sd = srcdir,
         od = outdir,
@@ -103,24 +162,23 @@ set -eu
 ulimit -c 20000
 cd {params.od}
 
-samtools fasta -@2 -n {input.ILbam} |
-{params.sd}/bin/bam2pe -fai /dev/stdin |
+zcat {params.fagz} |
 {params.sd}/bin/danbing-tk -gc {params.thcth} -k {params.ksize} -qs LOO.{wildcards.genome}.PB -fai /dev/stdin -o LOO.{wildcards.genome}.IL -p {resources.cores} -cth {params.cth} -rth {params.rth}
+touch {output.ofoo}
 """
 
 
 rule GenotypeSamples:
     input:
-        panKmers = expand(pdir + "pan.{kmerType}.kmers", kmerType=kmerTypes),
-        ILbam = pindir + "{genome}.final.cram",
-        ILbai = pindir + "{genome}.final.cram.crai",
+        ifoo = outdir + "checkpoint/{genome}.extract.foo",
     output:
-        panILkmers = outdir + "pan.{genome}.IL.tr.kmers",
+        ofoo = outdir + "checkpoint/{genome}.pan.gt.foo"
     resources:
-        cores = 17,
+        cores = 32,
         mem = lambda wildcards, attempt: 20 + 20*(attempt-1)
     priority: 97
     params:
+        fagz = outdir + "{genome}.e" + str(cth) + ".fa.gz",
         copts = copts,
         sd = srcdir,
         od = outdir,
@@ -135,19 +193,19 @@ set -eu
 ulimit -c 20000
 cd {params.od}
 
-samtools fasta -@2 -n {input.ILbam} |
-{params.sd}/bin/bam2pe -fai /dev/stdin |
+zcat {params.fagz} |
 {params.sd}/bin/danbing-tk -gc {params.thcth} -k {params.ksize} -qs {params.pd}/pan -fai /dev/stdin -o pan.{wildcards.genome}.IL -p {resources.cores} -cth {params.cth} -rth {params.rth}
+touch {output.ofoo}
 """
 
 
 rule EvalGenotypeQuality:
     input:
-        mapping = pdir + "locusMap.tbl",
+        #mapping = pdir + "OrthoMap.v2.tsv",
         panILkmers = outdir + "pan.{genome}.IL.tr.kmers",
         PBkmers = pdir + "{genome}.PB.tr.kmers",
     output:
-        mappedILkmers = outdir + "{genome}.mappedIL.tr.kmers",
+        #mappedILkmers = outdir + "{genome}.mappedIL.tr.kmers",
         pred = outdir + "{genome}.LR.pred",
     resources:
         cores = 16,
@@ -163,14 +221,13 @@ set -eu
 ulimit -c 20000
 cd {params.od}
 
-{params.sd}/bin/mapkmers  {input.mapping}  {params.gi}  {input.panILkmers}  {input.PBkmers}  {wildcards.genome}.mappedIL.tr
-{params.sd}/script/kmers.linreg.py --mode invalid --R2threshold -2 {input.PBkmers} {output.mappedILkmers} {wildcards.genome}.LR
+{params.sd}/script/kmers.linreg.py --mapkmer --mode invalid --R2threshold -2 {input.PBkmers} {input.panILkmers} {wildcards.genome}.LR
 """
 
 
 rule PredictLength:
     input:
-        mapping = outdir + "locusMap.tbl",
+        mapping = outdir + "OrthoMap.v2.tsv",
         LOOILkmers = expand(outdir + "LOO.{genome}.IL.tr.kmers", genome=LOOgenomes),
         panILkmers = expand(outdir + "pan.{genome}.IL.tr.kmers", genome=genomes),
         pred = expand(outdir + "{genome}.LR.pred", genome=genomes),
@@ -186,8 +243,8 @@ rule PredictLength:
         sd = srcdir,
         od = outdir,
         pd = pdir,
-        gf = config["genomes"],
-        covbed = config["covbed"],
+        gf = genomes,
+        covbed = covbed,
         LC = config["LOOconf"],
         SC = config["sampleConf"],
         badg = f'--badg {config["badgenome"]}' if config["badgenome"] else "",
@@ -199,7 +256,11 @@ mkdir -p {params.od}/analysis
 cd {params.od}
 
 nloci=$(cat {input.mapping} | wc -l)
-{params.sd}/script/kmc2length.py --genome {params.gf} --nloci $nloci --panmap {params.pd}/locusMap.tbl \
+{params.sd}/script/kmc2length.py --genome {params.gf} --nloci $nloci --panmap {params.pd}/OrthoMap.v2.tsv \
+								 --cov {params.pd}/ctrl.cov --covbed {params.covbed} \
+                                 --LOOconf {params.LC} --sampleConf {params.SC} {params.badg}
+
+{params.sd}/script/kmc2length.py --genome {params.gf} --nloci $nloci --panmap {params.pd}/OrthoMap.v2.tsv \
 								 --cov {params.pd}/ctrl.cov --covbed {params.covbed} \
                                  --LOOconf {params.LC} --sampleConf {params.SC} {params.badg}
 

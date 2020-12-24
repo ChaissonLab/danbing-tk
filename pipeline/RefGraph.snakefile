@@ -3,15 +3,17 @@ import numpy as np
 
 configfile: "refGraph.json"
 
-srcdir = os.path.dirname(workflow.snakefile)
+srcdir = config["srcDir"]
 indir = config["inputDir"]
 outdir = config["outputDir"]
 pdir = config["pangenomeDir"]
 
+genomefile = config["genomefile"]
+genomes = np.loadtxt(genomefile, dtype=object).reshape(-1).tolist()
 ref = config["ref"]
+refTR = config["refTR"]
 refsize = config["refsize"]
-genomes = np.loadtxt(config["genomes"], dtype=object).reshape(-1).tolist()
-kmerTypes = ["tr", "lntr", "rntr", "graph"]
+kmerTypes = ["tr", "ntr", "graph"]
 
 ksize = config["ksize"]
 FS = config["flankSize"]
@@ -20,131 +22,160 @@ rth = config["ratioThreashold"]
 rstring = f'{rth*100:.0f}'
 thcth = config["threadingCountThreshold"]
 LB = config["sizeLowerBound"]
-UB = config["sizeUpperBound"]
 TRwindow = config["TRwindow"]
+mbe_th1 = float(config["MBE_th1"])
+mbe_th2 = float(config["MBE_th2"])
 copts = config["clusterOpts"]
 
 
+localrules: all, GenMap_v0_v2
+
 rule all:
     input:
-        TRfa = outdir + "ref.tr.fasta",
-        TRbed = outdir + "ref.bed",
-        refkmers = expand(outdir + "ref.{kmerType}.kmers", kmerType=kmerTypes),
-        panbed = outdir + "pan.tr.bed",
-        mapping = outdir + "refMap.tbl",
-        pankmers = expand(outdir + "pan.{kmerType}.kmers", kmerType=kmerTypes),
-        panILkmers = expand(outdir + "pan.{genome}.IL.tr.kmers", genome=genomes),
-        pred = expand(outdir + "{genome}.LR.pred", genome=genomes),
+        MBEfoo = outdir + "MBE.foo",
+        refkmers = expand(outdir + "hg38.{kmerType}.kmers", kmerType=kmerTypes),
+        #TRfa = outdir + "ref.tr.fasta",
+        #TRbed = outdir + "ref.bed",
+        #panbed = outdir + "pan.tr.bed",
+        #mapping = outdir + "refMap.tbl",
+        #pankmers = expand(outdir + "pan.{kmerType}.kmers", kmerType=kmerTypes),
+        #panILkmers = expand(outdir + "pan.{genome}.IL.tr.kmers", genome=genomes),
+        #pred = expand(outdir + "{genome}.LR.pred", genome=genomes),
         
 
-rule AnnotateTR:
+rule JointTRAnnotation:
     input:
         fa = ref,
-        chrsize = refsize,
     output:
-        TRfa = outdir + "ref.tr.fasta",
-        TRbed = outdir + "ref.bed",
+        foo = outdir + "MBE.foo",
+        TRfa = outdir + "hg38.tr.fasta",
+        #mapping = outdir + "OrthoMap.v2.tsv",
+        #TRfa = outdir + "ref.tr.fasta",
+        #TRbed = outdir + "ref.bed",
     resources:
-        cores = 24,
-        mem = lambda wildcards, attempt: 24 + 16*(attempt-1),
+        cores = 6,
+        mem = lambda wildcards, attempt: 40 + 20*(attempt-1)
+    priority: 96
     params:
         copts = copts,
         sd = srcdir,
         od = outdir,
-        refTR = config["refTR"],
+        refTR = refTR,
         ksize = ksize,
         FS = FS,
         LB = LB,
-        UB = UB,
         TRwindow = TRwindow,
-        graph = "ref",
-    shell:"""
-set -eu
-ulimit -c 20000
-mkdir -p {params.od}/{params.graph}
-cd {params.od}/{params.graph}
-
-### TR boundary expansion
-
-bed0=tmp0.bed
-paste <(cut -f 1-3 {params.refTR}) <(cut -f 1-3 {params.refTR}) > $bed0
-nloci=$(cat $bed0 | wc -l)
-params="{resources.cores} {params.ksize} {params.FS} {params.UB} {params.TRwindow}"" ""$nloci"
-{params.sd}/script/prepareIndividualDatasets.py $params {input.fa} {input.fa} $bed0 $bed0
-{params.sd}/script/individualExpansion.py $params $nloci
-{params.sd}/script/prepareJointDatasets.py $params $nloci
-{params.sd}/script/jointExpansion.py $params $nloci
-{params.sd}/script/prepareQCDatasets.py $params $nloci
-{params.sd}/script/QC.py $params $nloci
-
-
-### QC, write new bed
-
-# asm region QC
-{params.sd}/script/writeBoundaryExpandedBeds.py $params $bed0 $bed0 {input.chrsize} {input.chrsize} tmp2.0.bed tmp2.1.bed
-{params.sd}/script/rmNAforBothBeds.py tmp2.?.bed tmp3.0.bed tmp3.1.bed
-
-# ref region QC
-bed4=tmp4.bed
-bed5=tmp5.bed
-loci0=tmp0.loci
-loci1=tmp1.loci
-
-# check no overlap between ref regions
-awk 'BEGIN {{OFS="\t"}} {{print $4, $5, $6, NR-1, $1, $2, $3}}' tmp3.0.bed > $bed4
-bedtools merge -c 1,4 -o count,first -i $bed4 | awk '$4 != 1' | cut -f 5 > $loci0
-{params.sd}/script/rmLinebyIndFile.py $loci0 $bed4 > $bed5
-
-# check one-to-one mapping for each locus for each genome
-bedtools map -c 1 -o count -a $bed5 -b {params.refTR} | awk '$8 != 1' | cut -f 4 >> $loci0
-bedtools map -c 1,4 -o count,collapse -a <(cut -f 1-3 {params.refTR}) -b $bed5 | awk '$4 > 1' | cut -f 5 >> $loci0
-sort -n $loci0 | awk 'BEGIN {{u = -1}} {{ if (u != $1) {{print $1; u = $1}} }}' > $loci1 # ref-ordered asm locus
-
-{params.sd}/script/rmLinebyIndFile.py $loci1 $bed4 | sort -k1,1 -k2,2n -k3,3n |
-awk 'BEGIN {{OFS="\t"}} {{print $5, $6, $7, $1, $2, $3}}' > {output.TRbed}
-cd ..
-
-
-### write fasta
-awk 'BEGIN {{OFS="\t"}} {{
-    $2=$2-700
-    $3=$3+700
-    print $0
-}}' {output.TRbed} |
-{params.sd}/script/SelectRegions.py /dev/stdin {input.fa} /dev/stdout |
-awk '{{if ($1 ~ />/) {{print}} else {{print toupper($0)}} }}' > {output.TRfa}
-rm -f {params.graph}/*.dat
-"""
-
-
-rule GenRefGraph:
-    input:
-        TRfa = outdir + "ref.tr.fasta",
-    output:
-        refkmers = expand(outdir + "ref.{kmerType}.kmers", kmerType=kmerTypes),
-    resources:
-        cores = 1,
-        mem = lambda wildcards, attempt: 8*attempt
-    params:
-        copts = copts,
-        sd = srcdir,
-        od = outdir,
-        ksize = ksize,
-        FS = FS,
-        graph = "ref"
+        th1 = mbe_th1,
+        th2 = mbe_th2,
+        #gf = genomefile,
+        #genomes = genomes
     shell:"""
 set -eu
 ulimit -c 20000
 cd {params.od}
 
-{params.sd}/bin/vntr2kmers_thread -g -k {params.ksize} -fs {params.FS} -ntr {params.FS} -o {params.graph} -fa 1 {input.TRfa}
+g=hg38
+ln -sf {input.fa} $g.0.fa
+ln -sf {input.fa}.fai $g.0.fa.fai
+ln -sf $g.0.fa $g.1.fa
+ln -sf $g.0.fa.fai $g.1.fa.fai
+mkdir -p $g
+awk 'BEGIN {{OFS="\t"}} {{print $0, ".", ".", ".", "+"}}' {params.refTR} >$g/tmp1.0.bed
+cp $g/tmp1.0.bed $g/tmp1.1.bed
+
+echo "Generating panbed"
+awk 'BEGIN {{OFS="\t"}} {{print $1, $2, $3, 1}}' {params.refTR} >pan.tr.mbe.v0.bed
+{params.sd}/script/preMBE.py <(echo "hg38") pan.tr.mbe.v0.bed
+{params.sd}/script/multiBoundaryExpansion.py
+{params.sd}/script/writeMBEbed.py {params.th1} {params.th2}
+hi=0
+for h in 0 1; do
+    echo ">""$g"".""$h"
+    cut -f $((4+4*hi))-$((6+4*hi)) pan.tr.mbe.v1.bed |
+    awk 'BEGIN {{OFS="\t"}} {{print $0, NR-1}}' |
+    grep -v "None" |
+    sort -k1,1 -k2,2n -k3,3n >tmp.bed
+    if [[ "$(cat tmp.bed | wc -l)" != "0" ]]; then
+        bedtools merge -d 700 -c 4 -o collapse -i tmp.bed |
+        cut -f 4 | grep ","
+    fi
+    ((++hi))
+done >mbe.m0.loci
+rm tmp.bed
+{params.sd}/script/mergeMBEbed.py
+
+### write fasta
+echo "Fetching TR+flank"
+h=0
+cut -f 4-6 pan.tr.mbe.v2.bed |
+grep -v "None" |
+awk 'BEGIN {{OFS="\t"}} {{
+    $2=$2-700
+    $3=$3+700
+    print $0
+}}' |
+{params.sd}/script/SelectRegions.py /dev/stdin "$g"."$h".fa /dev/stdout |
+awk '{{if ($1 ~ />/) {{print}} else {{print toupper($0)}} }}' >"$g".tr.fasta
+rm hg38.?.fa*
+touch MBE.foo
+"""
+
+
+rule GenMap_v0_v2:
+    input:
+        foo = outdir + "MBE.foo",
+    output:
+        mapping = outdir + "locusMap.v0.to.v2.txt",
+    resources:
+        cores = 1,
+        mem = lambda wildcards, attempt: 4,
+    params:
+        copts = copts,
+        sd = srcdir,
+        od = outdir,
+        ksize = ksize,
+        FS = FS,
+        graph = "hg38"
+    run:
+        import numpy as np
+        nloci = np.loadtxt(f"{params.od}/pan.tr.mbe.v0.bed", usecols=1).size
+        m21 = np.loadtxt(f"{params.od}/locusMap.v2.to.v1.txt", dtype=int)
+        m10 = np.loadtxt(f"{params.od}/locusMap.v1.to.v0.txt", dtype=int)
+        m02 = np.full(nloci, ".", dtype=object)
+        m02[m10[m21]] = np.arange(m21.size)
+        np.savetxt(f"{params.od}/locusMap.v0.to.v2.txt", m02, fmt='%s')    
+
+
+rule GenRefGraph:
+    input:
+        TRfa = outdir + "hg38.tr.fasta",
+        mapping = outdir + "locusMap.v0.to.v2.txt",
+    output:
+        refkmers = expand(outdir + "hg38.{kmerType}.kmers", kmerType=kmerTypes),
+    resources:
+        cores = 1,
+        mem = lambda wildcards, attempt: 8*attempt,
+    params:
+        copts = copts,
+        sd = srcdir,
+        od = outdir,
+        ksize = ksize,
+        FS = FS,
+        graph = "hg38"
+    shell:"""
+set -eu
+ulimit -c 20000
+cd {params.od}
+
+
+{params.sd}/bin/vntr2kmers_thread -g -m {input.mapping} -k {params.ksize} -fs {params.FS} -ntr {params.FS} -o {params.graph} -fa 1 {input.TRfa}
 """
 
 
 rule GenPanGraph:
     input:
-        TRbed = outdir + "ref.bed",
-        refkmers = expand(outdir + "ref.{kmerType}.kmers", kmerType=kmerTypes),
+        #TRbed = outdir + "hg38.bed",
+        refkmers = expand(outdir + "hg38.{kmerType}.kmers", kmerType=kmerTypes),
     output:
         panbed = outdir + "pan.tr.bed",
         mapping = outdir + "refMap.tbl",

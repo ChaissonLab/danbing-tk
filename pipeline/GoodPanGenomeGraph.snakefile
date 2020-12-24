@@ -23,7 +23,8 @@ rstring = f'{rth*100:.0f}'
 thcth = config["threadingCountThreshold"]
 TRwindow = int(config["TRwindow"])
 LB = int(config["sizeLowerBound"])
-UB = TRwindow - FS
+mbe_th1 = float(config["MBE_th1"])
+mbe_th2 = float(config["MBE_th2"])
 copts = config["clusterOpts"]
 
 
@@ -207,7 +208,7 @@ rule JointTRAnnotation:
         TRfa = expand(outdir + "{genome}.{hap}.tr.fasta", genome=genomes, hap=haps),
     resources:
         cores = 6,
-        mem = lambda wildcards, attempt: 40 + 8*(attempt-1)
+        mem = lambda wildcards, attempt: 40 + 20*(attempt-1)
     priority: 96
     params:
         copts = copts,
@@ -217,8 +218,9 @@ rule JointTRAnnotation:
         ksize = ksize,
         FS = FS,
         LB = LB,
-        UB = UB,
         TRwindow = TRwindow,
+        th1 = mbe_th1,
+        th2 = mbe_th2,
         gf = genomefile,
         genomes = genomes
     shell:"""
@@ -227,14 +229,14 @@ ulimit -c 20000
 cd {params.od}
 
 echo "Generating panbed"
-cut -f 1-3 {params.refTR} >pan.tr.mbe.v0.bed
-for g in {params.genomes}; do 
-    bedtools map -c 1 -o count -a pan.tr.mbe.v0.bed -b <(cut -f 4-6 $g/tmp1.0.bed) >pan.tr.mbe.v0.bed.tmp && 
-    mv pan.tr.mbe.v0.bed.tmp pan.tr.mbe.v0.bed
-done
+#cut -f 1-3 {params.refTR} >pan.tr.mbe.v0.bed
+#for g in {params.genomes}; do 
+#    bedtools map -c 1 -o count -a pan.tr.mbe.v0.bed -b <(cut -f 4-6 $g/tmp1.0.bed) >pan.tr.mbe.v0.bed.tmp && 
+#    mv pan.tr.mbe.v0.bed.tmp pan.tr.mbe.v0.bed
+#done
 {params.sd}/script/preMBE.py {params.gf} pan.tr.mbe.v0.bed
 {params.sd}/script/multiBoundaryExpansion.py 
-{params.sd}/script/writeMBEbed.py
+{params.sd}/script/writeMBEbed.py {params.th1} {params.th2}
 hi=0
 for g in {params.genomes}; do
     for h in 0 1; do
@@ -242,12 +244,15 @@ for g in {params.genomes}; do
         cut -f $((4+4*hi))-$((6+4*hi)) pan.tr.mbe.v1.bed |
         awk 'BEGIN {{OFS="\t"}} {{print $0, NR-1}}' |
         grep -v "None" |
-        sort -k1,1 -k2,2n -k3,3n |
-        bedtools merge -d 700 -c 4 -o collapse |
-        cut -f 4 | grep ","
+        sort -k1,1 -k2,2n -k3,3n >tmp.bed
+        if [[ "$(cat tmp.bed | wc -l)" != "0" ]]; then
+            bedtools merge -d 700 -c 4 -o collapse -i tmp.bed |
+            cut -f 4 | grep ","
+        fi
         ((++hi))
     done
 done >mbe.m0.loci
+rm tmp.bed
 {params.sd}/script/mergeMBEbed.py 
 
 ### write fasta
@@ -279,8 +284,8 @@ rule GenRawGenomeGraph:
         rawPBkmers = expand(outdir + "{{genome}}.rawPB.{kmerType}.kmers", kmerType=kmerTypes),
         rawILkmers = outdir + "{genome}.rawIL.tr.kmers"
     resources:
-        cores = 16,
-        mem = lambda wildcards, attempt: 20 + 20*(attempt-1)
+        cores = 24,
+        mem = lambda wildcards, attempt: 20 #90 + 20*(attempt-1)
     priority: 95
     params:
         copts = copts,
@@ -338,7 +343,7 @@ rule GenPrunedGenomeGraph:
         PBkmers = expand(outdir + "{{genome}}.PB.{kmerType}.kmers", kmerType=kmerTypes)
     resources:
         cores = 2,
-        mem = 10
+        mem = 20
     priority: 93
     params:
         copts = copts,
@@ -359,7 +364,6 @@ awk '$1 ~ />/ || $2 == 0' {input.rawILkmers} |
 rule GenPanGenomeGraph:
     input:
         PBkmers = expand(outdir + "{genome}.PB.{kmerType}.kmers", genome=genomes, kmerType=kmerTypes),
-        mapping = outdir + "OrthoMap.v2.tsv"
     output:
         panKmers = expand(outdir + "pan.{kmerType}.kmers", kmerType=kmerTypes)
     resources:
@@ -375,7 +379,7 @@ rule GenPanGenomeGraph:
 cd {params.od}
 ulimit -c 20000
 
-{params.sd}/bin/genPanKmers -o pan -m {input.mapping} -k {params.kmerpref}
+{params.sd}/bin/genPanKmers -o pan -m - -k {params.kmerpref}
 """
 
 
