@@ -109,8 +109,12 @@ int main(int argc, const char * argv[]) {
     }
 
 	vector<vector<bool>> omap;
-	readOrthoMap(mapfname, omap, 2*ngenome);
-    nloci = omap.size();
+	if (not nomissing){
+		readOrthoMap(mapfname, omap, 2*ngenome);
+    	nloci = omap.size();
+	} else {
+		nloci = countLoci(kmerpref[0]+".tr.kmers");
+	}
     cerr << "# loci in pangenome: " << nloci << endl
          << ngenome << " genomes to merge" << endl;
 
@@ -128,11 +132,18 @@ int main(int argc, const char * argv[]) {
 			vector<bool> gmap(nloci, 1);
 			if (not nomissing) {
 				getgmap(omap, gmap, vector<size_t>{2*gi,2*gi+1});
+				if (graphmode) {
+					mapKmersFile2DB(graphDB, kmerpref[gi]+"."+filetype+".kmers", gmap, true);
+				} else {
+					mapKmersFile2DB(kmersDB, kmerpref[gi]+"."+filetype+".kmers", gmap);
+				}
 			}
-			if (graphmode) {
-				mapKmersFile2DB(graphDB, kmerpref[gi]+"."+filetype+".kmers", gmap, true);
-			} else {
-				mapKmersFile2DB(kmersDB, kmerpref[gi]+"."+filetype+".kmers", gmap);
+			else {
+				if (graphmode) {
+					readKmersFile2DB(graphDB, kmerpref[gi]+"."+filetype+".kmers", true);
+				} else {
+					readKmersFile2DB(kmersDB, kmerpref[gi]+"."+filetype+".kmers");
+				}
 			}
         } 
 
