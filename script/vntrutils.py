@@ -1,5 +1,6 @@
 import numpy as np
-from sklearn.linear_model import LinearRegression
+#from sklearn.linear_model import LinearRegression
+import statsmodels.api as sm
 import matplotlib
 import matplotlib.pyplot as plt
 
@@ -190,13 +191,16 @@ def read2kmers(read, k, leftflank=0, rightflank=0, dtype='uint64', canonical=Tru
 def writeKmerDict(fname, kmerDB, precision=0):
     with open(fname+".kmers", 'w') as f:
         for locus, kmers in kmerDB.items():
-            f.write(">locus\t{}\n".format(locus))
+            f.write(">{}\n".format(locus))
             for kmer, count in kmers.items():
                 f.write("{:<21.0f}\t{:.{prec}f}\n".format(kmer, count, prec=precision))
 
 
 def checkTable(table):
-    return table.size and np.any(table[:, 1])
+    if table.size:
+        if np.any(table[:, 1]):
+            return True
+    return False
 
 
 def assignNewTable(kmerDB, locus, table, sort, kmerName, threshold):
@@ -237,7 +241,7 @@ def assignKmerTable(kmerDB, locus, table, sort, kmerName, threshold):
             assignNewTable(kmerDB, locus, table, sort, kmerName, threshold)
 
 
-def readKmers(fname, kmerDB, end=999999, sort=True, kmerName=False, threshold=0):
+def readKmers(fname, kmerDB, sort=True, kmerName=False, threshold=0):
     """ read a kmer file as a table"""
     with open(fname) as f:
         table = []
@@ -247,9 +251,7 @@ def readKmers(fname, kmerDB, end=999999, sort=True, kmerName=False, threshold=0)
             if line[0] == '>':
                 assignKmerTable(kmerDB, locus, table, sort, kmerName, threshold)
                 table = []
-                locus = int(line.split()[1])
-                if locus >= end:
-                    break
+                locus += 1
             else:
                 table.append(line.split())
         else:
@@ -280,6 +282,48 @@ def readKmerDict(fname, kmerDB=None, threshold=0, checkkmer=False):
                         else: kmerDB[locus][kmer] = count
 
     if not hasInput: return kmerDB
+
+
+def readKms(fin, out=None):
+    """
+    Read kmers and compute sum for each locus.
+    Use out=ARRAY to change ARRAY inplace.
+    """
+    ndb = out is None
+    if out is None:
+        out = []
+    with open(fin) as f:
+        idx = -1
+        for line in f:
+            if line[0] == ">":
+                idx += 1
+                if ndb:
+                    out.append(0)
+            else:
+                out[idx] += int(line.split()[1])
+    if ndb:
+        return out
+
+
+def filterKmers(fin, fout, indf):
+    """filter kmers by indices listed in indf, and reindex w/o gap"""
+    gl = set(np.loadtxt(indf, dtype=int).tolist()) # good loci
+    outf = open(fout, 'w')
+    with open(fin) as f: # input kmers file
+        oi = -1 # old index
+        ni = 0 # new index
+        for line in f:
+            if line[0] == ">":
+                oi += 1
+                out = oi in gl
+                if out:
+                    outf.write(f">{ni}\n")
+                    ni += 1
+            else:
+                if out:
+                    outf.write(line)
+    outf.close()
+
 
 def countLoci(fname):
     with open(fname) as f:
@@ -329,9 +373,14 @@ def readFasta2dict(fname):
 
     return seqDB
 
-def RecursiveRejection(x, y):
-    reg = LinearRegression(fit_intercept=False).fit(x, y)
-    res = y - reg.predict(x)
+def RecursiveRejection(x, y, fit_intercept=False):
+    if fit_intercept:
+        reg = sm.OLS(y, sm.add_constant(x)).fit()
+    else:
+        reg = sm.OLS(y, x).fit()
+    res = reg.resid
+    #reg = LinearRegression(fit_intercept=False).fit(x, y)
+    #res = y - reg.predict(x)
     m = np.mean(res)
     s = np.std(res)
     logic = (np.abs(res - m) < 10 * s)[:, 0]
@@ -345,12 +394,11 @@ def RecursiveRejection(x, y):
 
 
 def RejectOutlier(x, y, rule):
-    logic = np.logical_and(np.isfinite(x)[:, 0], np.isfinite(y)[:, 0])
+    logic = np.isfinite(x)[:,0] & np.isfinite(y)[:,0]
     if rule == 0:
         return (x[logic], y[logic], 0)
     if rule == 1 or rule == 2:
-        logic = np.logical_and(logic, (x != 0)[:, 0])
-        logic = np.logical_and(logic, (y != 0)[:, 0])
+        logic &= ((x != 0)[:,0]) & ((y != 0)[:,0])
         return rule == 1 and (x[logic], y[logic], 0)
     if rule == 2 or rule == 3:
         x, y = x[logic], y[logic]
@@ -358,22 +406,12 @@ def RejectOutlier(x, y, rule):
         return (x0, y0, x.size - x0.size)
 
 
-def PlotRegression(x, y, xlabel='data_X', ylabel='data_Y', title='', fname='', outlier='strict_positive', pred=False, fit_intercept=False):
+def PlotRegression(x, y, xlabel='data_X', ylabel='data_Y', title='', fname='', outlier='invalid', pred=False, fit_intercept=False):
     if title == '':
         title = xlabel + '.' + ylabel
     if not fname:
         fname = title
-    if outlier == 'invalid':
-        outlierRule = 0
-    else:
-        outlierRule = outlier.split('_')
-        if 'positive' in outlierRule:
-            if 'strict' in outlierRule:
-                outlierRule = 2
-            else:
-                outlierRule = 1
-        else:
-            outlierRule = 3
+    outlierRule = {"invalid":0, "invalid|zero":1, "invalid|bad|zero":2, "invalid|bad":3}[outlier]
     x1, y1, nOut = RejectOutlier(x, y, outlierRule)
     if nOut:
         print('# of non-trivial outliers in', title, nOut)
@@ -383,63 +421,70 @@ def PlotRegression(x, y, xlabel='data_X', ylabel='data_Y', title='', fname='', o
         if pred:
             return (0, 0, 0, 0)
         return (0, 0, 0)
-    reg = (LinearRegression(fit_intercept=fit_intercept)).fit(x1, y1)
-    a, b = np.asscalar(reg.coef_), np.asscalar(reg.intercept_) if fit_intercept else reg.intercept_
-    rsquare = reg.score(x1, y1)
+    if fit_intercept:
+        reg = sm.OLS(y1, sm.add_constant(x1)).fit()
+        a, b = reg.params[1], reg.params[0]
+    else:
+        reg = sm.OLS(y1, x1).fit()
+        a, b = reg.params[0], None
+    #reg = (LinearRegression(fit_intercept=fit_intercept)).fit(x1, y1)
+    #a, b = np.asscalar(reg.coef_), np.asscalar(reg.intercept_) if fit_intercept else reg.intercept_
+    #rsquare = reg.score(x1, y1)
+    r2 = reg.rsquared
     if pred:
         y1_proj = np.sum(y1) / a
     if pred:
-        return (a, b, rsquare, y1_proj)
+        return (a, b, r2, y1_proj)
     else:
-        return (a, b, rsquare)
+        return (a, b, r2)
 
 
-def KmersLinReg(PBfname, ILfname, out, threshold=10, R2threshold=0, plot=False):
-    print("reading illumina kmers")
-    y = {}
-    readKmers(ILfname, y, sort=True)
-    nloci = len(y)
-    print("#loci:", nloci)
-
-    print("reading pacbio kmers")
-    x = {}
-    readKmers(PBfname, x, sort=True)
-
-    data = {}
-    for k, v in y.items():
-        if v.size and x[k].size:
-            data[k] = np.column_stack((x[k], y[k]))
-
-    results = np.zeros((nloci, 4))
-    for k, v in x.items():
-        truth = np.sum(v) / 2              ## divide by 2 since diploid individual [!] might be incorrect for CHM1 & CHM13
-        results[k,0] = truth
-
-    for k, v in data.items():
-        if plot and k < 50:   ## only plot the first 50 loci
-            a, _, rsquare, pred = PlotRegression(v[:,0:1], v[:,1:2],
-                                        "PacBioEdgeWeights", "IlluminaEdgeWeights",
-                                        "locus."+str(k)+".Sample"+str(v.shape[0]), out+"."+str(k), outlier="strict", pred=True, plot=True)
-        else:
-            a, _, rsquare, pred = PlotRegression(v[:,0:1], v[:,1:2],
-                                        "PacBioEdgeWeights", "IlluminaEdgeWeights",
-                                        "locus."+str(k)+".Sample"+str(v.shape[0]), out+"."+str(k), outlier="strict", pred=True, plot=False)
-        if k % 1000 == 0:
-            print(str(k)+" loci processed")
-        # divide by 2 since diploid individual [!] might be incorrect for CHM1 & CHM13
-        # TODO should not treat missing hap as zero length
-        results[k, 1:] = [pred/2, a, rsquare]   
-
-    print("writing outputs")
-    np.savetxt(out+".strict.pred", results, fmt=['%8.0f','%8.0f','%8.2f','%8.4f'], header="TrueLen\t PredLen\t Slope\t R^2")
-
-    print("plotting summary report")
-    if R2threshold != -1:
-        logic = (results[:,3] > R2threshold)
-        results = results[logic]
-    PlotRegression(results[:,0:1], results[:,1:2], "TrueLength", "PredictedLength",
-                        title="True.PredictedLength.Sample"+str(nloci) ,fname='.'.join([out,"sum",str(R2threshold)]),
-                        outlier="strict", plot=True)
+#def KmersLinReg(PBfname, ILfname, out, threshold=10, R2threshold=0, plot=False):
+#    print("reading illumina kmers")
+#    y = {}
+#    readKmers(ILfname, y, sort=True)
+#    nloci = len(y)
+#    print("#loci:", nloci)
+#
+#    print("reading pacbio kmers")
+#    x = {}
+#    readKmers(PBfname, x, sort=True)
+#
+#    data = {}
+#    for k, v in y.items():
+#        if v.size and x[k].size:
+#            data[k] = np.column_stack((x[k], y[k]))
+#
+#    results = np.zeros((nloci, 4))
+#    for k, v in x.items():
+#        truth = np.sum(v) / 2              ## divide by 2 since diploid individual [!] might be incorrect for CHM1 & CHM13
+#        results[k,0] = truth
+#
+#    for k, v in data.items():
+#        if plot and k < 50:   ## only plot the first 50 loci
+#            a, _, rsquare, pred = PlotRegression(v[:,0:1], v[:,1:2],
+#                                        "PacBioEdgeWeights", "IlluminaEdgeWeights",
+#                                        "locus."+str(k)+".Sample"+str(v.shape[0]), out+"."+str(k), outlier="strict", pred=True, plot=True)
+#        else:
+#            a, _, rsquare, pred = PlotRegression(v[:,0:1], v[:,1:2],
+#                                        "PacBioEdgeWeights", "IlluminaEdgeWeights",
+#                                        "locus."+str(k)+".Sample"+str(v.shape[0]), out+"."+str(k), outlier="strict", pred=True, plot=False)
+#        if k % 1000 == 0:
+#            print(str(k)+" loci processed")
+#        # divide by 2 since diploid individual [!] might be incorrect for CHM1 & CHM13
+#        # TODO should not treat missing hap as zero length
+#        results[k, 1:] = [pred/2, a, rsquare]   
+#
+#    print("writing outputs")
+#    np.savetxt(out+".strict.pred", results, fmt=['%8.0f','%8.0f','%8.2f','%8.4f'], header="TrueLen\t PredLen\t Slope\t R^2")
+#
+#    print("plotting summary report")
+#    if R2threshold != -1:
+#        logic = (results[:,3] > R2threshold)
+#        results = results[logic]
+#    PlotRegression(results[:,0:1], results[:,1:2], "TrueLength", "PredictedLength",
+#                        title="True.PredictedLength.Sample"+str(nloci) ,fname='.'.join([out,"sum",str(R2threshold)]),
+#                        outlier="strict", plot=True)
 
 def getrectangle(xs, ys):
     return  [xs[0], xs[0], xs[1], xs[1], xs[0]], [ys[0], ys[1], ys[1], ys[0], ys[0]]    
@@ -516,8 +561,8 @@ def getbadkmc_bothhaps(indices0, indices1, region0, region1, fs=700, getindices=
     
     return (badkmc, badindices) if getindices else badkmc
 
-def plotCrossContamination(ctg0, ctg1, ksize=21, FS=700, ax=None, zoomoutsize=(0,0), offset=(0,0), 
-                           silent=False, showcontam=True, reportcontam=False, reportbad=False):
+def plotCrossContamination(ctg0, ctg1, ksize=21, FS=700, ax=None, zoomoutsize=(0,0), offset=(0,0), showFS=True, 
+                           silent=False, showcontam=True, reportcontam=False, reportbad=False, size=0.1):
     """plot loci w/ primary contamination only"""
     
     start0, end0 = FS, len(ctg0)-FS
@@ -527,8 +572,8 @@ def plotCrossContamination(ctg0, ctg1, ksize=21, FS=700, ax=None, zoomoutsize=(0
 
     relpos0 = (start0, end0-ksize+1)
     relpos1 = (start1, end1-ksize+1)
-    kmers0 = read2kmers(ctg0, ksize, leftflank=-zoomoutsize[0]+offset[0], rightflank=ksize-1-zoomoutsize[0]-offset[0])
-    kmers1 = read2kmers(ctg1, ksize, leftflank=-zoomoutsize[1]+offset[1], rightflank=ksize-1-zoomoutsize[1]-offset[1])
+    kmers0 = read2kmers(ctg0, ksize, leftflank=-zoomoutsize[0]+offset[0], rightflank=-zoomoutsize[0]-offset[0])
+    kmers1 = read2kmers(ctg1, ksize, leftflank=-zoomoutsize[1]+offset[1], rightflank=-zoomoutsize[1]-offset[1])
     cokmers = (set(kmers0) & set(kmers1)) - set([0xffffffffffffffff])
     cokmersi = getcokmersindex(cokmers, kmers0, kmers1)
 
@@ -556,18 +601,19 @@ def plotCrossContamination(ctg0, ctg1, ksize=21, FS=700, ax=None, zoomoutsize=(0
         if not silent:
             ax.set_title("contam={}, {:.1f}%".format(badkmc, 100*np.sum(badkmc)/(TRsize0+TRsize1)))
 
-        # TR + NTR region
-        xlines, ylines = getrectangle((relpos0[0]-FS, relpos0[1]+FS), relpos1)
-        ax.plot(xlines, ylines, '-r', linewidth=1, alpha=0.8)
-        xlines, ylines = getrectangle(relpos0, (relpos1[0]-FS, relpos1[1]+FS))
-        ax.plot(xlines, ylines, '-r', linewidth=1, alpha=0.8)
+        if showFS:
+            # TR + NTR region
+            xlines, ylines = getrectangle((relpos0[0]-FS, relpos0[1]+FS), relpos1)
+            ax.plot(xlines, ylines, '-r', linewidth=1, alpha=0.8)
+            xlines, ylines = getrectangle(relpos0, (relpos1[0]-FS, relpos1[1]+FS))
+            ax.plot(xlines, ylines, '-r', linewidth=1, alpha=0.8)
 
-        ax.scatter(xs, ys, c='k', s=0.1, linewidths=0)
+        ax.scatter(xs, ys, c='k', s=size, linewidths=0)
         if showcontam:
             ax.plot(badxs, badys, '.r')
 
-        xmax = end0 - start0 + 2*FS + 2*zoomoutsize[0]
-        ymax = end1 - start1 + 2*FS + 2*zoomoutsize[1]
+        xmax = end0 - start0 + 2*FS + 2*zoomoutsize[0] - ksize + 1
+        ymax = end1 - start1 + 2*FS + 2*zoomoutsize[1] - ksize + 1
         ax.set_xlim((0, xmax))
         ax.set_ylim((0, ymax))
         ax.set_yticks((0, ymax//500*500))
@@ -579,9 +625,10 @@ def plotCrossContamination(ctg0, ctg1, ksize=21, FS=700, ax=None, zoomoutsize=(0
     if reportcontam:
         return badxs, badys
 
-def visSelfRepeat(seq, ksize=13, figsize=(8,6), dpi=100):
+def visSelfRepeat(seq, ksize=13, figsize=(8,6), dpi=100, size=0.1, FS=700):
     fig, ax = plt.subplots(1,1, figsize=figsize, dpi=dpi)
-    plotCrossContamination(seq, seq, ksize=ksize, ax=ax, zoomoutsize=(0,0), offset=(0,0), silent=False, showcontam=True, reportcontam=True)
+    plotCrossContamination(seq, seq, ksize=ksize, ax=ax, zoomoutsize=(0,0), offset=(0,0), 
+                            silent=False, showcontam=True, reportcontam=True, size=size, FS=FS)
     plt.show(); plt.close()
 
 def visPairedRepeat(seq1, seq2, ksize=21, figsize=(15,4), dpi=100):
