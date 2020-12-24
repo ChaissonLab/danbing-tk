@@ -257,7 +257,7 @@ void parseReadName(string& title, size_t readn, vector<size_t>& poss, vector<Val
 
 // simmode = 2
 void parseReadName(string& title, vector<std::pair<int, size_t>>& meta, size_t nloci) {
-	// input: read name; vector of (read_locus, number_of_reads)
+	// input: read name; vector of (read_locus, number_of_pe_reads)
 	static const string sep = ":";
 	size_t p1 = title.find(sep);
 	size_t p2 = title.find(sep, p1+1);
@@ -267,21 +267,25 @@ void parseReadName(string& title, vector<std::pair<int, size_t>>& meta, size_t n
 	else { locus = stoul(v); }
 	if (meta.size() == 0) { meta.push_back(std::make_pair(locus, 1)); }
 	else {
-		if (meta.back().first == locus) { ++meta.back().second; } // if locus is the same as the last read, increment number_of_reads
+		if (meta.back().first == locus) { ++meta.back().second; } // if locus is the same as the last read, increment number_of_pe_reads
 		else { meta.push_back(std::make_pair(locus, meta.back().second+1)); } // else, append (read_locus, 1)
 	}
 }
 
-void mapLocus(vector<std::pair<int, size_t>>& meta, vector<size_t>& locusmap, size_t seqi, size_t& simi, size_t nloci, size_t& srcLocus) {
+void mapLocus(bool g2pan, vector<std::pair<int, size_t>>& meta, vector<size_t>& locusmap, size_t seqi, size_t& simi, size_t nloci, size_t& srcLocus) {
 	if (simi == 0 or seqi / 2 >= meta[simi].second) { 
 		if (seqi / 2 >= meta[simi].second) { ++simi; }
 		if (meta[simi].first == nloci) { srcLocus = nloci; }
 		else {
-			if (meta[simi].first >= locusmap.size()) {
-				cerr << "read locus " << meta[simi].first << " > # of valid genome loci = " << locusmap.size() << endl;
-				assert(false);
+			if (g2pan) { 
+				if (meta[simi].first >= locusmap.size()) {
+					cerr << "read locus " << meta[simi].first << " > # of valid genome loci = " << locusmap.size() << endl;
+					assert(false);
+				}
+				srcLocus = locusmap[meta[simi].first];
+			} else {
+				srcLocus = meta[simi].first;
 			}
-			srcLocus = locusmap[meta[simi].first];
 		}	
 	}
 }
@@ -514,7 +518,7 @@ void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<size_t
 
 class Counts {
 public:
-    bool isFastq, bait, threading, correction, aln;
+    bool isFastq, bait, threading, correction, aln, g2pan;
     uint16_t Cthreshold, thread_cth;
     size_t *nReads, *nThreadingReads, *nFeasibleReads;
     size_t nloci;
@@ -547,6 +551,7 @@ void CountWords(void *data) {
     bool threading = ((Counts*)data)->threading;
     bool correction = ((Counts*)data)->correction;
     bool aln = ((Counts*)data)->aln;
+	bool g2pan = ((Counts*)data)->g2pan;
     int simmode = ((Counts*)data)->simmode;
     int extractFasta = ((Counts*)data)->extractFasta;
     size_t nReads_ = 0, nThreadingReads_ = 0, nFeasibleReads_ = 0;
@@ -675,7 +680,7 @@ void CountWords(void *data) {
                     srcLocus = srcLoci[simi];
                 }
             }
-			else if (simmode == 2) { mapLocus(meta, locusmap, seqi, simi, nloci, srcLocus); }
+			else if (simmode == 2) { mapLocus(g2pan, meta, locusmap, seqi, simi, nloci, srcLocus); }
 
             string& seq = seqs[seqi++];
             string& seq1 = seqs[seqi++];
@@ -887,7 +892,7 @@ int main(int argc, char* argv[]) {
          << "trim mode: " << trim << endl
          << "augmentation mode: " << aug << endl
          << "graph threading mode: " << threading << endl
-		 << "output alignment" << aln << endl
+		 << "output alignment: " << aln << endl
          << "k: " << ksize << endl
          << "Cthreshold: " << Cthreshold << endl
          << "Rthreshold: " << Rthreshold << endl
@@ -919,16 +924,13 @@ int main(int argc, char* argv[]) {
         readKmersFile2DBi(kmerDBi, trPrefix+".tr.aug.kmers", 0); // start from index 0
     	cerr << "# unique kmers in tr/ntr/augKmerDB: " << kmerDBi.size() << '\n';
     }
-	else {
-	    cerr << "# unique kmers in tr/ntr: " << kmerDBi.size() << '\n';
-	}
 
     if (bait) {
         readKmersFile2DBi(kmerDBi, "baitDB.kmers", nloci); // record kmerDBi only, start from index nloci, do not count
     }
 
     if (threading) {
-        readKmersFile2DB(graphDB, trPrefix+".graph.kmers", 0, true); // start from index 0, record counts
+        readKmersFile2DB(graphDB, trPrefix+".graph.kmers", true, true); // is graph, record counts
     }
 	cerr << "read *.kmers file in " << (time(nullptr) - time1) << " sec." << endl;
 
@@ -969,6 +971,7 @@ int main(int argc, char* argv[]) {
         counts.threading = threading;
         counts.correction = correction;
 		counts.aln = aln;
+		counts.g2pan = g2pan;
 
         counts.Cthreshold = Cthreshold;
         counts.Rthreshold = Rthreshold;

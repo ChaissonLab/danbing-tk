@@ -293,7 +293,7 @@ size_t countBedLoci(string fname) {
 
 // record kmerDB only
 template <typename T>
-void readKmersFile2DB(T& kmerDB, string fname, size_t startInd = 0, bool count = true, uint16_t threshold = 0, uint16_t offset = 0) {
+void readKmersFile2DB(T& kmerDB, string fname, bool graph=false, bool count=true, size_t startInd=0, uint16_t threshold=0, uint16_t offset=0) {
     ifstream f(fname);
     assert(f);
     string line;
@@ -312,11 +312,15 @@ void readKmersFile2DB(T& kmerDB, string fname, size_t startInd = 0, bool count =
             getline(f, line, '\t');
             size_t kmer = stoul(line);
             getline(f, line);
-            size_t kmercount = stoul(line);
+            size_t c = stoul(line);
 
-            if (kmercount < threshold) { continue; }
+            if (c < threshold) { continue; }
             if (count) {
-                kmerDB[startInd][kmer] += (kmercount + offset);
+				if (graph) {
+					kmerDB[startInd][kmer] |= c;
+				} else {
+                	kmerDB[startInd][kmer] += (c + offset);
+				}
             } else {
                 kmerDB[startInd][kmer] += 0;
             }
