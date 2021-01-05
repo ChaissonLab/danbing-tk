@@ -6,6 +6,7 @@ A toolkit for variable number tandem repeats (VNTRs) analysis, which enables:
 
 
 ## Installation
+This will take up to an hour on a typical work station, depending on your internet connection.
 
 ### Download Releases
 Each release comes with the lastest version of genotypable VNTRs, RPGG, and precomputed LSB.
