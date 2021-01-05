@@ -50,7 +50,7 @@ To check if everything is configured properly:
 ## Usage
 
 ### danbing-tk align
-Decompress the RPGG `RPGG.tar.gz` and link `*.kmers` to your working directory with `ln -s`.
+Decompress the RPGG `RPGG.tar.gz` and link `*.kmers` (required by the `-qs` option) to your working directory with `ln -s`.
 
 An example usage to genotype SRS sample using the RPGG:
 
@@ -61,7 +61,7 @@ danbing-tk -gc 50 -k 21 -qs pan -fai /dev/stdin -o $OUT_PREFIX \
            -p 24 -cth 45 -rth 0.5
 ```
 
-`danbing-tk align` takes ~42 cpu hours to genotype a 30x SRS sample.
+`danbing-tk align` takes ~42 cpu hours to genotype a 30x SRS sample. This will generate a `*.tr.kmers` output with format specified in [File Format](#file_format).
 
 **Important note:** If outputs of `danbing-tk align` are intended to be used directly for downstream analyses e.g. association tests, please check the [distribution of LSB](#distribution-of-lsb) section below before running.
 
@@ -123,7 +123,7 @@ kmer1	out_edges1
 ```
 `out_edges` denotes the presence of T/G/C/A as the next nucleotide encoded with 4 bits.
 
-- \*.(tr|lntr|rntr).kmers
+- \*.(tr|ntr).kmers
 ```
 >locus i
 kmer0	kmer_count0
