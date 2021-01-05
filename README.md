@@ -6,6 +6,7 @@ A toolkit for variable number tandem repeats (VNTRs) analysis, which enables:
 
 
 ## Installation
+This will take up to an hour on a typical work station, depending on your internet connection.
 
 ### Download Releases
 Each release comes with the lastest version of genotypable VNTRs, RPGG, and precomputed LSB.
@@ -47,6 +48,7 @@ To check if everything is configured properly:
 2. Replace `$PREFIX` in `goodPanGenomeGraph.json` and `input/bam.fofn` with the path to danbing-tk
 3. Run `snakemake -p -s ../pipeline/GoodPanGenomeGraph.snakefile -j 4 --rerun-incomplete --output-wait 3`
 
+Tested on V0.0. 
 ## Usage
 
 ### danbing-tk align
