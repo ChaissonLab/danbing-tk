@@ -87,6 +87,8 @@ rule ComputeBamCoverage:
         refctrl = config["refctrl"],
         genomes = genomes,
     shell:"""
+set -eu
+
 bams=( {input.ILbam} )
 gi=0
 for g in {params.genomes}; do
@@ -229,11 +231,11 @@ ulimit -c 20000
 cd {params.od}
 
 echo "Generating panbed"
-#cut -f 1-3 {params.refTR} >pan.tr.mbe.v0.bed
-#for g in {params.genomes}; do 
-#    bedtools map -c 1 -o count -a pan.tr.mbe.v0.bed -b <(cut -f 4-6 $g/tmp1.0.bed) >pan.tr.mbe.v0.bed.tmp && 
-#    mv pan.tr.mbe.v0.bed.tmp pan.tr.mbe.v0.bed
-#done
+cut -f 1-3 {params.refTR} >pan.tr.mbe.v0.bed
+for g in {params.genomes}; do 
+    bedtools map -c 1 -o count -a pan.tr.mbe.v0.bed -b <(cut -f 4-6 $g/tmp1.0.bed) >pan.tr.mbe.v0.bed.tmp && 
+    mv pan.tr.mbe.v0.bed.tmp pan.tr.mbe.v0.bed
+done
 {params.sd}/script/preMBE.py {params.gf} pan.tr.mbe.v0.bed
 {params.sd}/script/multiBoundaryExpansion.py 
 {params.sd}/script/writeMBEbed.py {params.th1} {params.th2}
@@ -247,7 +249,7 @@ for g in {params.genomes}; do
         sort -k1,1 -k2,2n -k3,3n >tmp.bed
         if [[ "$(cat tmp.bed | wc -l)" != "0" ]]; then
             bedtools merge -d 700 -c 4 -o collapse -i tmp.bed |
-            cut -f 4 | grep ","
+            cut -f 4 | {{ grep "," || true; }}
         fi
         ((++hi))
     done

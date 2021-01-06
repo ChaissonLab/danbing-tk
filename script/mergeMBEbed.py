@@ -3,25 +3,6 @@
 import numpy as np
 import pickle
 
-#def parseMergeSet():
-#    ms = set() # merge set, pan index
-#    bs = set()
-#    with open("mbe.m0.loci") as f:
-#        for line in f:
-#            if line[0] == ">":
-#                continue
-#            seq = sorted([int(v) for v in line.rstrip().split(",")])
-#            for i in range(1,len(seq)):
-#                if seq[i] != seq[i-1] + 1:
-#                    for v in seq:
-#                        bs.add(v)
-#                    print(f"bad {seq}")
-#                    break
-#            else:
-#                for v in seq:
-#                    ms.add(v)
-#    return ms, bs
-
 def parseMergeSet():
     ms = []
     bs = set()
@@ -87,7 +68,7 @@ def writeBed_MergeMBE():
     ms, bs = parseMergeSet()
     
     # QC on merging set
-    panbed = np.loadtxt(f"pan.tr.mbe.v1.bed", dtype=object)
+    panbed = np.loadtxt(f"pan.tr.mbe.v1.bed", dtype=object, ndmin=2)
     _, ng = panmap.shape
     i1togood = {}
     qcb = [] # QC bad
@@ -166,85 +147,6 @@ def writeBed_MergeMBE():
     np.savetxt("OrthoMap.v2.tsv", lmap, delimiter="\t", fmt='%s')
     np.savetxt("locusMap.v2.to.v1.txt", i2toi1, fmt='%s')
 
-#def writeBed_MergeMBE():
-#    ms, bs = parseMergeSet()
-#    
-#    # partition into disjoint sets
-#    ml = sorted(list(ms))
-#    mll = []
-#    mll.append([ml[0]])
-#    c = []
-#    for i in range(1,len(ml)):
-#        if ml[i] == ml[i-1] + 1:
-#            mll[-1].append(ml[i])
-#        else:
-#            c.append(len(mll[-1]))
-#            mll.append([ml[i]])
-#        
-#    # QC on merging set
-#    panbed = np.loadtxt(f"pan.tr.mbe.v1.bed", dtype=object)
-#    _, ng = panmap.shape
-#    i1togood = {}
-#    qcb = [] # QC bad
-#    for i1s in mll:
-#        dist = np.full(2*ng, np.nan)
-#        for hi in range(2*ng):
-#            if np.all(panbed[i1s,3+hi*4] != "None"):
-#                if np.any(panbed[i1s,3+hi*4] != panbed[i1s[0],3+hi*4]):
-#                    print(f"remove haplotype due to merging across contigs: {hi}\t{i1s}\n {panbed[i1s,3+hi*4]}")
-#                else:
-#                    if np.any(panbed[i1s,6+hi*4] != panbed[i1s[0],6+hi*4]):
-#                        print("mixed orientation")
-#                    dist[hi] = getdist(panbed[i1s,4+hi*4:6+hi*4])
-#        good = np.isfinite(dist) # good mask
-#        th = 3*np.std(dist[good]) + 100
-#        bad = np.abs(dist[good] - np.median(dist[good])) > th # bad outliers
-#        good[good] = ~bad
-#        if np.sum(good)/(2*ng) < 0.8: # remove locus
-#            qcb.append(i1s)
-#            print(f"{i1s} removed by QC")
-#        else:
-#            i1togood[i1s[0]] = good # record hap to remove
-#    for i1s in qcb:
-#        mll.remove(i1s)
-#        for i1 in i1s:
-#            bs.add(i1)
-#            ms.remove(i1)
-#        
-#    # fill v2 bed
-#    nloci1, _ = panbed.shape
-#    pv2bed = np.full([nloci1-len(ms)+len(mll)-len(bs), 3+2*ng*4], None, dtype=object)
-#    nloci2, _ = pv2bed.shape
-#    i2toi1 = set(list(range(nloci1))) - ms - bs | set([i1s[0] for i1s in mll])
-#    i2toi1 = sorted(list(i2toi1)) # map v2 index to v1
-#    i1toi2 = np.full(nloci1, None, dtype=object)
-#    i1toi2[i2toi1] = np.arange(nloci2) # map v1 index to v2
-#    pv2bed = panbed[i2toi1]
-#    for i1s in mll:
-#        # fill ref
-#        i2 = i1toi2[i1s[0]]
-#        ids = i1s[0]
-#        ide = i1s[-1]+1
-#        refs = min([int(s) for s in panbed[ids:ide,1]])
-#        refe = max([int(e) for e in panbed[ids:ide,2]])
-#        pv2bed[i2,[1,2]] = [refs, refe]
-#        # fill asm
-#        for hi in range(2*ng):
-#            if not i1togood[i1s[0]][hi]: # bad hap to remove
-#                pv2bed[i2,3+hi*4:7+hi*4] = ["None"]*4
-#                continue
-#            asms = min([int(s) for s in panbed[ids:ide,4+hi*4]])
-#            asme = max([int(e) for e in panbed[ids:ide,5+hi*4]])
-#            pv2bed[i2,4+hi*4:6+hi*4] = [asms, asme]           
-#    np.savetxt("pan.tr.mbe.v2.bed", pv2bed, delimiter="\t", fmt='%s')
-#    
-#    # orthology map
-#    lmap = np.full([nloci2, 2*ng], ".", dtype=object)
-#    for hi in range(2*ng):
-#        m = pv2bed[:,3+4*hi] != "None"
-#        lmap[m,hi] = np.arange(np.sum(m))
-#    np.savetxt("OrthoMap.v2.tsv", lmap, delimiter="\t", fmt='%s')
-#    np.savetxt("locusMap.v2.to.v1.txt", i2toi1, fmt='%s')
 
 if __name__ == "__main__":
     with open("mbe.meta.gs_map.pickle", 'rb') as f:

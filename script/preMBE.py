@@ -12,7 +12,7 @@ def loadbeds(panmap):
         for h in [0,1]:
             hi = 2*gi + h
             m = panmap[:,gi]==1
-            beds[hi,m] = np.loadtxt(f"{g}/tmp1.{h}.bed", dtype=object, usecols=[0,1,2,6])
+            beds[hi,m] = np.loadtxt(f"{g}/tmp1.{h}.bed", dtype=object, usecols=[0,1,2,6], ndmin=2)
     return beds
 
 def getChrom2Loci(beds, panmap):
@@ -74,7 +74,7 @@ if __name__ == "__main__":
     print("Loading genomes")
     gs = np.loadtxt(sys.argv[1], dtype=object, ndmin=1)
     print("Loading orthology mapping")
-    panmap = np.loadtxt(sys.argv[2], dtype=object)[:,3:].astype(int)
+    panmap = np.loadtxt(sys.argv[2], dtype=object, ndmin=2)[:,3:].astype(int)
     print("Loading beds")
     beds = loadbeds(panmap)
     print("Loading seq/pos")

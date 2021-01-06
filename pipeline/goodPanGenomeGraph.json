@@ -12,6 +12,8 @@
     "threadingCountThreshold" : 50,
     "sizeLowerBound" : 50,
     "TRwindow" : 10000,
+    "MBE_th1" : 0.1,
+    "MBE_th2" : 0.8,
     "ref" : /home/cmb-16/mjc/tsungyul/work/vntr/datasets/reference/hg38_noalts/hg38.no_alts.fasta,
     "refTR" : /home/cmb-17/mjc/vntr_genotyping/rpgg_k21_84k/input/tr.good.bed,
     "refctrl" : /home/cmb-17/mjc/vntr_genotyping/cmb-16/work/vntr/hapdb/a1_regions/ctrl/pan.fn2.bed,
