@@ -14,7 +14,7 @@ Each release comes with the lastest version of genotypable VNTRs, RPGG, and prec
 |                   | File                              | Input of           | Output of        |
 |-------------------|-----------------------------------|--------------------|------------------|
 | Genotypable VNTRs | tr.good.bed                       | danbing-tk build   |                  |
-| RPGG              | pan.(tr\|lntr\|rntr\|graph).kmers | danbing-tk align   | danbing-tk build |
+| RPGG              | pan.(tr\|ntr\|graph).kmers        | danbing-tk align   | danbing-tk build |
 | precomputed LSB   | step1.csv                         | danbing-tk predict |                  |
 
 - Genotypable VNTRs are also available under`data/tr.good.bed` if RPGG and LSB are not needed.
