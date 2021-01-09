@@ -1,9 +1,9 @@
 {
-    "srcDir" : /home/cmb-16/mjc/tsungyul/work/vntr/danbing-tk/,
-    "inputDir" : /home/cmb-16/mjc/tsungyul/work/vntr/danbing-tk/test/input/,
-    "outputDir" : /home/cmb-16/mjc/tsungyul/work/vntr/danbing-tk/test/output/,
-    "pairs" : /home/cmb-16/mjc/tsungyul/work/vntr/danbing-tk/test/input/genome.bam.tsv.bak,
-    "genomefile" :  /home/cmb-16/mjc/tsungyul/work/vntr/danbing-tk/test/input/genomes.txt,
+    "srcDir" : /$PREFIX/danbing-tk/,
+    "inputDir" : /$PREFIX/danbing-tk/test/input/,
+    "outputDir" : /$PREFIX/danbing-tk/test/output/,
+    "pairs" : /$PREFIX/danbing-tk/test/input/genome.bam.tsv,
+    "genomefile" :  /$PREFIX/danbing-tk/test/input/genomes.txt,
     "AsmAligner" : "minimap2",
     "ksize" : 21,
     "flankSize" : 700,
@@ -14,8 +14,8 @@
     "TRwindow" : 10000,
     "MBE_th1" : 0.1,
     "MBE_th2" : 0.8,
-    "ref" : /home/cmb-16/mjc/tsungyul/work/vntr/danbing-tk/test/input/hg38.chr12.2155791.2356090.fasta,
-    "refTR" : /home/cmb-16/mjc/tsungyul/work/vntr/danbing-tk/test/input/tr.bed,
-    "refctrl" : /home/cmb-16/mjc/tsungyul/work/vntr/danbing-tk/test/input/ctrl.bed,
+    "ref" : /$PREFIX/danbing-tk/test/input/hg38.chr12.2155791.2356090.fasta,
+    "refTR" : /$PREFIX/danbing-tk/test/input/tr.bed,
+    "refctrl" : /$PREFIX/danbing-tk/test/input/ctrl.bed,
     "clusterOpts" : "sbatch --time=240:00:00 --partition=cmb"
 }
