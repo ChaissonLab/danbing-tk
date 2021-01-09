@@ -72,7 +72,7 @@ def getLociSeqPos(fastafiles, beds, ch2loci):
 if __name__ == "__main__":
     nprocess, KSIZE, FS, UB, TRWINDOW, nloci = 32, 21, 700, 9300, 10000, 29111
     print("Loading genomes")
-    gs = np.loadtxt(sys.argv[1], dtype=object, ndmin=1)
+    gs = np.loadtxt(sys.argv[1], usecols=0, dtype=object, ndmin=1)
     print("Loading orthology mapping")
     panmap = np.loadtxt(sys.argv[2], dtype=object, ndmin=2)[:,3:].astype(int)
     print("Loading beds")

@@ -7,7 +7,6 @@ srcdir = config["srcDir"]
 indir = config["inputDir"]
 outdir = config["outputDir"]
 
-genomefile = config["genomefile"]
 gbpair = np.loadtxt(config["pairs"], dtype=object)
 genomes = gbpair[:,0].tolist()
 bams = dict(gbpair)
@@ -223,7 +222,7 @@ rule JointTRAnnotation:
         TRwindow = TRwindow,
         th1 = mbe_th1,
         th2 = mbe_th2,
-        gf = genomefile,
+        pairs = config["pairs"],
         genomes = genomes
     shell:"""
 set -eu
@@ -236,7 +235,7 @@ for g in {params.genomes}; do
     bedtools map -c 1 -o count -a pan.tr.mbe.v0.bed -b <(cut -f 4-6 $g/tmp1.0.bed) >pan.tr.mbe.v0.bed.tmp && 
     mv pan.tr.mbe.v0.bed.tmp pan.tr.mbe.v0.bed
 done
-{params.sd}/script/preMBE.py {params.gf} pan.tr.mbe.v0.bed
+{params.sd}/script/preMBE.py {params.pairs} pan.tr.mbe.v0.bed
 {params.sd}/script/multiBoundaryExpansion.py 
 {params.sd}/script/writeMBEbed.py {params.th1} {params.th2}
 hi=0

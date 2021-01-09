@@ -3,7 +3,6 @@
     "inputDir" : /$PREFIX/danbing-tk/test/input/,
     "outputDir" : /$PREFIX/danbing-tk/test/output/,
     "pairs" : /$PREFIX/danbing-tk/test/input/genome.bam.tsv,
-    "genomefile" :  /$PREFIX/danbing-tk/test/input/genomes.txt,
     "AsmAligner" : "minimap2",
     "ksize" : 21,
     "flankSize" : 700,
