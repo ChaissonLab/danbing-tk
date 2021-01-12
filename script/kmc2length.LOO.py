@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pickle
 import warnings
-import vntrutils as vu
+from vntrutils import readKms
 
 
 def loadbedsize(bed):
@@ -27,7 +27,7 @@ def loadvntrmat(genomes, prefix="pan", suffix="IL.tr.kmers"):
         
     vntrmat = np.zeros([len(genomes), nloci], dtype=int)
     for gind, g in enumerate(genomes):
-        vu.readKms(kmerfnames[g], vntrmat[gind])
+        readKms(kmerfnames[g], vntrmat[gind])
     return vntrmat
 
 def processCtrlBamCov(covmat, whis=1.5):
