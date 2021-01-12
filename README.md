@@ -14,26 +14,28 @@ Each release comes with the lastest version of genotypable VNTRs, RPGG, and prec
 |                   | File                              | Input of           | Output of        |
 |-------------------|-----------------------------------|--------------------|------------------|
 | Genotypable VNTRs | tr.good.bed                       | danbing-tk build   |                  |
+| Control regions   | ctrl.bed                          | danbing-tk build   |                  |
 | RPGG              | pan.(tr\|ntr\|graph).kmers        | danbing-tk align   | danbing-tk build |
-| precomputed LSB   | step1.csv                         | danbing-tk predict |                  |
+| Precomputed LSB   | LSB.tsv                           | danbing-tk predict |                  |
 
-- Genotypable VNTRs are also available under`data/tr.good.bed` if RPGG and LSB are not needed.
-- The 397 non-repetitive control regions are available under `data/ctrl.bed`.
+- Release v1.0: VNTR summary statistics and eGene discoveries are also included.
 
 ### Install Dependencies
-danbing-tk requires several external packages. It is recommended to install all requirements using conda as follows:
+For users intended to use `danbing-tk align` only, this step is not required.
+
+The `danbing-tk build` pipeline and `danbing-tk predict` require several external packages. It is recommended to install all requirements using conda as follows:
 
 ```bash
 conda install -c conda-forge -c bioconda -c intel \
     snakemake=5.11.2 samtools=1.10 bedtools=2.29.2 minimap2=2.17 \
-    scikit-learn=0.23.1 matplotlib=3.3.0
+    scikit-learn=0.23.1 statsmodels=0.12.1
 ```
 
 If the requirements are in conflict with existing packages, create a new environment specifically for danbing-tk with:
 ```
 conda create -n $MY_ENVIRONMENT -c conda-forge -c bioconda -c intel \
     snakemake=5.11.2 samtools=1.10 bedtools=2.29.2 minimap2=2.17 \
-    scikit-learn=0.23.1 matplotlib=3.3.0
+    scikit-learn=0.23.1 statsmodels=0.12.1
 ```
 
 ### Building on Linux
@@ -49,7 +51,7 @@ To check if everything is configured properly:
 2. Replace `$PREFIX` in `goodPanGenomeGraph.json` and `input/genome.bam.tsv` with the path to danbing-tk
 3. Run `snakemake -p -s ../pipeline/GoodPanGenomeGraph.snakefile -j 4 --rerun-incomplete --output-wait 3`
 
-Tested on V0.0. 
+Tested on v1.0. 
 ## Usage
 
 ### danbing-tk align
@@ -82,20 +84,18 @@ snakemake -p -s /$PREFIX/danbing-tk/pipeline/GoodPanGenomeGraph.snakefile -j 40\
 Submitting jobs to cluster is preferred as `danbing-tk build` is compute-intensive, ~1200 cpu hours for the original dataset. Otherwise, remove `--cluster` and its parameters to run jobs locally.
 
 ### danbing-tk predict
-Locus-specific sampling biases (LSB) at VNTR regions are critical for normalizing the sum of *k*-mer counts to VNTR length. We provided precomputed LSB at the VNTR regions for fast comparison, however this assumes the LSB of the dataset of interest is close enough to the dataset in the original paper. Please ensure this assumption is valid by running a joint PCA on the LSB of non-repetitive regions with the original dataset, provided in `ctrl.cov`. If this assumption failed, leave-one-out analysis (next section) on the dataset of interest is necessary to make accurate predictions. The following usage is for when the assumption holds.
+Locus-specific sampling biases (LSB) at VNTR regions are critical for normalizing the sum of *k*-mer counts to VNTR length. We provided precomputed LSB at the VNTR regions for fast comparison, however this assumes the LSB of the dataset of interest is close enough to the dataset in the original paper. Please ensure this assumption is valid by running a joint PCA on the LSB of non-repetitive regions with the original dataset, provided in `LSB.tsv`. If this assumption failed, leave-one-out analysis (next section) on the dataset of interest is necessary to make accurate predictions. The following usage is for when the assumption holds.
 
-Link precomputed statistics of the original dataset to your working directory.
-
-`ln -s /$PREFIX/danbing-tk/dat/step1.csv /$WORKING_DIR/analysis/.`
+Run `getCovByLocus.397.sh` on your SRS dataset.
 
 Run length prediction with:
 
 ```bash
-/$PREFIX/danbing-tk/script/kmc2length.py --genome GENOME.TXT --nloci NLOCI \
-    --skip1 --LOOconf LOOCONF --sampleConf SAMPLECONF
+/$PREFIX/danbing-tk/script/kmc2length.py --outdir OUTDIR --ksize KSIZE --kmers KMERS --trbed
+	TRBED --LSB LSB --cov COV --covbed COVBED
 ```
 
-Predictions and accuracies are written to `pred_len.txt` and `rel_err.txt`
+Length estimates are written to `estimated_TR_len.tsv`.
 
 ## Analysis
 ### Distribution of LSB
