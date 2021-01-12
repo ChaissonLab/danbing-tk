@@ -61,8 +61,8 @@ An example usage to genotype SRS sample using the RPGG:
 
 ```shell
 samtools fasta -@2 -n $SRS.bam |
-bam2pe -fai /dev/stdin |
-danbing-tk -gc 50 -k 21 -qs pan -fai /dev/stdin -o $OUT_PREFIX \
+/$PREFIX/danbing-tk/bin/bam2pe -fai /dev/stdin |
+/$PREFIX/danbing-tk/bin/danbing-tk -gc 50 -k 21 -qs pan -fai /dev/stdin -o $OUT_PREFIX \
            -p 24 -cth 45 -rth 0.5
 ```
 
