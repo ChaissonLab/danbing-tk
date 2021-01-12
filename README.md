@@ -4,6 +4,8 @@ A toolkit for variable number tandem repeats (VNTRs) analysis, which enables:
 2. genotyping each VNTR as a set of (*k*-mer, count) given SRS data (`danbing-tk align`), and
 3. predicting VNTR length from the genotype (`danbing-tk predict`) given locus-specific sampling bias (LSB).
 
+[Manuscript](https://www.biorxiv.org/content/10.1101/2020.08.13.249839v3) available on biorxiv.
+
 
 ## Installation
 This will take up to an hour on a typical work station, depending on your internet connection.
