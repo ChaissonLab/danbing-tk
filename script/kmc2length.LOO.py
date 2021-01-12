@@ -110,7 +110,7 @@ def getBestUsingSeqrunPrior(srtgimat, gs):
     bestind = np.zeros(srtgimat.shape[0], dtype=int)
     for gi, srtgis in enumerate(srtgimat):
         run = g2sr[gs[gi]]
-        for bidx in reversed(srtgis):
+        for bidx in srtgis:
             # only use nearest neighbor from the same sequencing run, except samples from individual work
             # exclude bad genomes from nearest neighbor search
             if bidx not in badgis and (run == g2sr[gs[bidx]] or run == "individual"):
@@ -144,7 +144,7 @@ def BiasCorrectedLenPred(outdir="./"):
         LOObiasmat = biasmat[LOOmask]
         LOOpbamcov = pbamcov[LOOmask]
         metric = matCorrelation(covmat, **opts)
-        srtgimat = np.argsort(metric, axis=1)[:,:-1]
+        srtgimat = np.argsort(metric, axis=1)[:,1:]
         bestind = getBestUsingSeqrunPrior(srtgimat, LOOgenomes)
             
         for idx, bidx in enumerate(bestind):
@@ -173,12 +173,12 @@ if __name__ == "__main__":
             "  [2] Predict VNTR lengths from kmer genotype in leave-one-out setting\t"+
             "* Use --skip1 to avoid recomputing step 1")
 
-    ap.add_argument("--ksize", help="", type=int, required=True)
+    ap.add_argument("--ksize", help="kmer size of RPGG", type=int, required=True)
     ap.add_argument("--genome", help="genome config file", required=True)
     ap.add_argument("--nloci", help="number of VNTR loci", type=int, required=True)
+    ap.add_argument("--pantr", help="locus mapping/coordinate file for all haplotypes")
 
     ap.add_argument("--skip1", help="skip step 1 and read from step1_results.pickle", action="store_true")
-    ap.add_argument("--pantr", help="locus mapping/coordinate file for all haplotypes; skipped if --skip1")
     ap.add_argument("--cov", help="bam coverage file; skipped if --skip1")
     ap.add_argument("--covbed", help="unique region bed file; skipped if --skip1")
 
