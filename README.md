@@ -20,7 +20,7 @@ Each release comes with the lastest version of genotypable VNTRs, RPGG, and prec
 | RPGG              | pan.(tr\|ntr\|graph).kmers        | danbing-tk align   | danbing-tk build |
 | Precomputed LSB   | LSB.tsv                           | danbing-tk predict |                  |
 
-- Release v1.0: VNTR summary statistics and eGene discoveries are also included.
+- Release v1.0: VNTR summary statistics and eGene discoveries are also included. Example analyses such as differential length/motif analysis, eQTL mapping, VNTR locus QC, sample QC are also included.
 
 ### Install Dependencies
 For users intended to use `danbing-tk align` only, this step is not required.
