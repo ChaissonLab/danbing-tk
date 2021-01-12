@@ -73,9 +73,13 @@ samtools fasta -@2 -n $SRS.bam |
 **Important note:** If outputs of `danbing-tk align` are intended to be used directly for downstream analyses e.g. association tests, please check the [distribution of LSB](#distribution-of-lsb) section below before running.
 
 ### danbing-tk build
-Required inputs: haplotype-resolved assemblies, matched SRS data, reference genome (major chromosomes only without minor contigs) and bed file of tandem repeat regions (optional)
+Required inputs: 
+- haplotype-resolved assemblies (FASTA)
+- matched SRS data (BAM)
+- reference genome (major chromosomes only without minor contigs)
+- tandem repeat regions (BED; available on [release page](https://github.com/ChaissonLab/danbing-tk/releases/tag/v1.0) or user-defined)
 
-Copy `/$PREFIX/danbing-tk/pipeline/goodPanGenomeGraph.snakefile` to your working directory and edit accordingly. Run the snakemake pipline with:
+Copy `/$PREFIX/danbing-tk/pipeline/goodPanGenomeGraph.json` to your working directory and edit accordingly. A config file `/$INPUT_DIR/genome.bam.tsv` is required with a format like `HG00514 /panfs/qcb-panasas/tsungyul/HG00514/HG00514.IL.srt.bam`. Run the snakemake pipline with:
 
 ```bash
 snakemake -p -s /$PREFIX/danbing-tk/pipeline/GoodPanGenomeGraph.snakefile -j 40\
