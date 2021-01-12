@@ -30,14 +30,14 @@ The `danbing-tk build` pipeline and `danbing-tk predict` require several externa
 ```bash
 conda install -c conda-forge -c bioconda -c intel \
     snakemake=5.11.2 samtools=1.10 bedtools=2.29.2 minimap2=2.17 \
-    scikit-learn=0.23.1 statsmodels=0.12.1
+    scikit-learn=0.23.1 statsmodels=0.12.1 pysam=0.15.3
 ```
 
 If the requirements are in conflict with existing packages, create a new environment specifically for danbing-tk with:
 ```
 conda create -n $MY_ENVIRONMENT -c conda-forge -c bioconda -c intel \
     snakemake=5.11.2 samtools=1.10 bedtools=2.29.2 minimap2=2.17 \
-    scikit-learn=0.23.1 statsmodels=0.12.1
+    scikit-learn=0.23.1 statsmodels=0.12.1 pysam=0.15.3
 ```
 
 ### Building on Linux
