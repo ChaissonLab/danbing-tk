@@ -75,14 +75,17 @@ samtools fasta -@2 -n $SRS.bam |
 ### danbing-tk build
 - Required inputs: 
 	- haplotype-resolved assemblies (FASTA)
-	- matched SRS data (BAM)
+	- matched SRS data (BAM; optional)
 	- reference genome (major chromosomes only without minor contigs)
 	- tandem repeat regions (BED; available on [release page](https://github.com/ChaissonLab/danbing-tk/releases/tag/v1.0) or user-defined)
 
 - Copy `/$PREFIX/danbing-tk/pipeline/goodPanGenomeGraph.json` to your working directory and edit accordingly. 
 
-- A config file `/$INPUT_DIR/genome.bam.tsv` is required with a format like: 
-```HG00514 /panfs/qcb-panasas/tsungyul/HG00514/HG00514.IL.srt.bam```
+- A config file `/$INPUT_DIR/genome.bam.tsv` with two columns, one for genome name and one for bam file path, is required if SRS data is available for graph pruning, e.g.
+
+    ```HG00514 /panfs/qcb-panasas/tsungyul/HG00514/HG00514.IL.srt.bam```
+    
+    Otherwise, set `pruning` in `goodPanGenomeGraph.json` to `False` and use a single column input for `genome.bam.tsv`.
 
 - Run the snakemake pipline with:
 ```bash
