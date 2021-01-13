@@ -7,9 +7,10 @@ srcdir = config["srcDir"]
 indir = config["inputDir"]
 outdir = config["outputDir"]
 
-gbpair = np.loadtxt(config["pairs"], dtype=object)
+prune = config["pruning"]
+gbpair = np.loadtxt(config["pairs"], dtype=object, ndmin=2)
 genomes = gbpair[:,0].tolist()
-bams = dict(gbpair)
+bams = dict(gbpair) if prune else None
 haps = ["0", "1"]
 kmerTypes = ["tr", "ntr", "graph"]
 
@@ -33,12 +34,12 @@ rule all:
         faAln = expand(outdir + "{genome}.{hap}.aln.foo", genome=genomes, hap=haps),
         lift = expand(outdir + "{genome}/lift.foo", genome=genomes),
         TRfa = expand(outdir + "{genome}.{hap}.tr.fasta", genome=genomes, hap=haps),
-        PBkmers = expand(outdir + "{genome}.PB.{kmerType}.kmers", genome=genomes, kmerType=kmerTypes),
-        rawPred = expand(outdir + "{genome}.rawLR.pred", genome=genomes),
+        #PBkmers = expand(outdir + "{genome}.PB.{kmerType}.kmers", genome=genomes, kmerType=kmerTypes),
+        #rawPred = expand(outdir + "{genome}.rawLR.pred", genome=genomes),
         panKmers = expand(outdir + "pan.{kmerType}.kmers", kmerType=kmerTypes),
         #panILkmers = expand(outdir + "pan.{genome}.IL.tr.kmers", genome=genomes),
         #pred = expand(outdir + "{genome}.LR.pred", genome=genomes),
-        bamcov = outdir + "ctrl.cov"
+        bamcov = [outdir + "ctrl.cov"] if prune else []
         
 
 rule IndexAsm:
@@ -72,7 +73,7 @@ done
 
 rule ComputeBamCoverage:
     input:
-        ILbam = [bams[g] for g in genomes],
+        ILbam = [bams[g] for g in genomes] if prune else [],
         #ILbam = expand(indir + "{genome}.final.cram", genome=genomes),
         #ILbai = expand(indir + "{genome}.final.cram.crai", genome=genomes)
     output:
@@ -279,7 +280,7 @@ done
 rule GenRawGenomeGraph:
     input:
         TRfa = expand(outdir + "{{genome}}.{hap}.tr.fasta", hap=haps),
-        ILbam = lambda wildcards: bams[wildcards.genome],
+        ILbam = lambda wildcards: [bams[wildcards.genome]] if prune else [],
         mapping = outdir + "OrthoMap.v2.tsv",
     output:
         rawPBkmers = expand(outdir + "{{genome}}.rawPB.{kmerType}.kmers", kmerType=kmerTypes),
@@ -361,10 +362,15 @@ awk '$1 ~ />/ || $2 == 0' {input.rawILkmers} |
 {params.sd}/bin/vntr2kmers_thread -g -p /dev/stdin -m <(cut -f $(({params.hi}+1)),$(({params.hi}+2)) {input.mapping}) -k {params.ksize} -fs {params.FS} -ntr {params.FS} -o {wildcards.genome}.PB -fa 2 {input.TRfa}
 """
 
+def getRPGGin():
+    if prune:
+        return outdir + "{genome}.PB.{kmerType}.kmers"
+    else:
+        return outdir + "{genome}.rawPB.{kmerType}.kmers"
 
 rule GenPanGenomeGraph:
     input:
-        PBkmers = expand(outdir + "{genome}.PB.{kmerType}.kmers", genome=genomes, kmerType=kmerTypes),
+        PBkmers = expand(getRPGGin() , genome=genomes, kmerType=kmerTypes),
     output:
         panKmers = expand(outdir + "pan.{kmerType}.kmers", kmerType=kmerTypes)
     resources:
