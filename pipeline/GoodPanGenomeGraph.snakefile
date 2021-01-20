@@ -381,7 +381,7 @@ rule GenPanGenomeGraph:
         copts = copts,
         sd = srcdir,
         od = outdir,
-        kmerpref = " ".join([f'{g}.PB' for g in genomes])
+        kmerpref = " ".join([f'{g}.PB' if prune else f'{g}.rawPB' for g in genomes])
     shell:"""
 cd {params.od}
 ulimit -c 20000
