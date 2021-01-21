@@ -48,9 +48,9 @@ for k, v in y.items():
     if v.size and x[k].size:
         if mapkmer:
             m = np.isin(y[k][:,0], x[k][:,0])
-            data[k] = np.column_stack((x[k][:,1], y[k][m,1]))
+            data[k] = np.column_stack((np.insert(x[k][:,1],0,0), np.insert(y[k][m,1],0,0)))
         else:
-            data[k] = np.column_stack((x[k], y[k]))
+            data[k] = np.column_stack((np.insert(x[k],0,0), np.insert(y[k],0,0)))
 
 results = np.zeros((nloci, 4))
 for k, v in x.items():
@@ -66,7 +66,7 @@ for k, v in data.items():
                                            f"locus {k}, n={v.shape[0]}", f"{args.out}.{k}", outlier=args.mode, pred=True)
     if k % 1000 == 0:
         print(".", end="", flush=True)
-    results[k, 1:] = [pred, slope, r2]   ## divide by 2 since diploid individual [!] might be incorrect for CHM1 & CHM13
+    results[k, 1:] = [pred, slope, r2]
 print()
 
 print("writing outputs")
