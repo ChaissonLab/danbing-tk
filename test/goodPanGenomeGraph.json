@@ -13,6 +13,7 @@
     "TRwindow" : 10000,
     "MBE_th1" : 0.1,
     "MBE_th2" : 0.8,
+    "pruning" : True,
     "ref" : /$PREFIX/danbing-tk/test/input/hg38.chr12.2155791.2356090.fasta,
     "refTR" : /$PREFIX/danbing-tk/test/input/tr.bed,
     "refctrl" : /$PREFIX/danbing-tk/test/input/ctrl.bed,
