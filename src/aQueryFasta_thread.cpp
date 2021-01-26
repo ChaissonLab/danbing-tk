@@ -23,6 +23,8 @@ sem_t *semcount;
 sem_t *semwriter;
 bool testmode;
 size_t ksize;
+size_t N_FILTER = 4; // number of subsampled kmers
+size_t NM_FILTER = 1; // minimal number of hits
 const uint64_t NAN64 = 0xFFFFFFFFFFFFFFFF;
 const uint32_t NAN32 = 0xFFFFFFFF;
 
@@ -53,6 +55,24 @@ void rand_str(char *dest, size_t length) {
         *dest++ = charset[index];
     }
     *dest = '\0';
+}
+
+bool kfilter(vector<size_t>& kmers1, vector<size_t>& kmers2, kmeruIndex_umap& kmerDBi, size_t& nhash) {
+	size_t L1 = kmers1.size(), L2 = kmers2.size();
+	size_t S1 = L1 / (N_FILTER-1), S2 = L2 / (N_FILTER-1);
+	size_t h1 = 0, h2 = 0;
+	for (size_t i = 0; i < N_FILTER; ++i, ++nhash) {
+		size_t i1 = (i != N_FILTER-1 ? i*S1 : L1-1);
+		h1 += kmerDBi.count(kmers1[i1]);
+		if (h1 >= NM_FILTER) { break; }
+	}
+	if (h1 < NM_FILTER) { return false; }
+	for (size_t i = 0; i < N_FILTER; ++i, ++nhash) {
+		size_t i2 = (i != N_FILTER-1 ? i*S2 : L2-1);
+		h2 += kmerDBi.count(kmers2[i2]);
+		if (h2 >= NM_FILTER) { break; }
+	}
+	return h2 >= NM_FILTER;
 }
 
 void updatetop2(size_t count_f, size_t ind, size_t count_r, statStruct& out) { // for sorted_query algo
@@ -154,7 +174,7 @@ void fillstats(vector<size_t>& kmers, vector<size_t>& kmers_other, kmeruIndex_um
         }
     }
 
-    // sort kemrs dup w.r.t. nmappedloci; remove entries w/o mapped locus
+    // sort kmers dup w.r.t. nmappedloci; remove entries w/o mapped locus
     vector<size_t> indorder(nmappedloci.size());
 	getSortedIndex(nmappedloci, indorder);
     vector<size_t> old_kmers = kmers;
@@ -520,7 +540,7 @@ class Counts {
 public:
     bool isFastq, bait, threading, correction, aln, g2pan;
     uint16_t Cthreshold, thread_cth;
-    size_t *nReads, *nThreadingReads, *nFeasibleReads;
+    size_t *nReads, *nThreadingReads, *nFeasibleReads, *nPreFiltered;
     size_t nloci;
     float Rthreshold;
     kmeruIndex_umap* kmerDBi;
@@ -554,12 +574,13 @@ void CountWords(void *data) {
 	bool g2pan = ((Counts*)data)->g2pan;
     int simmode = ((Counts*)data)->simmode;
     int extractFasta = ((Counts*)data)->extractFasta;
-    size_t nReads_ = 0, nThreadingReads_ = 0, nFeasibleReads_ = 0;
+    size_t nReads_ = 0, nThreadingReads_ = 0, nFeasibleReads_ = 0, nPreFiltered_ = 0;
     const size_t nloci = ((Counts*)data)->nloci;
     const size_t readsPerBatch = 300000;
     size_t& nReads = *((Counts*)data)->nReads;
     size_t& nThreadingReads = *((Counts*)data)->nThreadingReads;
     size_t& nFeasibleReads = *((Counts*)data)->nFeasibleReads;
+    size_t& nPreFiltered = *((Counts*)data)->nPreFiltered;
     uint16_t Cthreshold = ((Counts*)data)->Cthreshold;
     uint16_t thread_cth = ((Counts*)data)->thread_cth;
     float Rthreshold = ((Counts*)data)->Rthreshold;
@@ -599,8 +620,10 @@ void CountWords(void *data) {
 
         nThreadingReads += nThreadingReads_;
         nFeasibleReads += nFeasibleReads_;
+        nPreFiltered += nPreFiltered_;
         nThreadingReads_ = 0;
         nFeasibleReads_ = 0;
+		nPreFiltered_ = 0;
         nReads_ = 0;
 
         if (simmode == 1 and srcLoci.size() != 0) {
@@ -665,11 +688,12 @@ void CountWords(void *data) {
 
         time_t time2 = time(nullptr);
         size_t seqi = 0;
+		size_t nhash = 0;
 		// aln only TODO define SAM structure
 		vector<EDIT> sam;
         // simmode only
         size_t simi = 0;
-        ValueType srcLocus;
+        ValueType srcLocus = -1;
         if (simmode == 1) { srcLocus = srcLoci[simi]; }
 
         while (seqi < nReads_) {
@@ -689,8 +713,11 @@ void CountWords(void *data) {
             vector<PE_KMC> dup;
             read2kmers(kmers1, seq, ksize); // stores numeric canonical kmers
             read2kmers(kmers2, seq1, ksize);
-            if (not kmers1.size() and not kmers2.size()) { continue; }
-
+            if (not kmers1.size() or not kmers2.size()) { continue; }
+			if (not kfilter(kmers1, kmers2, kmerDBi, nhash)) { 
+				++nPreFiltered_;
+				continue;
+			}
             size_t destLocus = countHit(kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold, Rthreshold);
 			kmerCount_umap cakmers;
 			EDIT edit;
@@ -741,7 +768,7 @@ void CountWords(void *data) {
                 else { destLocus = nloci; } // removed by threading
             }
 
-			if (aln and threading and simmode == 2 and (srcLocus != nloci or destLocus != nloci)) {
+			if (aln and threading and (srcLocus != nloci or destLocus != nloci)) {
 				alnindices.push_back(seqi); // work the same as extractindices
 				edit.map = std::make_pair(srcLocus, destLocus);
 				sam.push_back(edit);
@@ -771,7 +798,7 @@ void CountWords(void *data) {
             // end of thread lock
         }
 
-        cerr << "Batch query in " << (time(nullptr) - time2) << " sec." << endl;
+        cerr << "Batch query in " << (time(nullptr) - time2) << " sec. " << (float)nhash/nReads_ << "/" << nPreFiltered_ << "/" << nThreadingReads_ << "/" << nFeasibleReads_ << endl;
     }
 }
 
@@ -780,31 +807,34 @@ int main(int argc, char* argv[]) {
 
     if (argc < 2) {
         cerr << endl
-             << "Usage: danbing-tk [-b] [-e] [-t] [-s] [-m] [-a] [-g|-gc] -k <-qs> <-fqi | fai> -o -p -cth -rth" << endl
+             << "Usage: danbing-tk [-e] [-g|-gc] [-a] [-kf] -k -qs -fai [-o] -p -cth -rth" << endl
              << "Options:" << endl
-             << "  -b           Use baitDB to decrease ambiguous mapping" << endl
-             << "  -e <INT>     Write mapped reads to STDOUT in fasta format." << endl
-             << "               Specify 1 for keeping original read names. Will not write .kmers output." << endl
-			 << "               Specify 2 for appending assigned locus to each read name" << endl
-             << "  -t <INT>     Used trimmed pangenome graph e.g. \"-t 1\" for pan.*.trim1.kmers" << endl
-             << "  -s <INT>     Run in simulation mode to write the origin and destination of mis-assigned reads to STDOUT" << endl
-             << "               Specify 1 for simulated reads from TR" << endl
-             << "               Specify 2 for simulated reads from whole genome" << endl
-			 << "  -m <str>     locusMap.tbl, used for mapping g-locus to pan-locus in whole genome simulation" << endl
-             << "  -au          Augmentation mode, use pruned kmers and augkmers" << endl
-             << "  -g <INT>     Use graph threading algorithm w/o error correction" << endl
-             << "  -gc <INT>    Use graph threading algorithm w/ error correction" << endl
-             << "               Discard pe reads if # of matching kmers < [INT]" << endl
-			 << "  -a           Output read alignments. Only work with -g or -gc." << endl
-             << "  -k <INT>     Kmer size" << endl
-             << "  -qs <str>    Prefix for *.tr.kmers, *.ntr.kmers, *.graph.kmers files" << endl
-             << "  -fqi <str>   Interleaved pair-end fastq file" << endl // deprecated
-             << "  -fai <str>   interleaved pair-end fasta file" << endl
-             << "  -o <str>     Output prefix" << endl
-             << "  -p <int>     Use n threads." << endl
-             << "  -cth <int>   Discard both pe reads if maxhit of one pe read is below this threshold" << endl
-             << "  -rth <float> Discard reads with maxhit/(maxhit+secondhit) below this threshold." << endl
-             << "               Range [0.5, 1]. 1: does not allow noise. 0.5: no filtering." << endl
+             //<< "  -b               Use baitDB to decrease ambiguous mapping" << endl
+             //<< "  -t <INT>         Used trimmed pangenome graph e.g. \"-t 1\" for pan.*.trim1.kmers" << endl
+             //<< "  -s <INT>         Run in simulation mode to write the origin and destination of mis-assigned reads to STDOUT" << endl
+             //<< "                   Specify 1 for simulated reads from TR" << endl
+             //<< "                   Specify 2 for simulated reads from whole genome" << endl
+			 //<< "  -m <str>         locusMap.tbl, used for mapping g-locus to pan-locus in whole genome simulation" << endl
+             //<< "  -au              Augmentation mode, use pruned kmers and augkmers" << endl
+             << "  -e <INT>         Write mapped reads to STDOUT in fasta format." << endl
+             << "                   Specify 1 for keeping original read names. Will not write .kmers output." << endl
+			 << "                   Specify 2 for appending assigned locus to each read name" << endl
+             << "  -g <INT>         Use graph threading algorithm w/o error correction" << endl
+             << "  -gc <INT>        Use graph threading algorithm w/ error correction" << endl
+             << "                   Discard pe reads if # of matching kmers < [INT]" << endl
+			 << "  -a               Output read alignments. Only work with -g or -gc." << endl
+			 << "  -kf <INT> <INT>  Parameters for kmer-based pre-filtering," << endl
+			 << "                   optimized for 150bp paired-end reads." << endl
+			 << "                   1st param: # of sub-sampled kmers. Default: 4." << endl
+			 << "                   2nd param: minimal # of matches. Default: 1." << endl
+             << "  -k <INT>         Kmer size" << endl
+             << "  -qs <STR>        Prefix for *.tr.kmers, *.ntr.kmers, *.graph.kmers files" << endl
+             << "  -fai <STR>       interleaved pair-end fasta file" << endl
+             << "  -o <STR>         Output prefix" << endl
+             << "  -p <INT>         Use n threads." << endl
+             << "  -cth <INT>       Discard both pe reads if maxhit of one pe read is below this threshold" << endl
+             << "  -rth <FLOAT>     Discard reads with maxhit/(maxhit+secondhit) below this threshold." << endl
+             << "                   Range [0.5, 1]. 1: does not allow noise. 0.5: no filtering." << endl
              << endl;
         return 0;
     }
@@ -839,6 +869,10 @@ int main(int argc, char* argv[]) {
             thread_cth = stoi(args[++argi]);
         }
 		else if (args[argi] == "-a") { aln = true; }
+		else if (args[argi] == "-kf") {
+			N_FILTER = stoi(args[++argi]);
+			NM_FILTER = stoi(args[++argi]);
+		}
         else if (args[argi] == "-k") { ksize = stoi(args[++argi]); }
         else if (args[argi] == "-qs") {
             trPrefix = args[++argi];
@@ -949,7 +983,7 @@ int main(int argc, char* argv[]) {
     cerr << "creating data for each process..." << endl;
     time1 = time(nullptr);
     Threads threaddata(nproc, nloci);
-    size_t nReads = 0, nThreadingReads = 0, nFeasibleReads = 0;
+    size_t nReads = 0, nThreadingReads = 0, nFeasibleReads = 0, nPreFiltered = 0;
     for (size_t i = 0; i < nproc; ++i) {
         Counts &counts = threaddata.counts[i];
 
@@ -960,6 +994,7 @@ int main(int argc, char* argv[]) {
         counts.nReads = &nReads;
         counts.nThreadingReads = &nThreadingReads;
         counts.nFeasibleReads = &nFeasibleReads;
+        counts.nPreFiltered = &nPreFiltered;
         counts.msaStats = &msaStats;
         counts.errdb = &errdb;
 		counts.locusmap = &locusmap;
