@@ -38,12 +38,16 @@ struct EDIT {
 	std::pair<size_t, size_t> map; // <src_locus, dest_locus>
 };
 
+struct asgn_t { // pe read assignment
+	size_t idx = NAN32;
+	size_t fc = 0, rc = 0;
+};
+
 struct statStruct { // for forward + reverse strand (paired-end)
     uint32_t ind1 = NAN32;
     uint32_t ind2 = NAN32;
-    vector<PE_KMC> scores; // [(top_score_pe_read1, top_score_pe_read2), (second_score_pe_read1, second_score_pe_read2)] initialized as zeros
-
-    statStruct() : scores(2) {}
+	size_t fc1 = 0, rc1 = 0, fc2 = 0, rc2 = 0; // top_forward_strand_count, top_reverse_strand_count, second_forward_strand_count, second_reverse_strand_count
+    // XXX vector<PE_KMC> scores; // [(top_score_pe_read1, top_score_pe_read2), (second_score_pe_read1, second_score_pe_read2)] initialized as zeros
 };
 
 void rand_str(char *dest, size_t length) {
@@ -73,23 +77,6 @@ bool kfilter(vector<size_t>& kmers1, vector<size_t>& kmers2, kmeruIndex_umap& km
 		if (h2 >= NM_FILTER) { break; }
 	}
 	return h2 >= NM_FILTER;
-}
-
-void updatetop2(size_t count_f, size_t ind, size_t count_r, statStruct& out) { // for sorted_query algo
-    if (count_f + count_r > out.scores[0].first + out.scores[0].second) {
-        if (out.ind1 != ind) {
-            out.ind2 = out.ind1;
-            out.scores[1] = out.scores[0];
-            out.ind1 = ind;
-        }
-        out.scores[0] = std::make_pair(count_f, count_r);
-    }
-    else if (count_f + count_r > out.scores[1].first + out.scores[1].second) {
-        if (out.ind2 != ind) {
-            out.ind2 = ind;
-        }
-        out.scores[1] = std::make_pair(count_f, count_r);
-    }
 }
 
 template <typename T>
@@ -159,19 +146,17 @@ void countRemain(vector<PE_KMC>& dup, vector<size_t>& remain) {
 }
 
 // TODO might not need to input nmappedloci , not used later
-void fillstats(vector<size_t>& kmers, vector<size_t>& kmers_other, kmeruIndex_umap& kmerDBi, vector<PE_KMC>& dup, vector<size_t>& remain) {
+void fillstats(vector<size_t>& kmers, vector<size_t>& kmers_other, kmeruIndex_umap& kmerDBi, vector<PE_KMC>& dup, vector<size_t>& remain, size_t& nhash) {
     countDupRemove(kmers, kmers_other, dup); // count the occurrence of kmers in each read
 
     // get # of mapped loci for each kmer
     size_t nkmers = kmers.size();
     vector<size_t> nmappedloci(nkmers, 0);
     for (size_t i = 0; i < nkmers; ++i) {
-        if (kmerDBi.count(kmers[i])) {
-            nmappedloci[i] = kmerDBi[kmers[i]].size();
-        }
-        else {
-            nmappedloci[i] = NAN64;
-        }
+		++nhash;
+		auto it = kmerDBi.find(kmers[i]);
+        if (it != kmerDBi.end()) { nmappedloci[i] = it->second.size(); }
+        else { nmappedloci[i] = NAN64; }
     }
 
     // sort kmers dup w.r.t. nmappedloci; remove entries w/o mapped locus
@@ -192,53 +177,91 @@ void fillstats(vector<size_t>& kmers, vector<size_t>& kmers_other, kmeruIndex_um
     if (dup.size()) { countRemain(dup, remain); }
 }
 
-void _countHit(vector<size_t>& kmers1, vector<size_t>& kmers2, kmeruIndex_umap& kmerDBi, vector<PE_KMC>& dup, size_t nloci, statStruct& out) {
-    vector<size_t> remain;
-    fillstats(kmers1, kmers2, kmerDBi, dup, remain);
-
-    vector<uint32_t> totalHits1(nloci+1, 0), totalHits2(nloci+1, 0); // one extra element for baitDB
-    //_statStruct out_f; // indices and scores of top and second hits in forward strand
-
-    // for each kmer, increment counts of the mapped loci for each read
-    // use "remain" to achieve early stopping
-    for (size_t i = 0; i < kmers1.size(); ++i) {
-        for (auto locus : kmerDBi[kmers1[i]]) {
-            totalHits1[locus] += dup[i].first;
-            totalHits2[locus] += dup[i].second;
-            updatetop2(totalHits1[locus], locus, totalHits2[locus], out);
+void updatetop2(size_t count_f, size_t ind, size_t count_r, asgn_t& top, asgn_t& second) { // for sorted_query algo
+    if (count_f + count_r > top.fc + top.rc) {
+        if (top.idx != ind) {
+			second = top;
+			top.idx = ind;
         }
-        if (out.scores[0].first + out.scores[0].second - out.scores[1].first - out.scores[1].second >= remain[i]) { // will stop if tie
-            for (size_t j = i+1; j < kmers1.size(); ++j) {
-                if (kmerDBi[kmers1[j]].count(out.ind1)) {
-                    out.scores[0].first += dup[j].first;
-                    out.scores[0].second += dup[j].second;
-                }
-                if (kmerDBi[kmers1[j]].count(out.ind2)) { // FIXME not correct, ind2 is not determined yet
-                    out.scores[1].first += dup[j].first;
-                    out.scores[1].second += dup[j].second;
-                }
-            }
-            break;
+		top.fc = count_f;
+		top.rc = count_r;
+    }
+    else if (count_f + count_r > second.fc + second.rc) {
+        if (second.idx != ind) {
+            second.idx = ind;
         }
+		second.fc = count_f;
+		second.rc = count_r;
     }
 }
 
-// used when no baitDB
-size_t countHit(vector<size_t>& kmers1, vector<size_t>& kmers2, kmeruIndex_umap& kmerDBi, vector<PE_KMC>& dup, 
-                size_t nloci, uint16_t Cthreshold, float Rthreshold = 0.5) {
-    statStruct stat;
-    _countHit(kmers1, kmers2, kmerDBi, dup, nloci, stat);
+inline bool get_cmp(asgn_t& top, asgn_t& second, size_t rem, float rth) {
+	return float(top.fc + top.rc      )/(top.fc + top.rc + second.fc + second.rc + rem) <  rth and
+           float(top.fc + top.rc + rem)/(top.fc + top.rc + second.fc + second.rc + rem) >= rth;
+}
 
-    size_t score1 = stat.scores[0].first + stat.scores[0].second;
-    size_t score2 = stat.scores[1].first + stat.scores[1].second;
+inline bool get_acm1(asgn_t& top, asgn_t& second, size_t rem, size_t cth) {
+	// accumulate the score of the top locus to identify reads w/ aln score >= Cthreshold
+	return (top.fc < cth and cth - top.fc <= rem) or (top.rc < cth and cth - top.rc <= rem);
+}
 
-    // FIXME ind2, score2 is not correct (underestimated)
-    if (stat.scores[0].first >= Cthreshold and stat.scores[0].second >= Cthreshold and 
-        float(score1) / (score1+score2) >= Rthreshold and stat.ind1 != NAN32) {
+inline bool get_acm2(asgn_t& top, asgn_t& second, size_t rem) { 
+	// accumulate the scores of the top 2 loci to assign reads to the most similar locus
+	return (top.fc + top.rc - second.fc - second.rc) < rem;
+}
 
-        return stat.ind1;
+size_t countHit(vector<size_t>& kmers1, vector<size_t>& kmers2, kmeruIndex_umap& kmerDBi, vector<PE_KMC>& dup, size_t nloci, 
+			  uint16_t Cthreshold, float Rthreshold, size_t& nhash) {
+    vector<size_t> remain;
+    fillstats(kmers1, kmers2, kmerDBi, dup, remain, nhash);
+
+    // for each kmer, increment counts of the mapped loci for each read
+    // use "remain" to achieve early stopping
+	asgn_t top, second;
+    vector<uint32_t> hits1(nloci+1, 0), hits2(nloci+1, 0); // one extra element for baitDB
+    for (size_t i = 0; i < kmers1.size(); ++i) {
+		unordered_set<uint32_t>& loci = kmerDBi.find(kmers1[i])->second;
+		++nhash;
+        for (uint32_t locus : loci) {
+            hits1[locus] += dup[i].first;
+			hits2[locus] += dup[i].second;
+			updatetop2(hits1[locus], locus, hits2[locus], top, second);
+        }
+		if (not get_acm2(top, second, remain[i])) {
+			size_t j = i;
+			if (Rthreshold != 0.5) { // continue to count scores until PASS/FAIL can be determined
+				while (get_cmp(top, second, remain[j], Rthreshold)) { // XXX second.idx might not be fixed yet
+					++j; ++nhash;
+					unordered_set<uint32_t>& loci = kmerDBi.find(kmers1[j])->second;
+					if (loci.count(top.idx)) {
+						top.fc += dup[j].first;
+						top.rc += dup[j].second;
+					} 
+					else if (loci.count(second.idx)) {
+						second.fc += dup[j].first;
+						second.rc += dup[j].second;
+					}
+				}
+			}
+			while (get_acm1(top, second, remain[j], Cthreshold)) {
+				++j; ++nhash;
+				unordered_set<uint32_t>& loci = kmerDBi.find(kmers1[j])->second;
+				if (loci.count(top.idx)) {
+					top.fc += dup[j].first;
+					top.rc += dup[j].second;
+				} 
+			}
+			break;
+		}
     }
-    return nloci;
+	if (top.fc >= Cthreshold and top.rc >= Cthreshold and 
+	    float(top.fc + top.rc)/(top.fc + top.rc + second.fc + second.rc) >= Rthreshold and 
+	    top.idx != NAN32) { 
+		return top.idx;
+	} 
+	else { 
+		return nloci;
+	}
 }
 
 // simmode = 1; simmulated reads from TR only
@@ -688,7 +711,7 @@ void CountWords(void *data) {
 
         time_t time2 = time(nullptr);
         size_t seqi = 0;
-		size_t nhash = 0;
+		size_t nhash0 = 0, nhash1 = 0;
 		// aln only TODO define SAM structure
 		vector<EDIT> sam;
         // simmode only
@@ -714,11 +737,11 @@ void CountWords(void *data) {
             read2kmers(kmers1, seq, ksize); // stores numeric canonical kmers
             read2kmers(kmers2, seq1, ksize);
             if (not kmers1.size() or not kmers2.size()) { continue; }
-			if (not kfilter(kmers1, kmers2, kmerDBi, nhash)) { 
+			if (not kfilter(kmers1, kmers2, kmerDBi, nhash0)) { 
 				++nPreFiltered_;
 				continue;
 			}
-            size_t destLocus = countHit(kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold, Rthreshold);
+            size_t destLocus = countHit(kmers1, kmers2, kmerDBi, dup, nloci, Cthreshold, Rthreshold, nhash1);
 			kmerCount_umap cakmers;
 			EDIT edit;
 
@@ -798,7 +821,12 @@ void CountWords(void *data) {
             // end of thread lock
         }
 
-        cerr << "Batch query in " << (time(nullptr) - time2) << " sec. " << (float)nhash/nReads_ << "/" << nPreFiltered_ << "/" << nThreadingReads_ << "/" << nFeasibleReads_ << endl;
+        cerr << "Batch query in " << (time(nullptr) - time2) << " sec. " << 
+		        (float)nhash0/nReads_ << "/" << 
+		        (float)nhash1/(nReads_-nPreFiltered_) << "/" << 
+		        nPreFiltered_ << "/" << 
+		        nThreadingReads_ << "/" << 
+		        nFeasibleReads_ << endl;
     }
 }
 
@@ -928,6 +956,8 @@ int main(int argc, char* argv[]) {
          << "graph threading mode: " << threading << endl
 		 << "output alignment: " << aln << endl
          << "k: " << ksize << endl
+		 << "# of subsampled kmers in pre-filtering: " << N_FILTER << endl
+		 << "minimal # of matches in pre-filtering: " << NM_FILTER << endl
          << "Cthreshold: " << Cthreshold << endl
          << "Rthreshold: " << Rthreshold << endl
          << "threading Cthreshold: " << thread_cth << endl
