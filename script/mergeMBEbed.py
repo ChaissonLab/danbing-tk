@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
+import sys
 import numpy as np
-import pickle
 
 def parseMergeSet():
     ms = []
@@ -149,6 +149,6 @@ def writeBed_MergeMBE():
 
 
 if __name__ == "__main__":
-    with open("mbe.meta.gs_map.pickle", 'rb') as f:
-        gs, panmap = pickle.load(f)
+    gs = np.loadtxt(sys.argv[1], usecols=0, dtype=object, ndmin=1)
+    panmap = np.loadtxt(sys.argv[2], dtype=object, ndmin=2)[:,3:].astype(int)
     writeBed_MergeMBE()

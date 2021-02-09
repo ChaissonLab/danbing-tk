@@ -236,9 +236,9 @@ for g in {params.genomes}; do
     bedtools map -c 1 -o count -a pan.tr.mbe.v0.bed -b <(cut -f 4-6 $g/tmp1.0.bed) >pan.tr.mbe.v0.bed.tmp && 
     mv pan.tr.mbe.v0.bed.tmp pan.tr.mbe.v0.bed
 done
-{params.sd}/script/preMBE.py {params.pairs} pan.tr.mbe.v0.bed
-{params.sd}/script/multiBoundaryExpansion.py 
-{params.sd}/script/writeMBEbed.py {params.th1} {params.th2}
+#{params.sd}/script/preMBE.py {params.pairs} pan.tr.mbe.v0.bed {params.TRwindow}
+{params.sd}/script/multiBoundaryExpansion.py {params.ksize} {params.FS} {params.TRwindow} {params.pairs} pan.tr.mbe.v0.bed {params.th1} {params.th2}
+#{params.sd}/script/writeMBEbed.py {params.th1} {params.th2}
 hi=0
 for g in {params.genomes}; do
     for h in 0 1; do
@@ -255,7 +255,7 @@ for g in {params.genomes}; do
     done
 done >mbe.m0.loci
 rm tmp.bed
-{params.sd}/script/mergeMBEbed.py 
+{params.sd}/script/mergeMBEbed.py {params.pairs} pan.tr.mbe.v0.bed
 
 ### write fasta
 echo "Fetching TR+flank"
