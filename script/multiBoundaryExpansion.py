@@ -22,7 +22,9 @@ def loadbeds(panmap):
         for h in [0,1]:
             hi = 2*gi + h
             m = panmap[:,gi]==1
-            beds[hi,m] = np.loadtxt(f"{g}/tmp1.{h}.bed", dtype=object, usecols=[0,1,2,6], ndmin=2)
+            bed = np.loadtxt(f"{g}/tmp1.{h}.bed", dtype=object, usecols=[0,1,2,6], ndmin=2)
+            assert np.sum(m) == bed.shape[0], f"Inconsistent # of supports between {g}/tmp1.{h}.bed ({bed.shape[0]}) and column {gi+3} of pan.tr.mbe.v0.bed (np.sum(m))"
+            beds[hi,m] = bed
     return beds
 
 def get_ctg(hi, hd):
