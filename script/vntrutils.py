@@ -264,14 +264,12 @@ def readKmerDict(fname, kmerDB=None, threshold=0, checkkmer=False):
     if not hasInput: kmerDB = {}
 
     with open(fname) as f:
-        locus = 0
-        if not hasInput: kmerDB[locus] = {}
-        f.readline()
-
+        locus = -1
         for line in f:
             if line[0] == '>':
                 locus += 1
-                if not hasInput: kmerDB[locus] = {}
+                if locus not in kmerDB:
+                    kmerDB[locus] = {}
             else:
                 kmer, count = [int(v) for v in line.split()]
                 if count >= threshold:
