@@ -248,7 +248,7 @@ for g in {params.genomes}; do
         grep -v "None" |
         sort -k1,1 -k2,2n -k3,3n >tmp.bed
         if [[ "$(cat tmp.bed | wc -l)" != "0" ]]; then
-            bedtools merge -d 700 -c 4 -o collapse -i tmp.bed |
+            bedtools merge -d {params.FS} -c 4 -o collapse -i tmp.bed |
             cut -f 4 | {{ grep "," || true; }}
         fi
         ((++hi))
@@ -265,8 +265,8 @@ for g in {params.genomes}; do
         cut -f $((4+4*hi))-$((6+4*hi)) pan.tr.mbe.v2.bed |
         grep -v "None" |
         awk 'BEGIN {{OFS="\t"}} {{
-            $2=$2-700
-            $3=$3+700
+            $2=$2-{params.FS}
+            $3=$3+{params.FS}
             print $0
         }}' |
         {params.sd}/script/SelectRegions.py /dev/stdin "$g"."$h".fa /dev/stdout | 
