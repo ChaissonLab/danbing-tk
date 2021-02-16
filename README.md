@@ -148,3 +148,18 @@ kmer1	kmer_count1
 >locus i+1
 ...
 ```
+
+- Alignment output (`-a` option)
+	- Synopsis
+		```
+		<src> <dest> <read_name/0> <read_seq/0> <ops/0> <read_name/1> <read_seq/1> <ops/1>
+		```
+	- `src`: source locus of a read pair (for simulation only)
+	- `dest`: aligned locus for the read pair
+	- `ops`: operations to align the read to the graph
+		- `=`: a match in the repeat
+		- `.`: a match in the flank
+		- `[A|C|G|T]`: a mismatch in the repeat; letter in the graph is shown
+		- `[a|c|g|t]`: a mismatch in the flank; letter in the graph is shown
+		- `[H|h]`: a homopolymer run in the repeat or flank
+		- `S`: a gap (skipped)
