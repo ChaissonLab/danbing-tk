@@ -143,7 +143,7 @@ int main(int argc, const char * argv[]) {
             }
             if (fin.peek() == '>' or fin.peek() == EOF) {
                 if (read != "") {
-					while (not omap[locus][n]) { ++locus; }
+					if (usemap) { while (not omap[locus][n]) { ++locus; } }
 
                     size_t tr_l = fs;
                     size_t tr_r = fs;

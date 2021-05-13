@@ -30,7 +30,7 @@ copts = config["clusterOpts"]
 
 rule all:
     input:
-        chrsize = expand(outdir + "{genome}.{hap}.chrSize", genome=genomes, hap=haps),
+        #chrsize = expand(outdir + "{genome}.{hap}.chrSize", genome=genomes, hap=haps),
         faAln = expand(outdir + "{genome}.{hap}.aln.foo", genome=genomes, hap=haps),
         lift = expand(outdir + "{genome}/lift.foo", genome=genomes),
         TRfa = expand(outdir + "{genome}.{hap}.tr.fasta", genome=genomes, hap=haps),
@@ -65,9 +65,6 @@ ln -sf {input.fa} .
 for hap in 0 1; do
     fa={params.indir}/{wildcards.genome}.$hap.fa
     ln -sf "$fa".fai .
-	#samtools faidx $fa &
-    {params.sd}/script/chrsize.sh $fa > {wildcards.genome}.$hap.chrSize
-    wait
 done
 """
 
@@ -209,13 +206,14 @@ rule JointTRAnnotation:
         mapping = outdir + "OrthoMap.v2.tsv",
         TRfa = expand(outdir + "{genome}.{hap}.tr.fasta", genome=genomes, hap=haps),
     resources:
-        cores = 6,
-        mem = lambda wildcards, attempt: 40 + 20*(attempt-1)
+        cores = 12,
+        mem = lambda wildcards, attempt: 110
     priority: 96
     params:
         copts = copts,
         sd = srcdir,
         od = outdir,
+        indir = indir,
         refTR = config["refTR"],
         ksize = ksize,
         FS = FS,
@@ -230,15 +228,16 @@ set -eu
 ulimit -c 20000
 cd {params.od}
 
-echo "Generating panbed"
+printf "Generating panbed"
 cut -f 1-3 {params.refTR} >pan.tr.mbe.v0.bed
 for g in {params.genomes}; do 
+    printf "."
     bedtools map -c 1 -o count -a pan.tr.mbe.v0.bed -b <(cut -f 4-6 $g/tmp1.0.bed) >pan.tr.mbe.v0.bed.tmp && 
     mv pan.tr.mbe.v0.bed.tmp pan.tr.mbe.v0.bed
 done
-#{params.sd}/script/preMBE.py {params.pairs} pan.tr.mbe.v0.bed {params.TRwindow}
-{params.sd}/script/multiBoundaryExpansion.py {params.ksize} {params.FS} {params.TRwindow} {params.pairs} pan.tr.mbe.v0.bed {params.th1} {params.th2}
-#{params.sd}/script/writeMBEbed.py {params.th1} {params.th2}
+echo ""
+mkdir -p MBE
+{params.sd}/script/multiBoundaryExpansion.parallel.py {params.ksize} {params.FS} {params.TRwindow} {params.pairs} pan.tr.mbe.v0.bed {params.th1} {params.th2} {resources.cores} {params.indir}
 hi=0
 for g in {params.genomes}; do
     for h in 0 1; do
@@ -255,10 +254,10 @@ for g in {params.genomes}; do
     done
 done >mbe.m0.loci
 rm tmp.bed
-{params.sd}/script/mergeMBEbed.py {params.pairs} pan.tr.mbe.v0.bed
+{params.sd}/script/mergeMBEbed.py {params.pairs} {params.th2}
 
 ### write fasta
-echo "Fetching TR+flank"
+echo "Fetching TR+flank" $(date)
 hi=0
 for g in {params.genomes}; do
     for h in 0 1; do
@@ -269,7 +268,7 @@ for g in {params.genomes}; do
             $3=$3+{params.FS}
             print $0
         }}' |
-        {params.sd}/script/SelectRegions.py /dev/stdin "$g"."$h".fa /dev/stdout | 
+        {params.sd}/script/SelectRegions.py /dev/stdin {params.indir}/"$g"."$h".fa /dev/stdout | 
         awk '{{if ($1 ~ />/) {{print}} else {{print toupper($0)}} }}' >"$g"."$h".tr.fasta
         ((++hi))
     done
@@ -284,10 +283,10 @@ rule GenRawGenomeGraph:
         mapping = outdir + "OrthoMap.v2.tsv",
     output:
         rawPBkmers = expand(outdir + "{{genome}}.rawPB.{kmerType}.kmers", kmerType=kmerTypes),
-        rawILkmers = outdir + "{genome}.rawIL.tr.kmers"
+        rawILkmers = [outdir + "{genome}.rawIL.tr.kmers"] if prune else []
     resources:
-        cores = 24,
-        mem = lambda wildcards, attempt: 20 #90 + 20*(attempt-1)
+        cores = 24 if prune else 1,
+        mem = lambda wildcards, attempt: 25 + 20*(attempt-1)
     priority: 95
     params:
         copts = copts,
@@ -299,17 +298,21 @@ rule GenRawGenomeGraph:
         rth = rth,
         rstring = rstring,
         thcth = thcth,
-        hi = lambda wildcards: 2*genomes.index(wildcards.genome)
+        hi = lambda wildcards: 2*genomes.index(wildcards.genome),
+        prune = int(prune)
     shell:"""
 set -eu
 ulimit -c 20000
 cd {params.od}
+module load gcc
 
 {params.sd}/bin/vntr2kmers_thread -g -m <(cut -f $(({params.hi}+1)),$(({params.hi}+2)) {input.mapping}) -k {params.ksize} -fs {params.FS} -ntr {params.FS} -o {wildcards.genome}.rawPB -fa 2 {input.TRfa}
 
-samtools fasta -@2 -n {input.ILbam} |
-{params.sd}/bin/bam2pe -fai /dev/stdin |
-{params.sd}/bin/danbing-tk -g {params.thcth} -k {params.ksize} -qs {params.od}/{wildcards.genome}.rawPB -fai /dev/stdin -o {wildcards.genome}.rawIL -p {resources.cores} -cth {params.cth} -rth {params.rth}
+if [ {params.prune} == "1"  ]; then
+    samtools fasta -@2 -n {input.ILbam} |
+    {params.sd}/bin/bam2pe -fai /dev/stdin |
+    {params.sd}/bin/danbing-tk -g {params.thcth} -k {params.ksize} -qs {params.od}/{wildcards.genome}.rawPB -fai /dev/stdin -o {wildcards.genome}.rawIL -p {resources.cores} -cth {params.cth} -rth {params.rth}
+fi
 """
 
 
@@ -385,6 +388,7 @@ rule GenPanGenomeGraph:
     shell:"""
 cd {params.od}
 ulimit -c 20000
+module load gcc
 
 {params.sd}/bin/genPanKmers -o pan -m - -k {params.kmerpref}
 """

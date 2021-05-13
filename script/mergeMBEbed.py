@@ -9,8 +9,10 @@ def parseMergeSet():
     v2si = {}
     si = 0
     with open("mbe.m0.loci") as f:
+        hap = ""
         for line in f:
             if line[0] == ">":
+                hap = line.rstrip()[1:]
                 continue
             seq = sorted([int(v) for v in line.rstrip().split(",")])
             skip = seq[0] in bs # check if good v reported by this hap is bad in another hap
@@ -23,7 +25,7 @@ def parseMergeSet():
                             ms[si_] = None
                             v2si.pop(v)
                         bs.add(v)
-                    print(f"bad {seq}")
+                    print(f"Bad seq {seq} in {hap}")
                     break
             else:
                 if skip:
@@ -50,7 +52,7 @@ def parseMergeSet():
                         ms[si_].add(v)
                         v2si[v] = si_
                 else:
-                    assert False, f"{seq} indicates merging across sets defined in {ms}"
+                    print(f"[Warning] {hap} {seq} indicates merging across sets, will be ignored", flush=True) # TODO enable merging >2 loci
     ms = np.array(ms, dtype=object)
     ms = ms[ms!=None].tolist()
     for i1s_ in ms:
@@ -58,42 +60,45 @@ def parseMergeSet():
     return ms, bs
 
 def getdist(bed):
-    """Get the distnace between two bed entries. Return 0 if overlapping"""
-    if int(bed[0,0]) < int(bed[1,0]): # no inversion
-        return max(0, int(bed[1,0]) - int(bed[0,1]))
+    out = []
+    if int(bed[0,2]) == 1: # no inversion
+        for i in range(bed.shape[0]-1):
+            out.append(int(bed[i+1,0]) - int(bed[i,1]))
     else:
-        return max(0, int(bed[0,0]) - int(bed[1,1]))
+        for i in range(bed.shape[0]-1):
+            out.append(int(bed[i,0]) - int(bed[i+1,1]))
+    return out
 
-def writeBed_MergeMBE():
+def writeBed_MergeMBE(MAXSVLEN=10000):
     ms, bs = parseMergeSet()
     
     # QC on merging set
-    panbed = np.loadtxt(f"pan.tr.mbe.v1.bed", dtype=object, ndmin=2)
-    _, ng = panmap.shape
+    panbed = np.loadtxt(f"pan.tr.mbe.v1.bed", dtype=object, ndmin=2, comments=None)
     i1togood = {}
     qcb = [] # QC bad
     for i1s_ in ms:
-        if len(i1s_) > 2:
-            qcb.append(i1s_)
-            print(f"merging more than two regions: {i1s_}")
-            continue
         i1s = sorted(list(i1s_))
-        dist = np.full(2*ng, np.nan)
+        nm = len(i1s)-1
+        dist = np.full([nm, 2*ng], np.nan)
         for hi in range(2*ng):
             if np.all(panbed[i1s,3+hi*4] != "None"):
                 if np.any(panbed[i1s,3+hi*4] != panbed[i1s[0],3+hi*4]):
-                    print(f"remove haplotype due to merging across contigs: {hi}\t{i1s}\n {panbed[i1s,3+hi*4]}")
+                    print(f"[Haplotype removed] merging across contigs: {hi}\t{i1s}\n {panbed[i1s,3+hi*4]}")
                 else:
                     if np.any(panbed[i1s,6+hi*4] != panbed[i1s[0],6+hi*4]):
-                        print("mixed orientation")
-                    dist[hi] = getdist(panbed[i1s,4+hi*4:6+hi*4])
-        good = np.isfinite(dist) # good mask
-        th = 3*np.std(dist[good]) + 100
-        bad = np.abs(dist[good] - np.median(dist[good])) > th # bad outliers
-        good[good] = ~bad
-        if np.sum(good)/(2*ng) < 0.8: # remove locus
+                        print(f"[Note] {i1s} mixed orientation")
+                    dist[:,hi] = getdist(panbed[i1s,4+hi*4:7+hi*4])
+        good = np.all(np.isfinite(dist), axis=0)
+        #for i in range(nm):
+        #    th = 3*np.nanstd(dist[i]) + 100
+        #    outm = np.abs(dist[i] - np.nanmedian(dist[i])) <= th # outlier haps # XXX more robust thresholding
+        #    good &= outm
+        if np.nanmax(dist) > MAXSVLEN:
             qcb.append(i1s_)
-            print(f"{i1s} removed by QC")
+            print(f"[Loci removed] huge SV, {i1s}")
+        elif np.sum(good)/(2*ng) < THRESH:
+            qcb.append(i1s_)
+            print(f"[Loci removed] QC failed {i1s}")
         else:
             i1togood[i1s[0]] = good # record hap to remove
     for i1s_ in qcb:
@@ -150,5 +155,7 @@ def writeBed_MergeMBE():
 
 if __name__ == "__main__":
     gs = np.loadtxt(sys.argv[1], usecols=0, dtype=object, ndmin=1)
-    panmap = np.loadtxt(sys.argv[2], dtype=object, ndmin=2)[:,3:].astype(int)
+    ng = gs.size
+    #panmap = np.loadtxt(sys.argv[2], dtype=object, ndmin=2)[:,3:].astype(int)
+    THRESH = float(sys.argv[2])
     writeBed_MergeMBE()

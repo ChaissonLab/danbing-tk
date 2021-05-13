@@ -74,7 +74,7 @@ def cleanbed():
 
 
 if __name__ == "__main__":
-    lb = np.loadtxt(sys.argv[1], dtype=object, ndmin=2)
+    lb = np.loadtxt(sys.argv[1], dtype=object, ndmin=2, comments=None)
     cleanbed()
 
 
