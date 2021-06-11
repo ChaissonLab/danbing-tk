@@ -3,14 +3,13 @@ import numpy as np
 
 configfile: "leaveOneOut.json"
 
-srcdir = os.path.dirname(workflow.snakefile)
+srcdir = config["srcDir"]
 outdir = config["outputDir"]
 pdir = config["pangenomeDir"]
 #pindir = config["pangenomeInputDir"] /home/cmb-17/mjc/vntr_genotyping/rpgg_k21_84k/input/
 
-genomefile = config["genomefile"]
+genomes = np.loadtxt(config["genomefile"], dtype=object)
 gbpair = np.loadtxt(config["pairs"], dtype=object)
-genomes = gbpair[:,0].tolist()
 bams = dict(gbpair)
 LOOgenomes = np.loadtxt(config["LOOgenomefile"], dtype=object).tolist()
 LOOmask = np.isin(genomes, LOOgenomes)
@@ -30,14 +29,14 @@ localrules: all, all2LOO
 rule all:
     input:
         mapping = outdir + "OrthoMap.v2.tsv",
-        extFoo = expand(outdir + "checkpoint/{genome}.extract.foo", genome=genomes),
-        panGTfoo = expand(outdir + "checkpoint/{genome}.pan.gt.foo", genome=genomes),
+        extFoo = expand(outdir + "checkpoint/{genome}.extract.foo", genome=LOOgenomes),
+        panGTfoo = expand(outdir + "checkpoint/{genome}.pan.gt.foo", genome=LOOgenomes),
         LOOGTfoo = expand(outdir + "checkpoint/{genome}.LOO.gt.foo", genome=LOOgenomes),
+        LRfoo = expand(outdir + "checkpoint/{genome}.rawLR.foo", genome=LOOgenomes),
         #LOOPBkmers = expand(outdir + "LOO.{genome}.PB.{kmerType}.kmers", genome=LOOgenomes, kmerType=kmerTypes),
         #LOOILkmers = expand(outdir + "LOO.{genome}.IL.tr.kmers", genome=LOOgenomes),
         #panILkmers = expand(outdir + "pan.{genome}.IL.tr.kmers", genome=genomes),
         #mappedILkmers = expand(outdir + "{genome}.mappedIL.tr.kmers", genome=genomes),
-        pred = expand(outdir + "{genome}.LR.pred", genome=genomes),
         #pickle = outdir + "analysis/step1_results.pickle",
         #relErr = outdir + "analysis/rel_err.txt",
 
@@ -80,7 +79,7 @@ rule all2LOO:
 
 rule GenLOOpgg:
     input:
-        PBkmers = expand(pdir + "{genome}.PB.{kmerType}.kmers", genome=LOOgenomes, kmerType=kmerTypes),
+        PBkmers = expand(pdir + "{genome}.rawPB.{kmerType}.kmers", genome=LOOgenomes, kmerType=kmerTypes),
         #mapping = outdir + "OrthoMap.v2.tsv",
         #LOOmap = outdir + "LOO.{genome}.mapping",
     output:
@@ -93,8 +92,7 @@ rule GenLOOpgg:
         copts = copts,
         sd = srcdir,
         od = outdir,
-        LOOgi = lambda wildcards: LOOgenomes.index(wildcards.genome),
-        kmerpref = lambda wildcards: " ".join([f'{pdir}/{g}.PB' for g in LOOgenomes if g != wildcards.genome])
+        kmerpref = lambda wildcards: " ".join([f'{pdir}/{g}.rawPB' for g in LOOgenomes if g != wildcards.genome])
     shell:"""
 cd {params.od}
 ulimit -c 20000
@@ -110,8 +108,8 @@ rule Extract:
     output:
         ofoo = outdir + "checkpoint/{genome}.extract.foo",
     resources:
-        cores = 32,
-        mem = lambda wildcards, attempt: 80 + 20*(attempt-1)
+        cores = 16,
+        mem = lambda wildcards, attempt: 40 + 20*(attempt-1)
     priority: 98
     params:
         copts = copts,
@@ -144,8 +142,8 @@ rule LOOGenotying:
     output:
         ofoo = outdir + "checkpoint/{genome}.LOO.gt.foo"
     resources:
-        cores = 32,
-        mem = lambda wildcards, attempt: 20 + 20*(attempt-1),
+        cores = 16,
+        mem = lambda wildcards, attempt: 50 + 20*(attempt-1),
     priority: 97
     params:
         fagz = outdir + "{genome}.e" + str(cth) + ".fa.gz",
@@ -174,8 +172,8 @@ rule GenotypeSamples:
     output:
         ofoo = outdir + "checkpoint/{genome}.pan.gt.foo"
     resources:
-        cores = 32,
-        mem = lambda wildcards, attempt: 20 + 20*(attempt-1)
+        cores = 16,
+        mem = lambda wildcards, attempt: 50 + 20*(attempt-1)
     priority: 97
     params:
         fagz = outdir + "{genome}.e" + str(cth) + ".fa.gz",
@@ -202,26 +200,29 @@ touch {output.ofoo}
 rule EvalGenotypeQuality:
     input:
         #mapping = pdir + "OrthoMap.v2.tsv",
-        panILkmers = outdir + "pan.{genome}.IL.tr.kmers",
-        PBkmers = pdir + "{genome}.PB.tr.kmers",
+        ifoo = outdir + "checkpoint/{genome}.pan.gt.foo"
+        #panILkmers = outdir + "pan.{genome}.IL.tr.kmers",
+        #PBkmers = pdir + "{genome}.rawPB.tr.kmers",
     output:
         #mappedILkmers = outdir + "{genome}.mappedIL.tr.kmers",
-        pred = outdir + "{genome}.LR.pred",
+        #pred = outdir + "{genome}.rawLR.pred",
+        ofoo = outdir + "checkpoint/{genome}.rawLR.foo",
     resources:
-        cores = 16,
+        cores = 4,
         mem = lambda wildcards, attempt: 8*attempt,
     priority: 96
     params:
         copts = copts,
         sd = srcdir,
         od = outdir,
-        gi = lambda wildcards: genomes.index(wildcards.genome),
+        pd = pdir,
     shell:"""
 set -eu
 ulimit -c 20000
 cd {params.od}
 
-{params.sd}/script/kmers.linreg.py --mapkmer --mode invalid --R2threshold -2 {input.PBkmers} {input.panILkmers} {wildcards.genome}.LR
+{params.sd}/script/kmers.linreg.py --mapkmer --mode invalid --R2threshold -2 {params.pd}/{wildcards.genome}.rawPB.tr.kmers {params.od}/pan.{wildcards.genome}.IL.tr.kmers {wildcards.genome}.rawLR
+touch {output.ofoo}
 """
 
 
