@@ -22,9 +22,10 @@ def loadbeds(panmap):
         for h in [0,1]:
             hi = 2*gi + h
             m = panmap[:,gi]==1
-            bed = np.loadtxt(f"{g}/tmp1.{h}.bed", dtype=object, usecols=[0,1,2,6], ndmin=2)
+            bed = np.loadtxt(f"{g}/tmp1.{h}.bed", dtype=object, usecols=[0,1,2,6], ndmin=2, comments=None)
             assert np.sum(m) == bed.shape[0], f"Inconsistent # of supports between {g}/tmp1.{h}.bed ({bed.shape[0]}) and column {gi+3} of pan.tr.mbe.v0.bed (np.sum(m))"
             beds[hi,m] = bed
+    assert set(beds[:,:,-1].flatten().tolist()) == set(["-1","1",None]), print(set(beds[:,:,-1].flatten().tolist()) - set(["-1","1",None]))
     return beds
 
 def get_ctg(hi, hd):
@@ -172,7 +173,7 @@ def load_fais():
     fas, fais, hd2is = [], [], []
     for f in fafns:
         fas.append(open(f, 'rb'))
-        fais.append(np.loadtxt(f"{f}.fai", dtype=object, ndmin=2))
+        fais.append(np.loadtxt(f"{f}.fai", dtype=object, ndmin=2, comments=None))
         d = {}
         for i, hd in enumerate(fais[-1][:,0]):
             d[hd] = i
@@ -207,7 +208,7 @@ def writeBed_MBE(th1=0.1, th2=0.8):
     for hi in range(2*ng):
         g = gs[hi//2]
         h = hi % 2
-        bed = np.loadtxt(f"{g}/tmp1.{h}.bed", dtype=object, ndmin=2) # iterate w/ genome index
+        bed = np.loadtxt(f"{g}/tmp1.{h}.bed", dtype=object, ndmin=2, comments=None) # iterate w/ genome index
         p2g = np.full(nloci, None, dtype=object) # map pan index to genome index
         p2g[panmap[:,hi//2]==1] = np.arange(bed.shape[0])
         f = open(f"{g}/tmp2.{h}.mbe.bed", 'w')
