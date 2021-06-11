@@ -28,6 +28,7 @@ typedef unordered_map<size_t, uint32_t> kmerCount_umap; // assume count < (2^16 
 typedef unordered_map<size_t, atomic_size_t> kmer_aCount_umap;
 typedef unordered_map<size_t, uint8_t> GraphType;
 typedef unordered_map<size_t, unordered_set<uint32_t>> kmeruIndex_umap; // assume number of loci < (2^32 -1)
+//typedef unordered_map<size_t, uint32_t> kmerIndex_uint32_umap; // assume number of loci < (2^32 -1)
 typedef unordered_map<size_t, vector<uint16_t>> kmerAttr_dict;
 typedef unordered_map<string, unordered_map<string, uint16_t>> adj_dict;
 typedef unordered_map<string, unordered_map<string, vector<uint16_t>>> adjAttr_dict;
@@ -230,8 +231,8 @@ void buildKmerGraph(GraphType& g, string& read, size_t k, size_t leftflank = 0, 
     _buildKmerGraph(g, rcread, k, rightflank, leftflank, noselfloop);
 }
 
-// invalid kmers are skipped; input/output size differs
-void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0, bool canonical = true) {
+// invalid kmers are skipped by default unless keepN is set; input/output size differs
+void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0, bool canonical = true, bool keepN = false) {
     const size_t rlen = read.size();
     const size_t mask = (1ULL << 2*(k-1)) - 1;
     size_t beg, nbeg, canonicalkmer, kmer, rckmer;
@@ -246,12 +247,13 @@ void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank 
 
         if (std::find(alphabet, alphabet+4, read[i + k]) == alphabet+4){
             nbeg = getNextKmer(kmer, i+k+1, read, k);
+			if (keepN) { for (size_t j = i+1; j < std::min(nbeg, rlen-k-rightflank+1); ++j) { kmers.push_back(-1); } } // XXX test
             if (nbeg == rlen) { return; }
             rckmer = getNuRC(kmer, k);
             i = nbeg - 1;
         } else {
             kmer = ( (kmer & mask) << 2 ) + baseNumConversion[read[i + k]];
-            rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] & mask) << (2*(k-1))); // XXX test correctness
+            rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] & mask) << (2*(k-1)));
         }
     }
 }
@@ -259,6 +261,7 @@ void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank 
 void noncaVec2CaUmap(vector<size_t>& kmers, kmerCount_umap& out, size_t ksize) {
     size_t RCkmer;
     for (size_t kmer : kmers) {
+		if (kmer == -1ULL) { continue; }
         RCkmer = getNuRC(kmer, ksize);
         ++out[(kmer <= RCkmer ? kmer : RCkmer)];
     }
@@ -399,6 +402,45 @@ void readKmersFile2DBi(kmeruIndex_umap& kmerDBi, string fname, size_t startInd =
     }
     f.close();
 }
+
+//void readKmersFile2DBi(kmerIndex_uint32_umap& kmerDBi, vector<vector<uint32_t>>& kmerDBi_vec, vector<unordered_set<uint32_t>>& kmerDBi_uset, string fname, size_t startInd = 0, uint16_t threshold = 0) {
+//    ifstream f(fname);
+//    assert(f);
+//    string line;
+//    getline(f, line);
+//    cerr <<"reading kmers from " << fname << endl;
+//    while (true){
+//        if (f.peek() == EOF or f.peek() == '>'){
+//            ++startInd;
+//            if (f.peek() == EOF){
+//                f.close();
+//                break;
+//            } else {
+//                getline(f, line);
+//            }
+//        } else {
+//            getline(f, line, '\t');
+//            size_t kmer = stoul(line);
+//            getline(f, line);
+//            size_t kmercount = stoul(line);
+//
+//            if (kmercount < threshold) { continue; }
+//			if (kmerDBi.count(kmer)) {
+//
+//			} else {
+//				kmerDBi[kmer] = startInd;
+//			}
+//
+//			auto it = kmerDBi.insert(kmer, startInd);
+//			if (it == kmerDBi.end()) { kmerDBi[]startInd); }
+//
+//            if (kmerDBi[kmer].count(startInd) == 0) {
+//                kmerDBi[kmer].insert(startInd);
+//            }
+//        }
+//    }
+//    f.close();
+//}
 
 // record kmerDB and kmerIndex_dict kmerDBi
 template <typename T>
