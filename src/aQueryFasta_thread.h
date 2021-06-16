@@ -484,10 +484,11 @@ void writeKmers(string outfpref, T& kmerDB, size_t threshold = 0) {
     ofstream fout(outfpref+".kmers");
     assert(fout);
     for (size_t i = 0; i < kmerDB.size(); ++i) {
-        fout << ">" << i <<"\n";
+        //fout << ">" << i <<"\n";
         for (auto &p : kmerDB[i]) {
             if (p.second < threshold) { continue; }
-            fout << p.first << '\t' << (size_t)p.second << '\n';
+            //fout << p.first << '\t' << (size_t)p.second << '\n';
+            fout << (size_t)p.second << '\n';
         }
     }
     fout.close();
