@@ -772,7 +772,7 @@ void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<size_t
 
 class Counts {
 public:
-    bool isFastq, bait, threading, correction, aln, g2pan;
+    bool isFastq, bait, threading, correction, aln, g2pan, skip1;
     uint16_t Cthreshold, thread_cth;
     size_t *nReads, *nThreadingReads, *nFeasibleReads, *nPreFiltered;
     size_t nloci;
@@ -806,6 +806,7 @@ void CountWords(void *data) {
     bool correction = ((Counts*)data)->correction;
     bool aln = ((Counts*)data)->aln;
 	bool g2pan = ((Counts*)data)->g2pan;
+	bool skip1 = ((Counts*)data)->skip1; // TODO new functionality: allow skipping step1 by reading assigned locus info from extracted reads
     int simmode = ((Counts*)data)->simmode;
     int extractFasta = ((Counts*)data)->extractFasta;
     size_t nReads_ = 0, nShort_ = 0, nThreadingReads_ = 0, nFeasibleReads_ = 0, nPreFiltered_ = 0;
@@ -997,13 +998,13 @@ void CountWords(void *data) {
 					}
                 }
                 else { destLocus = nloci; } // removed by threading
-            }
 
-			if (aln and threading and (srcLocus != nloci or destLocus != nloci)) {
-				alnindices.push_back(seqi); // work the same as extractindices
-				edit.map = std::make_pair(srcLocus, destLocus);
-				sam.push_back(edit);
-			}
+				if (aln and threading and (srcLocus != nloci or destLocus != nloci)) {
+					alnindices.push_back(seqi); // work the same as extractindices
+					edit.map = std::make_pair(srcLocus, destLocus);
+					sam.push_back(edit);
+				}
+            }
         }
 
         if (extractFasta or aln) {
@@ -1048,7 +1049,7 @@ int main(int argc, char* argv[]) {
 		     << "  -v <INT>         Verbosity: 0-3. Default: 0." << endl
              << "  -e <INT>         Write mapped reads to STDOUT in fasta format." << endl
              << "                   Specify 1 for keeping original read names. Will not write .kmers output." << endl
-			 << "                   Specify 2 for appending assigned locus to each read name" << endl
+			 << "                   Specify 2 for appending assigned locus to each read name. Used to skip step1 for later queries." << endl
              << "  -g <INT>         Use graph threading algorithm w/o error correction" << endl
              << "  -gc <INT>        Use graph threading algorithm w/ error correction" << endl
              << "                   Discard pe reads if # of matching kmers < [INT]" << endl
@@ -1070,9 +1071,9 @@ int main(int argc, char* argv[]) {
     }
    
     vector<string> args(argv, argv+argc);
-    bool bait = false, aug = false, threading = false, correction = false, aln = false, g2pan = false, isFastq;
+    bool bait = false, aug = false, threading = false, correction = false, aln = false, g2pan = false, skip1 = true, isFastq;
     int simmode = 0, extractFasta = 0;
-    size_t argi = 1, trim = 0, thread_cth = 0, nproc, Cthreshold;
+    size_t argi = 1, trim = 0, thread_cth = 0, Cthreshold = 0, nproc;
     float Rthreshold;
     string trPrefix, trFname, fastxFname, outPrefix;
     ifstream fastxFile, trFile, ntrFile, augFile, baitFile, mapFile;
@@ -1137,7 +1138,10 @@ int main(int argc, char* argv[]) {
             }
         }
         else if (args[argi] == "-p") { nproc = stoi(args[++argi]); }
-        else if (args[argi] == "-cth") { Cthreshold = stoi(args[++argi]); }
+        else if (args[argi] == "-cth") { 
+			Cthreshold = stoi(args[++argi]);
+			skip1 = false;
+		}
         else if (args[argi] == "-rth") {
             Rthreshold = stof(args[++argi]);
             assert(Rthreshold <= 1 and Rthreshold >= 0.5);
@@ -1157,15 +1161,16 @@ int main(int argc, char* argv[]) {
          << "trim mode: " << trim << endl
          << "augmentation mode: " << aug << endl
          << "graph threading mode: " << threading << endl
-		 << "output alignment: " << aln << endl
+         << "output alignment: " << aln << endl
          << "k: " << ksize << endl
-		 << "# of subsampled kmers in pre-filtering: " << N_FILTER << endl
-		 << "minimal # of matches in pre-filtering: " << NM_FILTER << endl
+         << "# of subsampled kmers in pre-filtering: " << N_FILTER << endl
+         << "minimal # of matches in pre-filtering: " << NM_FILTER << endl
          << "Cthreshold: " << Cthreshold << endl
          << "Rthreshold: " << Rthreshold << endl
          << "threading Cthreshold: " << thread_cth << endl
+         << (skip1 ? "Thread reads directly (step2: threading) without filtering (step1: kmer set comparison)" : "Running both step1 (kmer set comparison) and step2 (threading)") << endl
          << "fastx: " << fastxFname << endl
-         << "query: " << trPrefix << ".(tr/ntr).kmers"<< endl
+         << "query: " << trPrefix << ".(tr/ntr).kmers" << endl
          << endl
          << "total number of loci in " << trFname << ": ";
     size_t nloci = countLoci(trFname);
@@ -1237,13 +1242,13 @@ int main(int argc, char* argv[]) {
         counts.correction = correction;
 		counts.aln = aln;
 		counts.g2pan = g2pan;
+		counts.skip1 = skip1;
 
         counts.Cthreshold = Cthreshold;
         counts.Rthreshold = Rthreshold;
         counts.thread_cth = thread_cth;
     }
 
-    time1 = time(nullptr);
     const int idLen=10;
     char id[idLen+1];
     id[idLen] = '\0';
