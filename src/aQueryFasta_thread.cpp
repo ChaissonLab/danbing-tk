@@ -287,6 +287,18 @@ size_t countHit(vector<vector<uint32_t>>& kmerDBi_vec, vector<kmerIndex_uint32_u
 	}
 }
 
+// skip step 1, read destLocus from >[READ_NAME]:[DEST_LOCUS]_[1|2]
+void parseReadNames(vector<string>& titles, vector<size_t>& destLoci, size_t nReads_) {
+	size_t ri = 0;
+	for (size_t di = 0; di < nReads_/2; ++di) {
+		size_t beg = titles[ri].size() - 1;
+		size_t len = 1;
+		while (titles[ri][--beg] != ':') { ++len; }
+		destLoci[di] = stoul(titles[ri].substr(++beg, len));
+		ri += 2;
+	}
+}
+
 // simmode = 1; simmulated reads from TR only
 template <typename ValueType>
 void parseReadName(string& title, size_t readn, vector<ValueType>& loci, vector<size_t>& locusReadi) {
@@ -762,11 +774,11 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& noncakmers, size
 void writeExtractedReads(int extractFasta, vector<string>& seqs, vector<string>& titles, vector<size_t>& extractindices, vector<size_t>& assignedloci) {
 	for (size_t i = 0; i < extractindices.size(); ++i) {
 		if (extractFasta == 1) { cout << titles[--extractindices[i]] << '\n'; } 
-		else { cout << titles[--extractindices[i]] << ":" << assignedloci[i] << "_0\n"; }
+		else { cout << titles[--extractindices[i]] << ":" << assignedloci[i] << '\n'; }
 		cout << seqs[extractindices[i]] << '\n';
 
 		if (extractFasta == 1) { cout << titles[--extractindices[i]] << '\n'; } 
-		else { cout << titles[--extractindices[i]] << ":" << assignedloci[i] << "_1\n"; }
+		else { cout << titles[--extractindices[i]] << ":" << assignedloci[i] << '\n'; }
 		cout << seqs[extractindices[i]] << '\n';
 	}
 }
@@ -853,7 +865,11 @@ void CountWords(void *data) {
     err_umap& errdb = *((Counts*)data)->errdb;
 	err_umap err;
 	vector<size_t>& locusmap = *((Counts*)data)->locusmap;
+	vector<string> seqs(readsPerBatch);
 	vector<uint32_t> hits1(nloci+1,0), hits2(nloci+1,0);
+	// extractFasta only
+	vector<string> titles(readsPerBatch);
+	vector<size_t> destLoci(readsPerBatch/2);
     // simmode only
     // loci: loci that are processed in this batch
     vector<ValueType> srcLoci;
@@ -863,7 +879,6 @@ void CountWords(void *data) {
     while (true) {
 
         string title, title1, seq, seq1, qualtitle, qualtitle1, qual, qual1;
-        vector<string> seqs(readsPerBatch);
         // for simmode only
         // locusReadi: map locus to nReads_. 0th item = number of reads for 0th item in loci; last item = nReads_; has same length as loci
         size_t startpos;
@@ -871,7 +886,6 @@ void CountWords(void *data) {
 		vector<std::pair<int, size_t>> meta;
         // extractFasta only
         vector<size_t> extractindices, assignedloci;
-		vector<string> titles(readsPerBatch);
 		// aln only
 		vector<size_t> alnindices;
 
@@ -918,7 +932,7 @@ void CountWords(void *data) {
                 getline(*in, title1);
                 getline(*in, seq1);
             }
-
+			
             if (simmode == 1) { parseReadName(title, nReads_, srcLoci, locusReadi); }
             else if (simmode == 2) { parseReadName(title, meta, nloci); }
 
@@ -930,6 +944,7 @@ void CountWords(void *data) {
         nReads += nReads_;
 
         if (simmode == 1) { locusReadi.push_back(nReads_); }
+		if (skip1) { parseReadNames(titles, destLoci, nReads_); }
 
         cerr << "Buffered reading " << nReads_ << "\t" << nReads << endl;
 
@@ -941,6 +956,7 @@ void CountWords(void *data) {
         time_t time2 = time(nullptr);
         size_t seqi = 0;
 		size_t nhash0 = 0, nhash1 = 0;
+		size_t destLocus;
 		// aln only TODO define SAM structure
 		vector<EDIT> sam;
         // simmode only
@@ -950,6 +966,10 @@ void CountWords(void *data) {
 
         while (seqi < nReads_) {
 
+            vector<size_t> kmers1, kmers2;
+			vector<kmerIndex_uint32_umap::iterator> its1, its2;
+            vector<PE_KMC> dup;
+
             if (simmode == 1) {
                 if (seqi >= locusReadi[simi]) {
                     ++simi;
@@ -958,34 +978,35 @@ void CountWords(void *data) {
             }
 			else if (simmode == 2) { mapLocus(g2pan, meta, locusmap, seqi, simi, nloci, srcLocus); }
 
+			if (skip1) { destLocus = destLoci[seqi/2]; }
+
             string& seq = seqs[seqi++];
             string& seq1 = seqs[seqi++];
 
-            vector<size_t> kmers1, kmers2;
-			vector<kmerIndex_uint32_umap::iterator> its1, its2;
-            vector<PE_KMC> dup;
-            read2kmers(kmers1, seq, ksize); // stores numeric canonical kmers
-            read2kmers(kmers2, seq1, ksize);
-            if (not kmers1.size() or not kmers2.size()) { 
-				++nShort_;
-				if (verbosity >= 3) {
-					cerr << titles[seqi-2] << ' ' << seq  << '\n'
-					     << titles[seqi-1] << ' ' << seq1 << '\n';
+			if (not skip1) {
+				read2kmers(kmers1, seq, ksize); // stores numeric canonical kmers
+				read2kmers(kmers2, seq1, ksize);
+				if (not kmers1.size() or not kmers2.size()) { 
+					++nShort_;
+					if (verbosity >= 3) {
+						cerr << titles[seqi-2] << ' ' << seq  << '\n'
+							 << titles[seqi-1] << ' ' << seq1 << '\n';
+					}
+					continue; 
 				}
-				continue; 
-			}
-			if (N_FILTER and NM_FILTER) {
-				if (subfilter(kmers1, kmers2, kmerDBi, nhash0)) { 
-					nSubFiltered_ += 2;
-					continue;
+				if (N_FILTER and NM_FILTER) {
+					if (subfilter(kmers1, kmers2, kmerDBi, nhash0)) { 
+						nSubFiltered_ += 2;
+						continue;
+					}
 				}
+				if (kfilter(kmers1, kmers2, its1, its2, kmerDBi, Cthreshold, nhash1)) {
+					nKmerFiltered_ += 2;
+					continue; 
+				}
+				destLocus = countHit(kmerDBi_vec, its1, its2, hits1, hits2, dup, nloci, Cthreshold, Rthreshold);
 			}
-			if (kfilter(kmers1, kmers2, its1, its2, kmerDBi, Cthreshold, nhash1)) {
-				nKmerFiltered_ += 2;
-				continue; 
-			}
-			
-            size_t destLocus = countHit(kmerDBi_vec, its1, its2, hits1, hits2, dup, nloci, Cthreshold, Rthreshold);
+
 			if (destLocus != nloci) {
 				int feasibility0 = 0, feasibility1 = 0;
 				kmerCount_umap cakmers;
@@ -1015,8 +1036,7 @@ void CountWords(void *data) {
 							assignedloci.push_back(destLocus);
 						}
 					}
-
-					if (extractFasta != 1) { // accumulate trKmers for output
+					else { // accumulate trKmers for output
 						if (not threading) {
 							for (size_t i = 0; i < its1.size(); ++i) {
 								auto it = trKmers.find(its1[i]->first);
@@ -1098,8 +1118,9 @@ int main(int argc, char* argv[]) {
              << "  -fai <STR>       interleaved pair-end fasta file" << endl
              << "  -o <STR>         Output prefix" << endl
              << "  -p <INT>         Use n threads." << endl
-             << "  -cth <INT>       Discard both pe reads if maxhit of one pe read is below this threshold" << endl
-             << "  -rth <FLOAT>     Discard reads with maxhit/(maxhit+secondhit) below this threshold." << endl
+             << "  -cth <INT>       Discard both pe reads if maxhit of one pe read is below this threshold." << endl
+			 << "                   Will skip read filtering and run threading directly if not specified." << endl
+             << "  -rth <FLOAT>     Discard reads with maxhit/(maxhit+secondhit) below this threshold." << endl 
              << "                   Range [0.5, 1]. 1: does not allow noise. 0.5: no filtering." << endl
              << endl;
         return 0;
@@ -1109,7 +1130,7 @@ int main(int argc, char* argv[]) {
     bool bait = false, aug = false, threading = false, correction = false, aln = false, g2pan = false, skip1 = true, isFastq;
     int simmode = 0, extractFasta = 0;
     size_t argi = 1, trim = 0, thread_cth = 0, Cthreshold = 0, nproc;
-    float Rthreshold;
+    float Rthreshold = 0.5;
     string trPrefix, trFname, fastxFname, outPrefix;
     ifstream fastxFile, trFile, ntrFile, augFile, baitFile, mapFile;
     ofstream outfile, baitOut;
@@ -1203,7 +1224,7 @@ int main(int argc, char* argv[]) {
          << "Cthreshold: " << Cthreshold << endl
          << "Rthreshold: " << Rthreshold << endl
          << "threading Cthreshold: " << thread_cth << endl
-         << (skip1 ? "Thread reads directly (step2: threading) without filtering (step1: kmer set comparison)" : "Running both step1 (kmer set comparison) and step2 (threading)") << endl
+         << (skip1 ? "Thread reads directly (step2: threading) without filtering (step1: kmer-based filtering)" : "Running both step1 (kmer-based filtering) and step2 (threading)") << endl
          << "fastx: " << fastxFname << endl
          << "query: " << trPrefix << ".(tr/ntr).kmers" << endl
          << endl
@@ -1216,36 +1237,34 @@ int main(int argc, char* argv[]) {
     time_t time1 = time(nullptr);
     vector<kmer_aCount_umap> trKmerDB(nloci);
     vector<GraphType> graphDB(nloci);
-    kmerIndex_uint32_umap kmerDBi; //(139221576);
+    kmerIndex_uint32_umap kmerDBi;
 	vector<vector<uint32_t>> kmerDBi_vec;
-    //kmerDBi.set_empty_key(NAN64);
 
     vector<msa_umap> msaStats;
 	err_umap errdb;
 	vector<size_t> locusmap;
 
-	//kmerDBi.max_load_factor(0.2);
-	//kmerDBi.reserve(139221576); // XXX hard-coded for testing
-	if (extractFasta == 1) {
-		readKmersFile2DBi(kmerDBi, kmerDBi_vec, trFname);
+	if (skip1) {
+		//readKmersFile2DB(trKmerDB, trFname, false, false);
+		readTRKmers(trKmerDB, trFname);
+	} else if (extractFasta) {
+		//readKmersFile2DBi(kmerDBi, kmerDBi_vec, trFname);
+		readKmerIndex(kmerDBi, kmerDBi_vec, trFname);
 	} else {
-    	readKmersFile(trKmerDB, kmerDBi, kmerDBi_vec, trFname, false); // do not count
+    	//readKmersFile(trKmerDB, kmerDBi, kmerDBi_vec, trFname, false); // do not count
+		readKmersWithIndex(trKmerDB, kmerDBi, kmerDBi_vec, trFname);
 	}
-    cerr << "# unique kmers in trKmerDB: " << kmerDBi.size() << '\n';
-    readKmersFile2DBi(kmerDBi, kmerDBi_vec, trPrefix+".ntr.kmers");
-    cerr << "# unique kmers in tr/ntrKmerDB: " << kmerDBi.size() << '\n';
-
-    //if (aug) {
-    //    readKmersFile2DBi(kmerDBi, kmerDBi_vec, trPrefix+".tr.aug.kmers");
-    //	cerr << "# unique kmers in tr/ntr/augKmerDB: " << kmerDBi.size() << '\n';
-    //}
-
-    //if (bait) {
-    //    readKmersFile2DBi(kmerDBi, "baitDB.kmers", nloci); // record kmerDBi only, start from index nloci, do not count
-    //}
+    cerr << "# unique kmers in kmerDBi: " << kmerDBi.size() << '\n';
+	
+    if (not skip1) {
+		//readKmersFile2DBi(kmerDBi, kmerDBi_vec, trPrefix+".ntr.kmers");
+		readKmerIndex(kmerDBi, kmerDBi_vec, trPrefix+".ntr.kmers");
+	}
+    cerr << "# unique kmers in kmerDBi: " << kmerDBi.size() << '\n';
 
     if (threading) {
-        readKmersFile2DB(graphDB, trPrefix+".graph.kmers", true, true); // is graph, record counts
+        //readKmersFile2DB(graphDB, trPrefix+".graph.kmers", true, true); // is graph, record counts
+		readGraphKmers(graphDB, trPrefix+".graph.kmers");
     }
 	cerr << "read *.kmers file in " << (time(nullptr) - time1) << " sec." << endl;
 
