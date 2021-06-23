@@ -154,7 +154,8 @@ void countRemain(vector<PE_KMC>& dup, vector<size_t>& remain) {
     }
 }
 
-void fillstats(vector<vector<uint32_t>>& kmerDBi_vec, vector<kmerIndex_uint32_umap::iterator>& its, vector<kmerIndex_uint32_umap::iterator>& its_other, vector<PE_KMC>& dup, vector<size_t>& remain) {
+//void fillstats(vector<vector<uint32_t>>& kmerDBi_vec, vector<kmerIndex_uint32_umap::iterator>& its, vector<kmerIndex_uint32_umap::iterator>& its_other, vector<PE_KMC>& dup, vector<size_t>& remain) {
+void fillstats(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_umap::iterator>& its, vector<kmerIndex_uint32_umap::iterator>& its_other, vector<PE_KMC>& dup, vector<size_t>& remain) {
     countDupRemove(its, its_other, dup); // count the occurrence of kmers in each read
 
     // get # of mapped loci for each kmer
@@ -163,7 +164,8 @@ void fillstats(vector<vector<uint32_t>>& kmerDBi_vec, vector<kmerIndex_uint32_um
     for (size_t i = 0; i < nkmers; ++i) {
 		//nmappedloci[i] = its[i]->second.size();
 		uint32_t vi = its[i]->second;
-		nmappedloci[i] = (vi % 2 ? kmerDBi_vec[vi>>1].size() : 1);
+		//nmappedloci[i] = (vi % 2 ? kmerDBi_vec[vi>>1].size() : 1);
+		nmappedloci[i] = (vi % 2 ? kmerDBi_vv[vi>>1] : 1);
     }
 
     // sort kmers dup w.r.t. nmappedloci; remove entries w/o mapped locus
@@ -211,12 +213,17 @@ inline bool get_acm2(asgn_t& top, asgn_t& second, size_t rem) {
 	return (top.fc + top.rc - second.fc - second.rc) < rem;
 }
 
-void find_matching_locus(vector<vector<uint32_t>>& kmerDBi_vec, vector<kmerIndex_uint32_umap::iterator>& its1, vector<uint32_t>& hits1, vector<uint32_t>& hits2, 
+//void find_matching_locus(vector<vector<uint32_t>>& kmerDBi_vec, vector<kmerIndex_uint32_umap::iterator>& its1, vector<uint32_t>& hits1, vector<uint32_t>& hits2, 
+void find_matching_locus(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_umap::iterator>& its1, vector<uint32_t>& hits1, vector<uint32_t>& hits2, 
                          vector<PE_KMC>& dup, vector<size_t>& remain, asgn_t& top, asgn_t& second, uint16_t Cthreshold, float Rthreshold) {
     for (size_t i = 0; i < its1.size(); ++i) {
 		uint32_t vi = its1[i]->second;
 		if (vi % 2) {
-			for (uint32_t locus : kmerDBi_vec[vi>>1]) {
+			//for (uint32_t locus : kmerDBi_vec[vi>>1]) {
+			size_t j0 = (vi>>1) + 1;
+			size_t j1 = j0 + kmerDBi_vv[vi>>1];
+			for ( ; j0 < j1; ++j0) {
+				uint32_t locus = kmerDBi_vv[j0];
 				hits1[locus] += dup[i].first; // XXX speedup; try unordered_map for hits?
 				hits2[locus] += dup[i].second;
 				updatetop2(hits1[locus], locus, hits2[locus], top, second);
@@ -246,7 +253,11 @@ void find_matching_locus(vector<vector<uint32_t>>& kmerDBi_vec, vector<kmerIndex
 				if (++j >= its1.size()) { break; }
 				uint32_t vj = its1[j]->second;
 				if (vj % 2) {
-					for (uint32_t locus : kmerDBi_vec[vj>>1]) {
+					//for (uint32_t locus : kmerDBi_vec[vj>>1]) {
+					size_t j0 = (vj>>1) + 1;
+					size_t j1 = j0 + kmerDBi_vv[vj>>1];
+					for ( ; j0 < j1; ++j0) {
+						uint32_t locus = kmerDBi_vv[j0];
 						if (locus == top.idx) {
 							top.fc += dup[j].first;
 							top.rc += dup[j].second;
@@ -265,18 +276,21 @@ void find_matching_locus(vector<vector<uint32_t>>& kmerDBi_vec, vector<kmerIndex
     }
 }
 
-size_t countHit(vector<vector<uint32_t>>& kmerDBi_vec, vector<kmerIndex_uint32_umap::iterator>& its1, vector<kmerIndex_uint32_umap::iterator>& its2, vector<uint32_t>& hits1, vector<uint32_t>& hits2,
+//size_t countHit(vector<vector<uint32_t>>& kmerDBi_vec, vector<kmerIndex_uint32_umap::iterator>& its1, vector<kmerIndex_uint32_umap::iterator>& its2, vector<uint32_t>& hits1, vector<uint32_t>& hits2,
+size_t countHit(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_umap::iterator>& its1, vector<kmerIndex_uint32_umap::iterator>& its2, vector<uint32_t>& hits1, vector<uint32_t>& hits2,
                 vector<PE_KMC>& dup, size_t nloci, uint16_t Cthreshold, float Rthreshold) {
 	// pre-processing: sort kmer by # mapped loci XXX alternative: sort by frequncy in read
     vector<size_t> remain;
-    fillstats(kmerDBi_vec, its1, its2, dup, remain);
+    //fillstats(kmerDBi_vec, its1, its2, dup, remain);
+    fillstats(kmerDBi_vv, its1, its2, dup, remain);
 
     // for each kmer, increment counts of the mapped loci for each read
     // use "remain" to achieve early stopping
 	asgn_t top, second;
 	std::fill(hits1.begin(), hits1.end(), 0);
 	std::fill(hits2.begin(), hits2.end(), 0);
-	find_matching_locus(kmerDBi_vec, its1, hits1, hits2, dup, remain, top, second, Cthreshold, Rthreshold);
+	//find_matching_locus(kmerDBi_vec, its1, hits1, hits2, dup, remain, top, second, Cthreshold, Rthreshold);
+	find_matching_locus(kmerDBi_vv, its1, hits1, hits2, dup, remain, top, second, Cthreshold, Rthreshold);
 	if (top.fc >= Cthreshold and top.rc >= Cthreshold and 
 	    float(top.fc + top.rc)/(top.fc + top.rc + second.fc + second.rc) >= Rthreshold and 
 	    top.idx != NAN32) { 
@@ -813,7 +827,8 @@ public:
     float Rthreshold;
     //kmeruIndex_umap* kmerDBi;
 	kmerIndex_uint32_umap* kmerDBi;
-	vector<vector<uint32_t>>* kmerDBi_vec;
+	//vector<vector<uint32_t>>* kmerDBi_vec;
+	vector<uint32_t>* kmerDBi_vv;
     vector<GraphType>* graphDB;
     vector<kmer_aCount_umap>* trResults;
     ifstream *in;
@@ -858,7 +873,8 @@ void CountWords(void *data) {
     float Rthreshold = ((Counts*)data)->Rthreshold;
     ifstream *in = ((Counts*)data)->in;
     kmerIndex_uint32_umap& kmerDBi = *((Counts*)data)->kmerDBi;
-	vector<vector<uint32_t>>& kmerDBi_vec = *((Counts*)data)->kmerDBi_vec;
+	//vector<vector<uint32_t>>& kmerDBi_vec = *((Counts*)data)->kmerDBi_vec;
+	vector<uint32_t>& kmerDBi_vv = *((Counts*)data)->kmerDBi_vv;
     vector<GraphType>& graphDB = *((Counts*)data)->graphDB;
     vector<kmer_aCount_umap>& trResults = *((Counts*)data)->trResults;
     vector<msa_umap>& msaStats = *((Counts*)data)->msaStats;
@@ -1004,7 +1020,8 @@ void CountWords(void *data) {
 					nKmerFiltered_ += 2;
 					continue; 
 				}
-				destLocus = countHit(kmerDBi_vec, its1, its2, hits1, hits2, dup, nloci, Cthreshold, Rthreshold);
+				//destLocus = countHit(kmerDBi_vec, its1, its2, hits1, hits2, dup, nloci, Cthreshold, Rthreshold);
+				destLocus = countHit(kmerDBi_vv, its1, its2, hits1, hits2, dup, nloci, Cthreshold, Rthreshold);
 			}
 
 			if (destLocus != nloci) {
@@ -1238,35 +1255,51 @@ int main(int argc, char* argv[]) {
     vector<kmer_aCount_umap> trKmerDB(nloci);
     vector<GraphType> graphDB(nloci);
     kmerIndex_uint32_umap kmerDBi;
-	vector<vector<uint32_t>> kmerDBi_vec;
+	//vector<vector<uint32_t>> kmerDBi_vec;
+	vector<uint32_t> kmerDBi_vv;
 
     vector<msa_umap> msaStats;
 	err_umap errdb;
 	vector<size_t> locusmap;
 
-	if (skip1) {
-		//readKmersFile2DB(trKmerDB, trFname, false, false);
-		readTRKmers(trKmerDB, trFname);
-	} else if (extractFasta) {
-		//readKmersFile2DBi(kmerDBi, kmerDBi_vec, trFname);
-		readKmerIndex(kmerDBi, kmerDBi_vec, trFname);
-	} else {
-    	//readKmersFile(trKmerDB, kmerDBi, kmerDBi_vec, trFname, false); // do not count
-		readKmersWithIndex(trKmerDB, kmerDBi, kmerDBi_vec, trFname);
+	if (extractFasta) { // step 1
+		readBinaryIndex(kmerDBi, kmerDBi_vv, trPrefix);
+		cerr << "deserialized index in " << (time(nullptr) - time1) << " sec." << endl;
+	} else if (skip1) { // step 2
+		readBinaryGraph(graphDB, trPrefix);
+		readKmers(trKmerDB, trFname);
+		cerr << "deserialized graph and read tr.kmers in " << (time(nullptr) - time1) << " sec." << endl;
+	} else { // step 1+2
+		readBinaryIndex(kmerDBi, kmerDBi_vv, trPrefix);
+		readBinaryGraph(graphDB, trPrefix);
+		readKmers(trKmerDB, trFname);
+		cerr << "deserialized graph/index and read tr.kmers in " << (time(nullptr) - time1) << " sec." << endl;
 	}
-    cerr << "# unique kmers in kmerDBi: " << kmerDBi.size() << '\n';
-	
-    if (not skip1) {
-		//readKmersFile2DBi(kmerDBi, kmerDBi_vec, trPrefix+".ntr.kmers");
-		readKmerIndex(kmerDBi, kmerDBi_vec, trPrefix+".ntr.kmers");
-	}
-    cerr << "# unique kmers in kmerDBi: " << kmerDBi.size() << '\n';
+	cerr << "# unique kmers in kmerDBi: " << kmerDBi.size() << '\n';
 
-    if (threading) {
-        //readKmersFile2DB(graphDB, trPrefix+".graph.kmers", true, true); // is graph, record counts
-		readGraphKmers(graphDB, trPrefix+".graph.kmers");
-    }
-	cerr << "read *.kmers file in " << (time(nullptr) - time1) << " sec." << endl;
+	//if (skip1) {
+	//	//readKmersFile2DB(trKmerDB, trFname, false, false);
+	//	readKmers(trKmerDB, trFname);
+	//} else if (extractFasta) {
+	//	//readKmersFile2DBi(kmerDBi, kmerDBi_vec, trFname);
+	//	readKmerIndex(kmerDBi, kmerDBi_vec, trFname);
+	//} else {
+    //	//readKmersFile(trKmerDB, kmerDBi, kmerDBi_vec, trFname, false); // do not count
+	//	readKmersWithIndex(trKmerDB, kmerDBi, kmerDBi_vec, trFname);
+	//}
+    //cerr << "# unique kmers in kmerDBi: " << kmerDBi.size() << '\n';
+	//
+    //if (not skip1) {
+	//	//readKmersFile2DBi(kmerDBi, kmerDBi_vec, trPrefix+".ntr.kmers");
+	//	readKmerIndex(kmerDBi, kmerDBi_vec, trPrefix+".ntr.kmers");
+	//}
+    //cerr << "# unique kmers in kmerDBi: " << kmerDBi.size() << '\n';
+
+    //if (threading) {
+    //    //readKmersFile2DB(graphDB, trPrefix+".graph.kmers", true, true); // is graph, record counts
+	//	readGraphKmers(graphDB, trPrefix+".graph.kmers");
+    //}
+	//cerr << "read *.kmers file in " << (time(nullptr) - time1) << " sec." << endl;
 
 
     // create data for each process
@@ -1281,7 +1314,8 @@ int main(int argc, char* argv[]) {
         counts.trResults = &trKmerDB;
         counts.graphDB = &graphDB;
         counts.kmerDBi = &kmerDBi;
-		counts.kmerDBi_vec = &kmerDBi_vec;
+		//counts.kmerDBi_vec = &kmerDBi_vec;
+		counts.kmerDBi_vv = &kmerDBi_vv;
         counts.nReads = &nReads;
         counts.nThreadingReads = &nThreadingReads;
         counts.nFeasibleReads = &nFeasibleReads;

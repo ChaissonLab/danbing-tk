@@ -1,6 +1,6 @@
 PREFIX = /home/cmb-16/mjc/tsungyul/work/vntr/danbing-tk
-TARGETS = bin/danbing-tk bin/vntr2kmers_thread bin/bam2pe bin/genPanKmers
-TARGETSg = bin/danbing-tk_g bin/vntr2kmers_thread_g bin/genPanKmers_g
+TARGETS = bin/danbing-tk bin/vntr2kmers_thread bin/bam2pe bin/genPanKmers bin/ktools
+TARGETSg = bin/danbing-tk_g bin/vntr2kmers_thread_g bin/genPanKmers_g bin/ktools_g
 #TARGETS = aQueryFasta amphQueryFasta vntr2kmers kmer2dot seq2num num2seq rvseq bam2pe
 
 CXX = g++ -std=c++11
@@ -14,11 +14,19 @@ allg: $(TARGETS) $(TARGETSg)
 # dependencies between programs and .o files
 bin/danbing-tk:	src/aQueryFasta_thread.cpp
 	$(dir_guard)
-	$(CXX) $(LDFLAGS) -O3 -o bin/danbing-tk src/aQueryFasta_thread.cpp
+	$(CXX) $(LDFLAGS) -O3 -I. -o bin/danbing-tk src/aQueryFasta_thread.cpp
 
 bin/danbing-tk_g:	src/aQueryFasta_thread.cpp
 	$(dir_guard)
-	$(CXX) -g $(LDFLAGS) -o bin/danbing-tk_g src/aQueryFasta_thread.cpp
+	$(CXX) -g $(LDFLAGS) -I. -o bin/danbing-tk_g src/aQueryFasta_thread.cpp
+
+bin/ktools:	src/kmertools.cpp
+	$(dir_guard)
+	$(CXX) -O3 -I. -o bin/ktools src/kmertools.cpp
+
+bin/ktools_g:	src/kmertools.cpp
+	$(dir_guard)
+	$(CXX) -g -I. -o bin/ktools_g src/kmertools.cpp
 
 bin/vntr2kmers_thread:	src/VNTR2kmers_thread.cpp
 	$(dir_guard)

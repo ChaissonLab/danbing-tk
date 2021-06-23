@@ -1,6 +1,10 @@
 #ifndef A_QUERYFASTA_THREAD_H_
 #define A_QUERYFASTA_THREAD_H_
 
+#include "cereal/archives/binary.hpp"
+#include "cereal/types/unordered_map.hpp"
+#include "cereal/types/vector.hpp"
+
 #include "stdlib.h"
 #include <vector>
 #include <string>
@@ -28,7 +32,8 @@ typedef unordered_map<size_t, uint32_t> kmerCount_umap; // assume count < (2^16 
 typedef unordered_map<size_t, atomic_size_t> kmer_aCount_umap;
 typedef unordered_map<size_t, uint8_t> GraphType;
 typedef unordered_map<size_t, unordered_set<uint32_t>> kmeruIndex_umap; // assume number of loci < (2^32 -1)
-typedef unordered_map<size_t, uint32_t> kmerIndex_uint32_umap; // assume number of loci < (2^32 -1)
+//typedef unordered_map<size_t, uint32_t> kmerIndex_uint32_umap; // assume number of loci < (2^32 -1)
+typedef unordered_map<size_t, size_t> kmerIndex_uint32_umap;
 typedef unordered_map<size_t, vector<uint16_t>> kmerAttr_dict;
 typedef unordered_map<string, unordered_map<string, uint16_t>> adj_dict;
 typedef unordered_map<string, unordered_map<string, vector<uint16_t>>> adjAttr_dict;
@@ -296,6 +301,48 @@ size_t countBedLoci(string fname) {
 
 // record kmerDB only
 template <typename T>
+void readKmers(T& kmerDB, string fname) {
+    ifstream f(fname);
+    assert(f);
+    cerr <<"reading kmers from " << fname << endl;
+    string line;
+	size_t idx = -1;
+	while (getline(f, line)) {
+		if (line[0] == '>') { ++idx; }
+		else { kmerDB[idx][stoul(line)] += 0; }
+	}
+	f.close();
+}
+
+template <typename T>
+void readGraphKmers(T& kmerDB, string fname) {
+    ifstream f(fname);
+    assert(f);
+    cerr <<"reading kmers from " << fname << endl;
+	size_t idx = 0;
+    string line;
+    getline(f, line);
+    while (true){
+        if (f.peek() == EOF or f.peek() == '>'){
+            ++idx;
+            if (f.peek() == EOF){
+                f.close();
+                break;
+            } else {
+                getline(f, line);
+            }
+        } else {
+            getline(f, line, '\t');
+            size_t kmer = stoul(line);
+            getline(f, line);
+            size_t c = stoul(line);
+			kmerDB[idx][kmer] |= c;
+        }
+    }
+    f.close();
+}
+
+template <typename T>
 void readKmersFile2DB(T& kmerDB, string fname, bool graph=false, bool count=true, size_t startInd=0, uint16_t threshold=0, uint16_t offset=0) {
     ifstream f(fname);
     assert(f);
@@ -373,32 +420,91 @@ void mapKmersFile2DB(T& kmerDB, string fname, vector<bool>& omap, bool count=tru
 }
 
 // record kmerIndex_dict kmerDBi only
-void readKmersFile2DBi(kmeruIndex_umap& kmerDBi, string fname, size_t startInd = 0, uint16_t threshold = 0) {
+//void readKmersFile2DBi(kmeruIndex_umap& kmerDBi, string fname, size_t startInd = 0, uint16_t threshold = 0) {
+//    ifstream f(fname);
+//    assert(f);
+//    string line;
+//    getline(f, line);
+//    cerr <<"reading kmers from " << fname << endl;
+//    while (true){
+//        if (f.peek() == EOF or f.peek() == '>'){
+//            ++startInd;
+//            if (f.peek() == EOF){
+//                f.close();
+//                break;
+//            } else {
+//                getline(f, line);
+//            }
+//        } else {
+//            getline(f, line, '\t');
+//            size_t kmer = stoul(line);
+//            getline(f, line);
+//            size_t kmercount = stoul(line);
+//
+//            if (kmercount < threshold) { continue; }
+//            if (kmerDBi[kmer].count(startInd) == 0) {
+//                kmerDBi[kmer].insert(startInd);
+//            }
+//        }
+//    }
+//    f.close();
+//}
+
+void readBinaryIndex(kmerIndex_uint32_umap& kmerDBi, vector<uint32_t>& kmerDBi_vv, string& pref) {
+	{
+		cerr << "deserializing kmerDBi.umap" << endl;
+		ifstream fin(pref+".kmerDBi.umap", ios::binary);
+		assert(fin);
+		cereal::BinaryInputArchive iarchive(fin);
+		iarchive(kmerDBi);
+	}
+	{
+		cerr << "deserializing kmerDBi.vv" << endl;
+		ifstream fin(pref+".kmerDBi.vv", ios::binary);
+		assert(fin);
+		cereal::BinaryInputArchive iarchive(fin);
+		iarchive(kmerDBi_vv);
+	}
+}
+
+void readBinaryGraph(vector<GraphType>& graphDB, string& pref) {
+	cerr << "deserializing graph.umap" << endl;
+	ifstream fin(pref+".graph.umap", ios::binary);
+	assert(fin);
+	cereal::BinaryInputArchive iarchive(fin);
+	iarchive(graphDB);
+}
+
+
+void readKmerIndex(kmerIndex_uint32_umap& kmerDBi, vector<vector<uint32_t>>& kmerDBi_vec, string fname) { // optimized version
     ifstream f(fname);
     assert(f);
-    string line;
-    getline(f, line);
     cerr <<"reading kmers from " << fname << endl;
-    while (true){
-        if (f.peek() == EOF or f.peek() == '>'){
-            ++startInd;
-            if (f.peek() == EOF){
-                f.close();
-                break;
+	uint32_t idx = -1;
+    uint32_t vsize = kmerDBi_vec.size();
+    string line;
+    while (getline(f, line)) {
+        if (line[0] == '>') { ++idx; }
+        else { 
+			size_t kmer = stoul(line);
+			auto it = kmerDBi.find(kmer);
+            if (it != kmerDBi.end()) { // kmer is not unique
+                uint32_t vi = it->second;
+                if (vi % 2) { // kmer freq. >= 2 in current db; kmerDBi_vec[(vi>>1)] records the list of mapped loci
+                    bool good = true;
+                    for (uint32_t x : kmerDBi_vec[vi>>1]) { if (x == idx) { good = false; break; } }
+                    if (good) { kmerDBi_vec[vi>>1].push_back(idx); }
+                }
+                else { // kmer freq. = 1 in current db; vi>>1 is the mapped locus.
+                    if ((vi >> 1) != idx) {
+                        kmerDBi_vec.push_back(vector<uint32_t>{vi>>1, idx});
+                        it->second = ((vsize++) << 1) + 1;
+                    }
+                }
             } else {
-                getline(f, line);
+                kmerDBi[kmer] = (idx << 1);
             }
-        } else {
-            getline(f, line, '\t');
-            size_t kmer = stoul(line);
-            getline(f, line);
-            size_t kmercount = stoul(line);
-
-            if (kmercount < threshold) { continue; }
-            if (kmerDBi[kmer].count(startInd) == 0) {
-                kmerDBi[kmer].insert(startInd);
-            }
-        }
+		}
     }
     f.close();
 }
@@ -447,68 +553,43 @@ void readKmersFile2DBi(kmerIndex_uint32_umap& kmerDBi, vector<vector<uint32_t>>&
     f.close();
 }
 
-// XXX testing only
-//void readKmersFile2DBi(kmerIndex_uint32_umap& kmerDBi, vector<vector<uint32_t>>& kmerDBi_vec, string fname, kmeruIndex_umap& kmerDBi_other) { // optimized version
-//    ifstream f(fname);
-//    assert(f);
-//    string line;
-//    getline(f, line);
-//    cerr <<"reading kmers from " << fname << " using optimized readKmersFile2DBi()" << endl;
-//    uint32_t vsize = kmerDBi_vec.size(), idx = 0;
-//    while (true){
-//        if (f.peek() == EOF or f.peek() == '>'){
-//            ++idx;
-//            if (f.peek() == EOF){
-//                f.close();
-//                break;
-//            } else {
-//                getline(f, line);
-//            }
-//        } else {
-//            getline(f, line, '\t');
-//            size_t kmer = stoul(line);
-//            getline(f, line);
-//            size_t kmercount = stoul(line);
-//
-//            bool good_other = false;
-//            // other
-//            if (kmerDBi_other[kmer].count(idx) == 0) {
-//                kmerDBi_other[kmer].insert(idx);
-//                good_other = true;
-//            }
-//
-//            // this
-//            auto it = kmerDBi.find(kmer);
-//            if (it != kmerDBi.end()) { // kmer is not unique
-//                uint32_t vi = it->second;
-//                if (vi % 2) { // kmer freq. >= 2 in current db; kmerDBi_vec[(vi>>1)] records the list of mapped loci
-//                    bool good = true;
-//                    for (uint32_t x : kmerDBi_vec[vi>>1]) {
-//                        if (x == idx) {
-//                            good = false;
-//                            break;
-//                        }
-//                    }
-//                    if (good) { kmerDBi_vec[vi>>1].push_back(idx); }
-//                }
-//                else { // kmer freq. = 1 in current db; vi>>1 is the mapped locus.
-//                    bool good = true;
-//                    if ((vi >> 1) != idx) {
-//                        kmerDBi_vec.push_back(vector<uint32_t>{vi>>1, idx});
-//                        it->second = ((vsize++) << 1) + 1;
-//                    } else {
-//                        good = false;
-//                    }
-//                }
-//            } else {
-//                kmerDBi[kmer] = (idx << 1);
-//            }
-//        }
-//    }
-//    f.close();
-//}
-
 // record kmerDB and kmerIndex_dict kmerDBi
+template <typename T>
+void readKmersWithIndex(T& kmerDB, kmerIndex_uint32_umap& kmerDBi, vector<vector<uint32_t>>& kmerDBi_vec, string fname) { // optimized version
+    ifstream f(fname);
+    assert(f);
+    cerr <<"reading kmers from " << fname << endl;
+    uint32_t idx = -1;
+    uint32_t vsize = kmerDBi_vec.size();
+    string line;
+    while (getline(f, line)) {
+        if (line[0] == '>') { ++idx; }
+        else {
+            size_t kmer = stoul(line);
+            kmerDB[idx][kmer] += 0;
+
+            auto it = kmerDBi.find(kmer);
+            if (it != kmerDBi.end()) { // kmer is not unique
+                uint32_t vi = it->second;
+                if (vi % 2) { // kmer freq. >= 2 in current db; kmerDBi_vec[(vi>>1)] records the list of mapped loci
+                    bool good = true;
+                    for (uint32_t x : kmerDBi_vec[vi>>1]) { if (x == idx) { good = false; break; } }
+                    if (good) { kmerDBi_vec[vi>>1].push_back(idx); }
+                }
+                else { // kmer freq. = 1 in current db; vi>>1 is the mapped locus.
+                    if ((vi >> 1) != idx) {
+                        kmerDBi_vec.push_back(vector<uint32_t>{vi>>1, idx});
+                        it->second = ((vsize++) << 1) + 1;
+                    }
+                }
+            } else {
+                kmerDBi[kmer] = (idx << 1);
+            }
+        }
+    }
+    f.close();
+}
+
 template <typename T>
 void readKmersFile(T& kmerDB, kmerIndex_uint32_umap& kmerDBi, vector<vector<uint32_t>>& kmerDBi_vec, string fname, bool count = true) { // optimized version
     ifstream f(fname);
