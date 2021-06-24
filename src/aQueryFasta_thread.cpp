@@ -154,7 +154,6 @@ void countRemain(vector<PE_KMC>& dup, vector<size_t>& remain) {
     }
 }
 
-//void fillstats(vector<vector<uint32_t>>& kmerDBi_vec, vector<kmerIndex_uint32_umap::iterator>& its, vector<kmerIndex_uint32_umap::iterator>& its_other, vector<PE_KMC>& dup, vector<size_t>& remain) {
 void fillstats(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_umap::iterator>& its, vector<kmerIndex_uint32_umap::iterator>& its_other, vector<PE_KMC>& dup, vector<size_t>& remain) {
     countDupRemove(its, its_other, dup); // count the occurrence of kmers in each read
 
@@ -162,9 +161,7 @@ void fillstats(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_umap::itera
     size_t nkmers = its.size();
     vector<size_t> nmappedloci(nkmers, 0); // XXX set to 1 and only change val when multiple loci
     for (size_t i = 0; i < nkmers; ++i) {
-		//nmappedloci[i] = its[i]->second.size();
 		uint32_t vi = its[i]->second;
-		//nmappedloci[i] = (vi % 2 ? kmerDBi_vec[vi>>1].size() : 1);
 		nmappedloci[i] = (vi % 2 ? kmerDBi_vv[vi>>1] : 1);
     }
 
@@ -213,13 +210,11 @@ inline bool get_acm2(asgn_t& top, asgn_t& second, size_t rem) {
 	return (top.fc + top.rc - second.fc - second.rc) < rem;
 }
 
-//void find_matching_locus(vector<vector<uint32_t>>& kmerDBi_vec, vector<kmerIndex_uint32_umap::iterator>& its1, vector<uint32_t>& hits1, vector<uint32_t>& hits2, 
 void find_matching_locus(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_umap::iterator>& its1, vector<uint32_t>& hits1, vector<uint32_t>& hits2, 
                          vector<PE_KMC>& dup, vector<size_t>& remain, asgn_t& top, asgn_t& second, uint16_t Cthreshold, float Rthreshold) {
     for (size_t i = 0; i < its1.size(); ++i) {
 		uint32_t vi = its1[i]->second;
 		if (vi % 2) {
-			//for (uint32_t locus : kmerDBi_vec[vi>>1]) {
 			size_t j0 = (vi>>1) + 1;
 			size_t j1 = j0 + kmerDBi_vv[vi>>1];
 			for ( ; j0 < j1; ++j0) {
@@ -253,7 +248,6 @@ void find_matching_locus(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_u
 				if (++j >= its1.size()) { break; }
 				uint32_t vj = its1[j]->second;
 				if (vj % 2) {
-					//for (uint32_t locus : kmerDBi_vec[vj>>1]) {
 					size_t j0 = (vj>>1) + 1;
 					size_t j1 = j0 + kmerDBi_vv[vj>>1];
 					for ( ; j0 < j1; ++j0) {
@@ -276,12 +270,10 @@ void find_matching_locus(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_u
     }
 }
 
-//size_t countHit(vector<vector<uint32_t>>& kmerDBi_vec, vector<kmerIndex_uint32_umap::iterator>& its1, vector<kmerIndex_uint32_umap::iterator>& its2, vector<uint32_t>& hits1, vector<uint32_t>& hits2,
 size_t countHit(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_umap::iterator>& its1, vector<kmerIndex_uint32_umap::iterator>& its2, vector<uint32_t>& hits1, vector<uint32_t>& hits2,
                 vector<PE_KMC>& dup, size_t nloci, uint16_t Cthreshold, float Rthreshold) {
 	// pre-processing: sort kmer by # mapped loci XXX alternative: sort by frequncy in read
     vector<size_t> remain;
-    //fillstats(kmerDBi_vec, its1, its2, dup, remain);
     fillstats(kmerDBi_vv, its1, its2, dup, remain);
 
     // for each kmer, increment counts of the mapped loci for each read
@@ -289,7 +281,6 @@ size_t countHit(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_umap::iter
 	asgn_t top, second;
 	std::fill(hits1.begin(), hits1.end(), 0);
 	std::fill(hits2.begin(), hits2.end(), 0);
-	//find_matching_locus(kmerDBi_vec, its1, hits1, hits2, dup, remain, top, second, Cthreshold, Rthreshold);
 	find_matching_locus(kmerDBi_vv, its1, hits1, hits2, dup, remain, top, second, Cthreshold, Rthreshold);
 	if (top.fc >= Cthreshold and top.rc >= Cthreshold and 
 	    float(top.fc + top.rc)/(top.fc + top.rc + second.fc + second.rc) >= Rthreshold and 
@@ -299,6 +290,15 @@ size_t countHit(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_umap::iter
 	else { 
 		return nloci;
 	}
+}
+
+inline void prunePEinfo(string& title) {
+	size_t len = title.size();
+    if (title[len-2] == '/') {
+        if (title[len-1] == '1' or title[len-1] == '2') {
+			title = title.substr(0, len-2);
+		}
+    }
 }
 
 // skip step 1, read destLocus from >[READ_NAME]:[DEST_LOCUS]_[1|2]
@@ -387,31 +387,6 @@ void printVec(vector<T>& vec) {
     for (auto v : vec) { cerr << v << ' '; }
     cerr << endl;
 }
-
-//void writeMsaStats(string outPref, vector<msa_umap>& msaStats) {
-//    ofstream fout(outPref+".msa");
-//    assert(fout);
-//    for (size_t src = 0; src < msaStats.size(); ++src) {
-//        fout << ">" << src << "\n";
-//        for (auto& p : msaStats[src]) {
-//            fout << p.first << "\t" << p.second << "\n";
-//        }
-//    }
-//    fout.close();
-//}
-//
-//void writeErrDB(string outPref, err_umap& errdb) {
-//    ofstream fout(outPref+".err");
-//    assert(fout);
-//	for (auto& u : errdb) {
-//		fout << u.first << ":{";
-//		for (auto& v : u.second) {
-//			fout << v.first << ">" << std::get<0>(v.second) << "," << std::get<1>(v.second) << "," << std::get<2>(v.second) << ";";
-//		}
-//		fout << "}\n";
-//	}
-//    fout.close();
-//}
 
 void getOutNodes(GraphType& g, size_t node, vector<size_t>& nnds, bool (&nnts)[4]) {
     // a node is a kmer and is not neccessarily canonical
@@ -820,14 +795,13 @@ void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<size_t
 
 class Counts {
 public:
-    bool isFastq, bait, threading, correction, aln, g2pan, skip1;
+    bool interleaved, bait, threading, correction, aln, g2pan, skip1;
     uint16_t Cthreshold, thread_cth;
     size_t *nReads, *nThreadingReads, *nFeasibleReads, *nSubFiltered, *nKmerFiltered;
     size_t nloci;
     float Rthreshold;
-    //kmeruIndex_umap* kmerDBi;
+	unordered_map<string, string>* readDB;
 	kmerIndex_uint32_umap* kmerDBi;
-	//vector<vector<uint32_t>>* kmerDBi_vec;
 	vector<uint32_t>* kmerDBi_vv;
     vector<GraphType>* graphDB;
     vector<kmer_aCount_umap>* trResults;
@@ -851,7 +825,7 @@ public:
 
 template <typename ValueType>
 void CountWords(void *data) {
-    bool isFastq = ((Counts*)data)->isFastq;
+    bool interleaved = ((Counts*)data)->interleaved;
     bool bait = ((Counts*)data)->bait;
     bool threading = ((Counts*)data)->threading;
     bool correction = ((Counts*)data)->correction;
@@ -861,8 +835,6 @@ void CountWords(void *data) {
     int simmode = ((Counts*)data)->simmode;
     int extractFasta = ((Counts*)data)->extractFasta;
     size_t nReads_ = 0, nShort_ = 0, nThreadingReads_ = 0, nFeasibleReads_ = 0, nSubFiltered_ = 0, nKmerFiltered_ = 0;
-    const size_t nloci = ((Counts*)data)->nloci;
-    const size_t readsPerBatch = 300000;
     size_t& nReads = *((Counts*)data)->nReads;
     size_t& nThreadingReads = *((Counts*)data)->nThreadingReads;
     size_t& nFeasibleReads = *((Counts*)data)->nFeasibleReads;
@@ -871,9 +843,12 @@ void CountWords(void *data) {
     uint16_t Cthreshold = ((Counts*)data)->Cthreshold;
     uint16_t thread_cth = ((Counts*)data)->thread_cth;
     float Rthreshold = ((Counts*)data)->Rthreshold;
+    const size_t nloci = ((Counts*)data)->nloci;
+    const size_t readsPerBatch = 300000;
+	const size_t minReadSize = Cthreshold + ksize - 1;
     ifstream *in = ((Counts*)data)->in;
+    unordered_map<string, string>& readDB = *((Counts*)data)->readDB;
     kmerIndex_uint32_umap& kmerDBi = *((Counts*)data)->kmerDBi;
-	//vector<vector<uint32_t>>& kmerDBi_vec = *((Counts*)data)->kmerDBi_vec;
 	vector<uint32_t>& kmerDBi_vv = *((Counts*)data)->kmerDBi_vv;
     vector<GraphType>& graphDB = *((Counts*)data)->graphDB;
     vector<kmer_aCount_umap>& trResults = *((Counts*)data)->trResults;
@@ -894,7 +869,7 @@ void CountWords(void *data) {
 
     while (true) {
 
-        string title, title1, seq, seq1, qualtitle, qualtitle1, qual, qual1;
+        string title, title1, seq, seq1;
         // for simmode only
         // locusReadi: map locus to nReads_. 0th item = number of reads for 0th item in loci; last item = nReads_; has same length as loci
         size_t startpos;
@@ -932,21 +907,32 @@ void CountWords(void *data) {
         }
 
         while (nReads_ < readsPerBatch and in->peek() != EOF) {
-            if (isFastq) { // no quality check
+            if (interleaved) {
                 getline(*in, title);
                 getline(*in, seq);
-                getline(*in, qualtitle);
-                getline(*in, qual);
                 getline(*in, title1);
                 getline(*in, seq1);
-                getline(*in, qualtitle1);
-                getline(*in, qual1);
             }
             else {
-                getline(*in, title);
-                getline(*in, seq);
-                getline(*in, title1);
-                getline(*in, seq1);
+				bool se = true; // single end
+				while (se) {
+					getline(*in, title);
+					getline(*in, seq);
+					prunePEinfo(title);
+					auto it = readDB.find(title);
+					if (it != readDB.end()) {
+						if (seq.size() < minReadSize or it->second.size() < minReadSize) { readDB.erase(title); continue; }
+						title1 = title;
+						seq1 = it->second;
+						readDB.erase(title);
+						se = false;
+						break;
+					} else {
+						readDB[title] = seq;
+					}
+					if (in->peek() == EOF) { break; }
+				}
+				if (se and in->peek() == EOF) { break; }
             }
 			
             if (simmode == 1) { parseReadName(title, nReads_, srcLoci, locusReadi); }
@@ -962,7 +948,7 @@ void CountWords(void *data) {
         if (simmode == 1) { locusReadi.push_back(nReads_); }
 		if (skip1) { parseReadNames(titles, destLoci, nReads_); }
 
-        cerr << "Buffered reading " << nReads_ << "\t" << nReads << endl;
+        cerr << "Buffered reading " << nReads_ << '\t' << nReads << '\t' << readDB.size() << endl;
 
         //
         // All done reading, release the thread lock.
@@ -1020,7 +1006,6 @@ void CountWords(void *data) {
 					nKmerFiltered_ += 2;
 					continue; 
 				}
-				//destLocus = countHit(kmerDBi_vec, its1, its2, hits1, hits2, dup, nloci, Cthreshold, Rthreshold);
 				destLocus = countHit(kmerDBi_vv, its1, its2, hits1, hits2, dup, nloci, Cthreshold, Rthreshold);
 			}
 
@@ -1109,7 +1094,7 @@ int main(int argc, char* argv[]) {
 
     if (argc < 2) {
         cerr << endl
-             << "Usage: danbing-tk [-v] [-e] [-g|-gc] [-a] [-kf] -k -qs -fai [-o] -p -cth -rth" << endl
+             << "Usage: danbing-tk [-v] [-e] [-g|-gc] [-a] [-kf] [-cth] [-o] -k -qs <-fai|-fa> -p" << endl
              << "Options:" << endl
              //<< "  -b               (deprecated) Use baitDB to decrease ambiguous mapping" << endl
              //<< "  -t <INT>         Used trimmed pangenome graph e.g. \"-t 1\" for pan.*.trim1.kmers" << endl
@@ -1130,21 +1115,23 @@ int main(int argc, char* argv[]) {
 			 << "                   optimized for 150bp paired-end reads." << endl
 			 << "                   1st param: # of sub-sampled kmers. Default: 4." << endl
 			 << "                   2nd param: minimal # of matches. Default: 1." << endl
-             << "  -k <INT>         Kmer size" << endl
-             << "  -qs <STR>        Prefix for *.tr.kmers, *.ntr.kmers, *.graph.kmers files" << endl
-             << "  -fai <STR>       interleaved pair-end fasta file" << endl
-             << "  -o <STR>         Output prefix" << endl
-             << "  -p <INT>         Use n threads." << endl
              << "  -cth <INT>       Discard both pe reads if maxhit of one pe read is below this threshold." << endl
 			 << "                   Will skip read filtering and run threading directly if not specified." << endl
-             << "  -rth <FLOAT>     Discard reads with maxhit/(maxhit+secondhit) below this threshold." << endl 
-             << "                   Range [0.5, 1]. 1: does not allow noise. 0.5: no filtering." << endl
+             << "  -o <STR>         Output prefix" << endl
+             << "  -k <INT>         Kmer size" << endl
+             << "  -qs <STR>        Prefix for *.tr.kmers, *.ntr.kmers, *.graph.kmers files" << endl
+             << "  -fai <STR>       Interleaved pair-end fasta file" << endl
+             << "  -fa <STR>        Fasta file e.g. generated by samtools fasta -n" << endl
+             << "                   Reads will be paired on the fly" << endl
+             << "  -p <INT>         Use n threads." << endl
+             //<< "  -rth <FLOAT>     Discard reads with maxhit/(maxhit+secondhit) below this threshold." << endl 
+             //<< "                   Range [0.5, 1]. 1: does not allow noise. 0.5: no filtering." << endl
              << endl;
         return 0;
     }
    
     vector<string> args(argv, argv+argc);
-    bool bait = false, aug = false, threading = false, correction = false, aln = false, g2pan = false, skip1 = true, isFastq;
+    bool bait = false, aug = false, threading = false, correction = false, aln = false, g2pan = false, skip1 = true, interleaved;
     int simmode = 0, extractFasta = 0;
     size_t argi = 1, trim = 0, thread_cth = 0, Cthreshold = 0, nproc;
     float Rthreshold = 0.5;
@@ -1193,8 +1180,8 @@ int main(int argc, char* argv[]) {
                 augFile.close();
             }
         }
-        else if (args[argi] == "-fqi" or args[argi] == "-fai") {
-            isFastq = (args[argi] == "-fqi" ? true : false);
+        else if (args[argi] == "-fa" or args[argi] == "-fai") {
+            interleaved = args[argi] == "-fai";
             fastxFname = args[++argi];
             fastxFile.open(fastxFname);
             assert(fastxFile);
@@ -1229,7 +1216,7 @@ int main(int argc, char* argv[]) {
     // report parameters
     cerr << "use baitDB: " << bait << endl
          << "extract fasta: " << extractFasta << endl
-         << "isFastq: " << isFastq << endl
+         << "interleaved: " << interleaved << endl
          << "sim mode: " << simmode << endl
          << "trim mode: " << trim << endl
          << "augmentation mode: " << aug << endl
@@ -1255,9 +1242,9 @@ int main(int argc, char* argv[]) {
     vector<kmer_aCount_umap> trKmerDB(nloci);
     vector<GraphType> graphDB(nloci);
     kmerIndex_uint32_umap kmerDBi;
-	//vector<vector<uint32_t>> kmerDBi_vec;
 	vector<uint32_t> kmerDBi_vv;
 
+	unordered_map<string, string> readDB;
     vector<msa_umap> msaStats;
 	err_umap errdb;
 	vector<size_t> locusmap;
@@ -1265,6 +1252,7 @@ int main(int argc, char* argv[]) {
 	if (extractFasta) { // step 1
 		readBinaryIndex(kmerDBi, kmerDBi_vv, trPrefix);
 		cerr << "deserialized index in " << (time(nullptr) - time1) << " sec." << endl;
+		cerr << "# unique kmers in kmerDBi: " << kmerDBi.size() << endl;
 	} else if (skip1) { // step 2
 		readBinaryGraph(graphDB, trPrefix);
 		readKmers(trKmerDB, trFname);
@@ -1274,33 +1262,8 @@ int main(int argc, char* argv[]) {
 		readBinaryGraph(graphDB, trPrefix);
 		readKmers(trKmerDB, trFname);
 		cerr << "deserialized graph/index and read tr.kmers in " << (time(nullptr) - time1) << " sec." << endl;
+		cerr << "# unique kmers in kmerDBi: " << kmerDBi.size() << endl;
 	}
-	cerr << "# unique kmers in kmerDBi: " << kmerDBi.size() << '\n';
-
-	//if (skip1) {
-	//	//readKmersFile2DB(trKmerDB, trFname, false, false);
-	//	readKmers(trKmerDB, trFname);
-	//} else if (extractFasta) {
-	//	//readKmersFile2DBi(kmerDBi, kmerDBi_vec, trFname);
-	//	readKmerIndex(kmerDBi, kmerDBi_vec, trFname);
-	//} else {
-    //	//readKmersFile(trKmerDB, kmerDBi, kmerDBi_vec, trFname, false); // do not count
-	//	readKmersWithIndex(trKmerDB, kmerDBi, kmerDBi_vec, trFname);
-	//}
-    //cerr << "# unique kmers in kmerDBi: " << kmerDBi.size() << '\n';
-	//
-    //if (not skip1) {
-	//	//readKmersFile2DBi(kmerDBi, kmerDBi_vec, trPrefix+".ntr.kmers");
-	//	readKmerIndex(kmerDBi, kmerDBi_vec, trPrefix+".ntr.kmers");
-	//}
-    //cerr << "# unique kmers in kmerDBi: " << kmerDBi.size() << '\n';
-
-    //if (threading) {
-    //    //readKmersFile2DB(graphDB, trPrefix+".graph.kmers", true, true); // is graph, record counts
-	//	readGraphKmers(graphDB, trPrefix+".graph.kmers");
-    //}
-	//cerr << "read *.kmers file in " << (time(nullptr) - time1) << " sec." << endl;
-
 
     // create data for each process
     cerr << "creating data for each process..." << endl;
@@ -1311,10 +1274,10 @@ int main(int argc, char* argv[]) {
         Counts &counts = threaddata.counts[i];
 
         counts.in = &fastxFile;
+        counts.readDB = &readDB;
         counts.trResults = &trKmerDB;
         counts.graphDB = &graphDB;
         counts.kmerDBi = &kmerDBi;
-		//counts.kmerDBi_vec = &kmerDBi_vec;
 		counts.kmerDBi_vv = &kmerDBi_vv;
         counts.nReads = &nReads;
         counts.nThreadingReads = &nThreadingReads;
@@ -1325,7 +1288,7 @@ int main(int argc, char* argv[]) {
         counts.errdb = &errdb;
 		counts.locusmap = &locusmap;
 
-        counts.isFastq = isFastq;
+        counts.interleaved = interleaved;
         counts.extractFasta = extractFasta;
         counts.bait = bait;
         counts.simmode = simmode;
