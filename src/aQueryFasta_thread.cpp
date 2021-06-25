@@ -778,15 +778,30 @@ inline void writeOps(vector<char>& ops) {
 
 void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<size_t>& alnindices, vector<EDIT>& sam) {
 	for (size_t i = 0; i < sam.size(); ++i) {
-		string& title1 = titles[--alnindices[i]];
-		cout << sam[i].map.first << '\t'
-			 << sam[i].map.second << '\t'
-			 << title1.substr(1,title1.size()-1) << '\t'
+		if (sam[i].map.first == -1ULL) { cout << '.' << '\t'; }
+		else { cout << sam[i].map.first << '\t'; }
+		cout << sam[i].map.second << '\t'
+			 << titles[--alnindices[i]] << '\t'
 			 << seqs[alnindices[i]] << '\t';
 		writeOps(sam[i].ops2); // read2
-		string& title2 = titles[--alnindices[i]];
 		cout << '\t'
-			 << title2.substr(1,title2.size()-1) << '\t'
+			 << titles[--alnindices[i]] << '\t'
+			 << seqs[alnindices[i]] << '\t';
+		writeOps(sam[i].ops1); // read1
+		cout << '\n';
+	}
+}
+
+void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<size_t>& destLoci, vector<size_t>& alnindices, vector<EDIT>& sam) {
+	for (size_t i = 0; i < sam.size(); ++i) {
+		if (sam[i].map.first == -1ULL) { cout << '.' << '\t'; }
+		else { cout << sam[i].map.first << '\t'; }
+		cout << sam[i].map.second << '\t'
+			 << titles[--alnindices[i]] << ':' << destLoci[alnindices[i]/2] << '\t'
+			 << seqs[alnindices[i]] << '\t';
+		writeOps(sam[i].ops2); // read2
+		cout << '\t'
+			 << titles[--alnindices[i]] << ':' << destLoci[alnindices[i]/2] << '\t'
 			 << seqs[alnindices[i]] << '\t';
 		writeOps(sam[i].ops1); // read1
 		cout << '\n';
@@ -795,7 +810,7 @@ void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<size_t
 
 class Counts {
 public:
-    bool interleaved, bait, threading, correction, aln, g2pan, skip1;
+    bool interleaved, bait, threading, correction, aln, aln_minimal, g2pan, skip1;
     uint16_t Cthreshold, thread_cth;
     size_t *nReads, *nThreadingReads, *nFeasibleReads, *nSubFiltered, *nKmerFiltered;
     size_t nloci;
@@ -830,6 +845,7 @@ void CountWords(void *data) {
     bool threading = ((Counts*)data)->threading;
     bool correction = ((Counts*)data)->correction;
     bool aln = ((Counts*)data)->aln;
+    bool aln_minimal = ((Counts*)data)->aln_minimal;
 	bool g2pan = ((Counts*)data)->g2pan;
 	bool skip1 = ((Counts*)data)->skip1; // TODO new functionality: allow skipping step1 by reading assigned locus info from extracted reads
     int simmode = ((Counts*)data)->simmode;
@@ -980,8 +996,6 @@ void CountWords(void *data) {
             }
 			else if (simmode == 2) { mapLocus(g2pan, meta, locusmap, seqi, simi, nloci, srcLocus); }
 
-			if (skip1) { destLocus = destLoci[seqi/2]; }
-
             string& seq = seqs[seqi++];
             string& seq1 = seqs[seqi++];
 
@@ -1006,8 +1020,9 @@ void CountWords(void *data) {
 					nKmerFiltered_ += 2;
 					continue; 
 				}
-				destLocus = countHit(kmerDBi_vv, its1, its2, hits1, hits2, dup, nloci, Cthreshold, Rthreshold);
+				destLoci[seqi/2 - 1] = countHit(kmerDBi_vv, its1, its2, hits1, hits2, dup, nloci, Cthreshold, Rthreshold);
 			}
+			destLocus = destLoci[seqi/2 - 1];
 
 			if (destLocus != nloci) {
 				int feasibility0 = 0, feasibility1 = 0;
@@ -1055,10 +1070,12 @@ void CountWords(void *data) {
 				}
 				else { destLocus = nloci; } // removed by threading
 
-				if (aln and threading and (srcLocus != nloci or destLocus != nloci)) {
-					alnindices.push_back(seqi); // work the same as extractindices
-					edit.map = std::make_pair(srcLocus, destLocus);
-					sam.push_back(edit);
+				if (aln and threading) {
+					if ((aln_minimal and srcLocus != nloci and destLocus != nloci) or (not aln_minimal and (srcLocus != nloci or destLocus != nloci))) {
+						alnindices.push_back(seqi); // work the same as extractindices
+						edit.map = std::make_pair(srcLocus, destLocus);
+						sam.push_back(edit);
+					}
 				}
 			}
         }
@@ -1071,7 +1088,8 @@ void CountWords(void *data) {
 				writeExtractedReads(extractFasta, seqs, titles, extractindices, assignedloci);
 			}
 			else if (aln) {
-				writeAlignments(seqs, titles, alnindices, sam);
+				if (skip1) { writeAlignments(seqs, titles, alnindices, sam); }
+				else { writeAlignments(seqs, titles, destLoci, alnindices, sam); }
 			}
             sem_post(semwriter);
             //
@@ -1094,7 +1112,7 @@ int main(int argc, char* argv[]) {
 
     if (argc < 2) {
         cerr << endl
-             << "Usage: danbing-tk [-v] [-e] [-g|-gc] [-a] [-kf] [-cth] [-o] -k -qs <-fai|-fa> -p" << endl
+             << "Usage: danbing-tk [-v] [-e] [-g|-gc] [-a|-am] [-kf] [-cth] [-o] -k -qs <-fai|-fa> -p" << endl
              << "Options:" << endl
              //<< "  -b               (deprecated) Use baitDB to decrease ambiguous mapping" << endl
              //<< "  -t <INT>         Used trimmed pangenome graph e.g. \"-t 1\" for pan.*.trim1.kmers" << endl
@@ -1110,7 +1128,8 @@ int main(int argc, char* argv[]) {
              << "  -g <INT>         Use graph threading algorithm w/o error correction" << endl
              << "  -gc <INT>        Use graph threading algorithm w/ error correction" << endl
              << "                   Discard pe reads if # of matching kmers < [INT]" << endl
-			 << "  -a               Output read alignments. Only work with -g or -gc." << endl
+			 << "  -a               Output alignments for all reads entering threading. Only work with -g or -gc." << endl
+			 << "  -ae              Same as the -a option, but excluding unaligned reads in threading." << endl
 			 << "  -kf <INT> <INT>  Parameters for kmer-based pre-filtering," << endl
 			 << "                   optimized for 150bp paired-end reads." << endl
 			 << "                   1st param: # of sub-sampled kmers. Default: 4." << endl
@@ -1131,7 +1150,7 @@ int main(int argc, char* argv[]) {
     }
    
     vector<string> args(argv, argv+argc);
-    bool bait = false, aug = false, threading = false, correction = false, aln = false, g2pan = false, skip1 = true, interleaved;
+    bool bait = false, aug = false, threading = false, correction = false, aln = false, aln_minimal=false, g2pan = false, skip1 = true, interleaved;
     int simmode = 0, extractFasta = 0;
     size_t argi = 1, trim = 0, thread_cth = 0, Cthreshold = 0, nproc;
     float Rthreshold = 0.5;
@@ -1161,6 +1180,7 @@ int main(int argc, char* argv[]) {
             thread_cth = stoi(args[++argi]);
         }
 		else if (args[argi] == "-a") { aln = true; }
+		else if (args[argi] == "-ae") { aln = true; aln_minimal = true; }
 		else if (args[argi] == "-kf") {
 			N_FILTER = stoi(args[++argi]);
 			NM_FILTER = stoi(args[++argi]);
@@ -1222,6 +1242,7 @@ int main(int argc, char* argv[]) {
          << "augmentation mode: " << aug << endl
          << "graph threading mode: " << threading << endl
          << "output alignment: " << aln << endl
+         << "output successfully aligned reads only: " << aln_minimal << endl
          << "k: " << ksize << endl
          << "# of subsampled kmers in pre-filtering: " << N_FILTER << endl
          << "minimal # of matches in pre-filtering: " << NM_FILTER << endl

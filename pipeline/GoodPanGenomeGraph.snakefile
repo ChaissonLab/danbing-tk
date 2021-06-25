@@ -13,6 +13,7 @@ genomes = gbpair[:,0].tolist()
 bams = dict(gbpair) if prune else None
 haps = ["0", "1"]
 kmerTypes = ["tr", "ntr", "graph"]
+binKmerTypes = ["graph.umap", "kmerDBi.umap", "kmerDBi.vv"]
 
 aligner = config["AsmAligner"]
 ksize = config["ksize"]
@@ -37,6 +38,7 @@ rule all:
         #PBkmers = expand(outdir + "{genome}.PB.{kmerType}.kmers", genome=genomes, kmerType=kmerTypes),
         #rawPred = expand(outdir + "{genome}.rawLR.pred", genome=genomes),
         panKmers = expand(outdir + "pan.{kmerType}.kmers", kmerType=kmerTypes),
+        binKmers = expand(outdir + "pan.{binKmerType}", binKmerType=binKmerTypes),
         #panILkmers = expand(outdir + "pan.{genome}.IL.tr.kmers", genome=genomes),
         #pred = expand(outdir + "{genome}.LR.pred", genome=genomes),
         bamcov = [outdir + "ctrl.cov"] if prune else []
@@ -393,4 +395,25 @@ module load gcc
 {params.sd}/bin/genPanKmers -o pan -m - -k {params.kmerpref}
 """
 
+rule GenSerializedGraphAndIndex:
+    input:
+        panKmers = expand(outdir + "pan.{kmerType}.kmers", kmerType=kmerTypes)
+    output:
+        binKmers = expand(outdir + "pan.{binKmerType}", binKmerType=binKmerTypes)
+    resources:
+        cores = 2,
+        mem = lambda wildcards, attempt: 60+20*(attempt-1)
+    priority: 91
+    params:
+        copts = copts,
+        sd = srcdir,
+        od = outdir,
+        pref = f"{outdir}/pan"
+    shell:"""
+cd {params.od}
+ulimit -c 20000
+module load gcc
+
+{params.sd}/bin/ktools serialize {params.pref}
+"""
 
