@@ -1112,7 +1112,7 @@ int main(int argc, char* argv[]) {
 
     if (argc < 2) {
         cerr << endl
-             << "Usage: danbing-tk [-v] [-e] [-g|-gc] [-a|-am] [-kf] [-cth] [-o] -k -qs <-fai|-fa> -p" << endl
+             << "Usage: danbing-tk [-v] [-e] [-g|-gc] [-a|-ae] [-kf] [-cth] [-o] -k -qs <-fai|-fa> -p" << endl
              << "Options:" << endl
              //<< "  -b               (deprecated) Use baitDB to decrease ambiguous mapping" << endl
              //<< "  -t <INT>         Used trimmed pangenome graph e.g. \"-t 1\" for pan.*.trim1.kmers" << endl
