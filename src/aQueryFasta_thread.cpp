@@ -1155,7 +1155,7 @@ int main(int argc, char* argv[]) {
     size_t argi = 1, trim = 0, thread_cth = 0, Cthreshold = 0, nproc;
     float Rthreshold = 0.5;
     string trPrefix, trFname, fastxFname, outPrefix;
-    ifstream fastxFile, trFile, ntrFile, augFile, baitFile, mapFile;
+    ifstream fastxFile, trFile, augFile, baitFile, mapFile;
     ofstream outfile, baitOut;
     while (argi < argc) {
         if (args[argi] == "-b") {
@@ -1188,12 +1188,10 @@ int main(int argc, char* argv[]) {
         else if (args[argi] == "-k") { ksize = stoi(args[++argi]); }
         else if (args[argi] == "-qs") {
             trPrefix = args[++argi];
-            trFname = (trim ? trPrefix+".tr.trim"+std::to_string(trim)+".kmers" : trPrefix+".tr.kmers");
+            //trFname = (trim ? trPrefix+".tr.trim"+std::to_string(trim)+".kmers" : trPrefix+".tr.kmers");
             trFile.open(trFname);
-            ntrFile.open(trPrefix+".ntr.kmers");
-            assert(trFile and ntrFile);
+            assert(trFile);
             trFile.close();
-            ntrFile.close();
             if (aug) {
                 augFile.open(trPrefix+".tr.aug.kmers");
                 assert(augFile);
