@@ -4,24 +4,45 @@ A toolkit for variable number tandem repeats (VNTRs) analysis, which enables:
 2. genotyping each VNTR as a set of (*k*-mer, count) given SRS data (`danbing-tk align`), and
 3. predicting VNTR length from the genotype (`danbing-tk predict`) given locus-specific sampling bias (LSB).
 
-[Manuscript](https://www.biorxiv.org/content/10.1101/2020.08.13.249839v3) available on biorxiv.
+See [online manuscript](https://www.nature.com/articles/s41467-021-24378-0) for details.
 
 
-## Installation
-This will take up to an hour on a typical work station, depending on your internet connection.
+## Download Releases
+Each release comes with the lastest version of genotypable VNTRs, RPGG (and/or) precomputed LSB.
 
-### Download Releases
-Each release comes with the lastest version of genotypable VNTRs, RPGG, and precomputed LSB.
+|                   | File                                                  | Input of           | Output of        |
+|-------------------|-------------------------------------------------------|--------------------|------------------|
+| Genotypable VNTRs | tr.good.bed                                           | danbing-tk build   |                  |
+| Control regions   | ctrl.bed                                              | danbing-tk build   |                  |
+| RPGG              | pan.(tr.kmers\|kmerDBi.umap\|kmerDBi.vv\|graph.umap)  | danbing-tk align   | danbing-tk build |
+| Precomputed LSB   | LSB.tsv                                               | danbing-tk predict |                  |
 
-|                   | File                              | Input of           | Output of        |
-|-------------------|-----------------------------------|--------------------|------------------|
-| Genotypable VNTRs | tr.good.bed                       | danbing-tk build   |                  |
-| Control regions   | ctrl.bed                          | danbing-tk build   |                  |
-| RPGG              | pan.(tr\|ntr\|graph).kmers        | danbing-tk align   | danbing-tk build |
-| Precomputed LSB   | LSB.tsv                           | danbing-tk predict |                  |
-
+- Release v1.3: Updated RPGG built from 35 HGSVC genomes.
 - Release v1.0: VNTR summary statistics and eGene discoveries are also included. Example analyses such as differential length/motif analysis, eQTL mapping, VNTR locus QC, sample QC are also included.
 
+
+## Building on Linux
+```shell
+git clone https://github.com/ChaissonLab/danbing-tk
+cd danbing-tk && make
+```
+
+## danbing-tk align
+Decompress the RPGG `RPGG.tar.gz` in your working directory.
+
+An example usage to genotype SRS sample using the RPGG:
+
+```shell
+samtools fasta -@2 -n $SRS.bam |
+/$PREFIX/danbing-tk/bin/danbing-tk -gc 80 -ae -kf 4 0 -cth 45 -o $OUT_PREF -k 21 -qs pan -fai /dev/stdin -p $THREADS | gzip >$OUT_PREF.aln.gz
+```
+
+`danbing-tk align` takes ~12 cpu hours to genotype a 30x SRS sample. This will generate `$OUT_PREF.tr.kmers` and `$OUT_PREF.aln.gz` output with format specified in [File Format](#file-format).
+
+**Important note:** If outputs of `danbing-tk align` are intended to be used directly for downstream analyses e.g. association tests, please check the [distribution of LSB](#distribution-of-lsb) section below before running.
+
+
+## danbing-tk build
 ### Install Dependencies
 For users intended to use `danbing-tk align` only, this step is not required.
 
@@ -40,39 +61,15 @@ conda create -n $MY_ENVIRONMENT -c conda-forge -c bioconda -c intel \
     scikit-learn=0.23.1 statsmodels=0.12.1 pysam=0.15.3
 ```
 
-### Building on Linux
-```shell
-git clone https://github.com/ChaissonLab/danbing-tk
-cd danbing-tk && make
-```
-
-### Test Environment
 To check if everything is configured properly:
 1. Go to `/$PREFIX/danbing-tk/test/`
-
 2. Replace `$PREFIX` in `goodPanGenomeGraph.json` and `input/genome.bam.tsv` with the path to danbing-tk
 3. Run `snakemake -p -s ../pipeline/GoodPanGenomeGraph.snakefile -j 4 --rerun-incomplete --output-wait 3`
 
 Tested on v1.0. 
-## Usage
 
-### danbing-tk align
-Decompress the RPGG `RPGG.tar.gz` and link `*.kmers` (required by the `-qs` option) to your working directory with `ln -s`.
 
-An example usage to genotype SRS sample using the RPGG:
-
-```shell
-samtools fasta -@2 -n $SRS.bam |
-/$PREFIX/danbing-tk/bin/bam2pe -fai /dev/stdin |
-/$PREFIX/danbing-tk/bin/danbing-tk -gc 50 -k 21 -qs pan -fai /dev/stdin -o $OUT_PREFIX \
-           -p 24 -cth 45 -rth 0.5
-```
-
-`danbing-tk align` takes ~42 cpu hours to genotype a 30x SRS sample. This will generate a `*.tr.kmers` output with format specified in [File Format](#file-format).
-
-**Important note:** If outputs of `danbing-tk align` are intended to be used directly for downstream analyses e.g. association tests, please check the [distribution of LSB](#distribution-of-lsb) section below before running.
-
-### danbing-tk build
+### Running danbing-tk build
 - Required inputs: 
 	- haplotype-resolved assemblies (FASTA)
 	- matched SRS data (BAM; optional)
@@ -96,7 +93,7 @@ snakemake -p -s /$PREFIX/danbing-tk/pipeline/GoodPanGenomeGraph.snakefile -j 40\
 
 Submitting jobs to cluster is preferred as `danbing-tk build` is compute-intensive, ~1200 cpu hours for the original dataset. Otherwise, remove `--cluster` and its parameters to run jobs locally.
 
-### danbing-tk predict
+## danbing-tk predict
 Locus-specific sampling biases (LSB) at VNTR regions are critical for normalizing the sum of *k*-mer counts to VNTR length. We provided precomputed LSB at the VNTR regions for fast comparison, however this assumes the LSB of the dataset of interest is close enough to the dataset in the original paper. Please ensure this assumption is valid by running a joint PCA on the LSB of non-repetitive regions with the original dataset, provided in `LSB.tsv`. If this assumption failed, leave-one-out analysis (next section) on the dataset of interest is necessary to make accurate predictions. The following usage is for when the assumption holds.
 
 Run `getCovByLocus.397.sh` on your SRS dataset.
@@ -148,6 +145,7 @@ kmer1	kmer_count1
 >locus i+1
 ...
 ```
+The second field is optional.
 
 - Alignment output (`-a` option)
 	- Synopsis
@@ -159,7 +157,8 @@ kmer1	kmer_count1
 	- `ops`: operations to align the read to the graph
 		- `=`: a match in the repeat
 		- `.`: a match in the flank
-		- `[A|C|G|T]`: a mismatch in the repeat; letter in the graph is shown
-		- `[a|c|g|t]`: a mismatch in the flank; letter in the graph is shown
-		- `[H|h]`: a homopolymer run in the repeat or flank
-		- `S`: a gap (skipped)
+		- `[A|C|G|T]`: a mismatch; letter in the graph is shown
+		- `[0|1|2|3]`: a deletion; letter in the graph is shown as 0123 for ACGT, respectively.
+		- `I`: an insertion in the read
+		- `H`: a nucleotide in the homopolymer run
+		- `*`: unalinged nucleotide
