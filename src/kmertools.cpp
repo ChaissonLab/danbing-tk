@@ -25,6 +25,7 @@ int main (int argc, const char * argv[]) {
 		cerr << "Usage: ktools <commands> [options]" << endl << endl
 
 		     << "Commands:" << endl
+			 << "  ksi         generate ksi index for ktools sum" << endl
 		     << "  sum         acculumate kmer counts for each locus" << endl
 		     << "  serialize   generate kmer index using pan.(graph|ntr|tr).kmers" << endl << endl;
 		return 0;
@@ -32,36 +33,104 @@ int main (int argc, const char * argv[]) {
 
 
 	vector<string> args(argv, argv+argc);
-	if (args[1] == "sum") {
+	if (args[1] == "ksi") {
 		if (argc == 2) {
-			cerr << "Usage: ktools sum <.ksi> <.kmers> <out.kms>" << endl;
+			cerr << "Usage: ktools ksi <pan.tr.kmers> >$OUT.ksi" <<
+			        "  Generate ksi index for ktools sum" << endl;
+		}
+
+		ifstream kmers(args[2]);
+		string line;
+		int idx = -1, nkmer = 0;
+		while (getline(kmers, line)) {
+			if (line[0] == '>') {
+				++idx; 
+				if (idx) { cout << nkmer << '\n'; }
+			} else {
+				++nkmer;
+			}
+		}
+		if (idx) { cout << nkmer << '\n'; }
+	}
+
+	else if (args[1] == "sum") {
+		if (argc == 2) {
+			cerr << "Usage 1: ktools sum <.ksi> <.kmers> <out.kms>\n" <<
+			        "  Read a single .kmers file and write a single column output.\n" <<
+			        "Usage 2: ktools sum -f <.ksi> <.txt> <out.kms>\n" << 
+			        "  Read all kmer files specified in .txt and output a kms table (row=sample, col=locus)." << endl;
 			return 0;
 		}
 
-		ifstream ksif(args[2]);
-		ifstream kmerf(args[3]);
-		ofstream fout(args[4]);
-		assert(ksif);
-		assert(kmerf);
-		assert(fout);
+		if (args[2] == "-f") {
+			ifstream ksif(args[3]);
+            ifstream fofn(args[4]);
+            ofstream fout(args[5]);
+            assert(ksif);
+            assert(fofn);
+            assert(fout);
 
-		vector<size_t> ksi;
-		string line;
-		while (getline(ksif, line)) {
-			ksi.push_back(stoul(line));
-		}
-		cerr << ksi.size() << " loci in " << args[2] << endl;
+            vector<size_t> ksi;
+            string line;
+            while (getline(ksif, line)) {
+                ksi.push_back(stoul(line));
+            }
+			ksif.close();
+            cerr << ksi.size() << " loci in " << args[3] << endl;
 
-		size_t idx = 0, ki = 0, kms = 0;
-		while (getline(kmerf, line)) {
-			kms += stoul(line);
-			++ki;
-			while (ksi[idx] == ki) { ++idx; fout << kms << '\n'; kms = 0; if (idx == ksi.size()) {break;}}
+			vector<string> kmerfs;
+			while (getline(fofn, line)) {
+				kmerfs.push_back(line);
+			}
+			fofn.close();
+			cerr << kmerfs.size() << " samples in " << args[4] << endl;
+
+			size_t ki;
+			for (size_t fi = 0; fi < kmerfs.size(); ++fi) {
+	            ifstream kmerf(kmerfs[fi]);
+				assert(kmerf);
+				size_t idx = 0, kms = 0;
+				ki = 0;
+				while (getline(kmerf, line)) {
+					kms += stoul(line);
+					++ki;
+					while (ksi[idx] == ki) {
+						++idx;
+						if (idx != ksi.size()) { fout << kms << '\t'; kms = 0; }
+						else { fout << kms << '\n'; break; } 
+					}
+				}
+				kmerf.close();
+			}
+			fout.close();
+            cerr << ki << " kmers processed in each file" << endl;
+		} 
+		else {
+			ifstream ksif(args[2]);
+			ifstream kmerf(args[3]);
+			ofstream fout(args[4]);
+			assert(ksif);
+			assert(kmerf);
+			assert(fout);
+
+			vector<size_t> ksi;
+			string line;
+			while (getline(ksif, line)) {
+				ksi.push_back(stoul(line));
+			}
+			cerr << ksi.size() << " loci in " << args[2] << endl;
+
+			size_t idx = 0, ki = 0, kms = 0;
+			while (getline(kmerf, line)) {
+				kms += stoul(line);
+				++ki;
+				while (ksi[idx] == ki) { ++idx; fout << kms << '\n'; kms = 0; if (idx == ksi.size()) {break;}}
+			}
+			ksif.close();
+			kmerf.close();
+			fout.close();
+			cerr << idx << " loci and " << ki << " kmers processed in " << args[3] << endl;
 		}
-		ksif.close();
-		kmerf.close();
-		fout.close();
-		cerr << idx << " loci and " << ki << " kmers processed in " << args[3] << endl;
 	}
 	else if (args[1] == "serialize") {
 		if (argc == 2) {
