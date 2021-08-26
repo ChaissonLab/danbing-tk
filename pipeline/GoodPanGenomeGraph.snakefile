@@ -52,8 +52,8 @@ rule IndexAsm:
     resources:
         cores = 3,
         mem = 4,
-    priority: 100
     params:
+        name = "IndexAsm",
         copts = copts,
         sd = srcdir,
         od = outdir,
@@ -80,7 +80,6 @@ rule ComputeBamCoverage:
     resources:
         cores = 4,
         mem = 4
-    priority: 99
     params:
         copts = copts,
         refctrl = config["refctrl"],
@@ -112,8 +111,8 @@ rule MapAsm2Ref:
     resources:
         cores = 16,
         mem = lambda wildcards, attempt: getMem() + 20*(attempt-1),
-    priority: 98
     params:
+        name = "MapAsm2Ref",
         faBam = outdir + "{genome}.{hap}.srt.bam",
         faPaf = outdir + "{genome}.{hap}.r2a.paf",
         od = outdir,
@@ -147,8 +146,8 @@ rule LiftTR:
     resources:
         cores = 6,
         mem = lambda wildcards, attempt: 24 + 16*(attempt-1)
-    priority: 97
     params:
+        name = "LiftTR",
         copts = copts,
         sd = srcdir,
         od = outdir,
@@ -210,8 +209,8 @@ rule JointTRAnnotation:
     resources:
         cores = 12,
         mem = lambda wildcards, attempt: 110
-    priority: 96
     params:
+        name = "JointTRAnnotation",
         copts = copts,
         sd = srcdir,
         od = outdir,
@@ -288,9 +287,9 @@ rule GenRawGenomeGraph:
         rawILkmers = [outdir + "{genome}.rawIL.tr.kmers"] if prune else []
     resources:
         cores = 24 if prune else 1,
-        mem = lambda wildcards, attempt: 25 + 20*(attempt-1)
-    priority: 95
+        mem = lambda wildcards, attempt: 55 + 20*(attempt-1)
     params:
+        name = "GenRawGenomeGraph",
         copts = copts,
         sd = srcdir,
         od = outdir,
@@ -327,8 +326,8 @@ rule EvalRawGenomeGraph:
     resources:
         cores = 12,
         mem = 8
-    priority: 94
     params:
+        name = "EvalRawGenomeGraph",
         copts = copts,
         sd = srcdir,
         od = outdir,
@@ -351,8 +350,8 @@ rule GenPrunedGenomeGraph:
     resources:
         cores = 2,
         mem = 20
-    priority: 93
     params:
+        name = "GenPrunedGenomeGraph",
         copts = copts,
         sd = srcdir,
         od = outdir,
@@ -380,9 +379,9 @@ rule GenPanGenomeGraph:
         panKmers = expand(outdir + "pan.{kmerType}.kmers", kmerType=kmerTypes)
     resources:
         cores = 2,
-        mem = lambda wildcards, attempt: 32+8*attempt
-    priority: 92
+        mem = lambda wildcards, attempt: 62+8*attempt
     params:
+        name = "GenPanGenomeGraph",
         copts = copts,
         sd = srcdir,
         od = outdir,
@@ -402,9 +401,9 @@ rule GenSerializedGraphAndIndex:
         binKmers = expand(outdir + "pan.{binKmerType}", binKmerType=binKmerTypes)
     resources:
         cores = 2,
-        mem = lambda wildcards, attempt: 60+20*(attempt-1)
-    priority: 91
+        mem = lambda wildcards, attempt: 90+20*(attempt-1)
     params:
+        name = "GenSerializedGraphAndIndex",
         copts = copts,
         sd = srcdir,
         od = outdir,
