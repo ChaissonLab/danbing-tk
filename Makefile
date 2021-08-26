@@ -1,5 +1,5 @@
 PREFIX = /home/cmb-16/mjc/tsungyul/work/vntr/danbing-tk
-TARGETS = bin/danbing-tk bin/vntr2kmers_thread bin/bam2pe bin/genPanKmers bin/ktools
+TARGETS = bin/danbing-tk bin/vntr2kmers_thread bin/genPanKmers bin/ktools
 TARGETSg = bin/danbing-tk_g bin/vntr2kmers_thread_g bin/genPanKmers_g bin/ktools_g
 #TARGETS = aQueryFasta amphQueryFasta vntr2kmers kmer2dot seq2num num2seq rvseq bam2pe
 
@@ -30,19 +30,19 @@ bin/ktools_g:	src/kmertools.cpp
 
 bin/vntr2kmers_thread:	src/VNTR2kmers_thread.cpp
 	$(dir_guard)
-	$(CXX) -O3 -o bin/vntr2kmers_thread src/VNTR2kmers_thread.cpp
+	$(CXX) -O3 -I. -o bin/vntr2kmers_thread src/VNTR2kmers_thread.cpp
 
 bin/vntr2kmers_thread_g:	src/VNTR2kmers_thread.cpp
 	$(dir_guard)
-	$(CXX) -g -o bin/vntr2kmers_thread_g src/VNTR2kmers_thread.cpp
+	$(CXX) -g -I. -o bin/vntr2kmers_thread_g src/VNTR2kmers_thread.cpp
 
 bin/genPanKmers:	src/genPanKmers.cpp
 	$(dir_guard)
-	$(CXX) -O3 -o bin/genPanKmers src/genPanKmers.cpp
+	$(CXX) -O3 -I. -o bin/genPanKmers src/genPanKmers.cpp
 
 bin/genPanKmers_g:	src/genPanKmers.cpp
 	$(dir_guard)
-	$(CXX) -g -o bin/genPanKmers_g src/genPanKmers.cpp
+	$(CXX) -g -I. -o bin/genPanKmers_g src/genPanKmers.cpp
 
 bin/seq2num:	src/seq2num.cpp
 	$(dir_guard)
