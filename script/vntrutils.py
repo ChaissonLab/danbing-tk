@@ -257,6 +257,31 @@ def readKmers(fname, kmerDB, sort=True, kmerName=False, threshold=0):
         else:
             assignKmerTable(kmerDB, locus, table, sort, kmerName, threshold)
 
+def readKmersWithIndex(fn_kmc, fn_index, kmerDB, sort=True, kmerName=False, threshold=0):
+    """ read kmer count and index files as a table"""
+    f0 = open(fn_kmc)
+    f1 = open(fn_index)
+    table = []
+    locus = 0
+    f1.readline()
+    for line in f1:
+        if line[0] == '>':
+            if len(table):
+                table = np.array(table, dtype=int, ndmin=2)
+                table[:,1] = [f0.readline().rstrip() for i in range(len(table))]
+            assignKmerTable(kmerDB, locus, table, sort, kmerName, threshold)
+            table = []
+            locus += 1
+        else:
+            table.append([line.rstrip(), 0])
+    else:
+        if len(table):
+            table = np.array(table, dtype=int, ndmin=2)
+            table[:,1] = [f0.readline().rstrip() for i in range(len(table))]
+        assignKmerTable(kmerDB, locus, table, sort, kmerName, threshold)
+    f0.close()
+    f1.close()
+
 def readKmerDict(fname, kmerDB=None, threshold=0, checkkmer=False):
     """ read a kmer file as a dictionary """
     

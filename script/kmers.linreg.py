@@ -7,9 +7,10 @@ import statsmodels.api as sm
 #from sklearn.linear_model import LinearRegression
 
 ap = argparse.ArgumentParser(description="read *.kmers and output regression plots and prediction results")
-ap.add_argument("pacbio", help="*.kmers of pacbio assembled loci")
-ap.add_argument("illumina", help="*.kmers of illumina query results", nargs='+')
+ap.add_argument("pacbio", help="PB.tr.kmers with locus, kmer name, and kmer count information")
+ap.add_argument("illumina", help="IL.tr.kmers", nargs='+')
 ap.add_argument("out", help="output file prefix")
+ap.add_argument("--index", help="tr.kmers with locus and kmer name info used for IL.tr.kmers when only count info is present", nargs='?', const="", default="")
 ap.add_argument("--mapkmer", help="map pangenome kmers to genome kmers", action="store_true")
 ap.add_argument("--mode", help="Outlier rejection mode in regression. Choose from 'invalid', 'invalid|zero', 'invalid|bad' or 'invalid|bad|zero' Default: invalid", nargs='?', const="invalid", default="invalid")
 ap.add_argument("--combine", help="combine multiple IL.kmers when multiple IL.kmers are provided; will not perform regression. Default: False", action='store_true')
@@ -31,7 +32,10 @@ for fname in args.illumina:
     if combine:
         vu.readKmerDict(fname, y)
     else:
-        vu.readKmers(fname, y, sort=True, kmerName=mapkmer)
+        if args.index:
+            vu.readKmersWithIndex(fname, args.index, y, sort=True, kmerName=mapkmer)
+        else:
+            vu.readKmers(fname, y, sort=True, kmerName=mapkmer)
 if combine:
     vu.writeKmerDict(args.out, y)
     exit(0)
