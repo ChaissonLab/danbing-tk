@@ -37,6 +37,7 @@ int main (int argc, const char * argv[]) {
 		if (argc == 2) {
 			cerr << "Usage: ktools ksi <pan.tr.kmers> >$OUT.ksi" <<
 			        "  Generate ksi index for ktools sum" << endl;
+			return 0;
 		}
 
 		ifstream kmers(args[2]);
