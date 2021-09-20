@@ -677,14 +677,26 @@ void readKmersFile(T& kmerDB, kmeruIndex_umap& kmerDBi, string fname, size_t sta
 }
 
 template <typename T>
+void writeKmersWithName(string outfpref, T& kmerDB, size_t threshold = 0) {
+    ofstream fout(outfpref+".kmers");
+    assert(fout);
+    for (size_t i = 0; i < kmerDB.size(); ++i) {
+        fout << ">" << i <<"\n";
+        for (auto &p : kmerDB[i]) {
+            if (p.second < threshold) { continue; }
+            fout << p.first << '\t' << (size_t)p.second << '\n';
+        }
+    }
+    fout.close();
+}
+
+template <typename T>
 void writeKmers(string outfpref, T& kmerDB, size_t threshold = 0) {
     ofstream fout(outfpref+".kmers");
     assert(fout);
     for (size_t i = 0; i < kmerDB.size(); ++i) {
-        //fout << ">" << i <<"\n";
         for (auto &p : kmerDB[i]) {
             if (p.second < threshold) { continue; }
-            //fout << p.first << '\t' << (size_t)p.second << '\n';
             fout << (size_t)p.second << '\n';
         }
     }

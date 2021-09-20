@@ -1112,7 +1112,7 @@ int main(int argc, char* argv[]) {
 
     if (argc < 2) {
         cerr << endl
-             << "Usage: danbing-tk [-v] [-e] [-g|-gc] [-a|-ae] [-kf] [-cth] [-o] -k -qs <-fai|-fa> -p" << endl
+             << "Usage: danbing-tk [-v] [-e] [-g|-gc] [-a|-ae] [-kf] [-cth] [-o|-on] -k -qs <-fai|-fa> -p" << endl
              << "Options:" << endl
              //<< "  -b               (deprecated) Use baitDB to decrease ambiguous mapping" << endl
              //<< "  -t <INT>         Used trimmed pangenome graph e.g. \"-t 1\" for pan.*.trim1.kmers" << endl
@@ -1137,6 +1137,7 @@ int main(int argc, char* argv[]) {
              << "  -cth <INT>       Discard both pe reads if maxhit of one pe read is below this threshold." << endl
 			 << "                   Will skip read filtering and run threading directly if not specified." << endl
              << "  -o <STR>         Output prefix" << endl
+		     << "  -on <STR>        Same as the -o option, but write locus and kmer name as well" << endl
              << "  -k <INT>         Kmer size" << endl
              << "  -qs <STR>        Prefix for *.tr.kmers, *.ntr.kmers, *.graph.kmers files" << endl
              << "  -fai <STR>       Interleaved pair-end fasta file" << endl
@@ -1150,7 +1151,7 @@ int main(int argc, char* argv[]) {
     }
    
     vector<string> args(argv, argv+argc);
-    bool bait = false, aug = false, threading = false, correction = false, aln = false, aln_minimal=false, g2pan = false, skip1 = true, interleaved;
+    bool bait = false, aug = false, threading = false, correction = false, aln = false, aln_minimal=false, g2pan = false, skip1 = true, writeKmerName = false, interleaved;
     int simmode = 0, extractFasta = 0;
     size_t argi = 1, trim = 0, thread_cth = 0, Cthreshold = 0, nproc;
     float Rthreshold = 0.5;
@@ -1204,7 +1205,8 @@ int main(int argc, char* argv[]) {
             fastxFile.open(fastxFname);
             assert(fastxFile);
         }
-        else if (args[argi] == "-o") {
+        else if (args[argi] == "-o" or args[argi] == "-on") {
+			writeKmerName = args[argi] == "-on";
             outPrefix = args[++argi];
             outfile.open(outPrefix+".tr.kmers");
             assert(outfile);
@@ -1383,7 +1385,8 @@ int main(int argc, char* argv[]) {
     // write outputs
     if (not extractFasta) {
 		cerr << "writing kmers..." << endl;
-		writeKmers(outPrefix+".tr", trKmerDB);
+		if (writeKmerName) { writeKmersWithName(outPrefix+".tr", trKmerDB); }
+		else { writeKmers(outPrefix+".tr", trKmerDB); }
 	}
 
     cerr << "all done!" << endl;
