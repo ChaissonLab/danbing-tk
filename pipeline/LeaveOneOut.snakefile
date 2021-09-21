@@ -9,9 +9,9 @@ pdir = config["pangenomeDir"]
 #pindir = config["pangenomeInputDir"] /home/cmb-17/mjc/vntr_genotyping/rpgg_k21_84k/input/
 
 genomes = np.loadtxt(config["genomefile"], dtype=object)
-gbpair = np.loadtxt(config["pairs"], dtype=object)
-bams = dict(gbpair)
-LOOgenomes = np.loadtxt(config["LOOgenomefile"], dtype=object).tolist()
+gbpair = np.loadtxt(config["LOOpairs"], dtype=object)
+g2bam = dict(gbpair)
+LOOgenomes = gbpair[:,0]
 LOOmask = np.isin(genomes, LOOgenomes)
 kmerTypes = ["tr", "ntr", "graph"]
 covbed = config["covbed"]
@@ -77,16 +77,39 @@ rule all2LOO:
         #    np.savetxt(f"{od}/LOO.{g}.mapping", out[:,om], fmt='%s', delimiter="\t")
 
 
-rule GenLOOpgg:
+rule GenPGG:
+    input:
+        PBkmers = expand(pdir + "{genome}.rawPB.{kmerType}.kmers", genome=LOOgenomes, kmerType=kmerTypes),
+    output:
+        ofoo = outdir + "checkpoint/{genome}.genpgg.foo",
+    resources:
+        cores = 2,
+        mem = 50,
+    priority: 99
+    params:
+        copts = copts,
+        sd = srcdir,
+        od = outdir,
+        kmerpref = lambda wildcards: " ".join([f'{pdir}/{g}.rawPB' for g in LOOgenomes])
+    shell:"""
+cd {params.od}
+ulimit -c 20000
+mkdir -p checkpoint
+
+{params.sd}/bin/genPanKmers -o pan -m - -k {params.kmerpref}
+{params.sd}/bin/ktools serialize pan
+"""
+
+rule GenLOOPGG:
     input:
         PBkmers = expand(pdir + "{genome}.rawPB.{kmerType}.kmers", genome=LOOgenomes, kmerType=kmerTypes),
         #mapping = outdir + "OrthoMap.v2.tsv",
         #LOOmap = outdir + "LOO.{genome}.mapping",
     output:
-        LOOPBkmers = expand(outdir + "LOO.{{genome}}.PB.{kmerType}.kmers", kmerType=kmerTypes),
+        ofoo = outdir + "checkpoint/{genome}.genloopgg.foo",
     resources:
         cores = 2,
-        mem = 20,
+        mem = 50,
     priority: 99
     params:
         copts = copts,
@@ -96,15 +119,18 @@ rule GenLOOpgg:
     shell:"""
 cd {params.od}
 ulimit -c 20000
+mkdir -p checkpoint
 
-{params.sd}/bin/genPanKmers -o LOO.{wildcards.genome}.PB -m - -k {params.kmerpref}
+#{params.sd}/bin/genPanKmers -o LOO.{wildcards.genome}.PB -m - -k {params.kmerpref}
+{params.sd}/bin/ktools serialize LOO.{wildcards.genome}.PB
+touch {output.ofoo}
 """
 
 
 rule Extract:
     input:
-        panKmers = expand(pdir + "pan.{kmerType}.kmers", kmerType=kmerTypes),
-        ILbam = lambda wildcards: bams[wildcards.genome],
+        ifoo = outdir + "checkpoint/{genome}.genpgg.foo",
+        ILbam = lambda wildcards: g2bam[wildcards.genome],
     output:
         ofoo = outdir + "checkpoint/{genome}.extract.foo",
     resources:
@@ -127,8 +153,7 @@ cd {params.od}
 mkdir -p checkpoint
 
 samtools fasta -@2 -n {input.ILbam} |
-{params.sd}/bin/bam2pe -fai /dev/stdin |
-{params.sd}/bin/danbing-tk -e 1 -k {params.ksize} -qs {params.pd}/pan -fai /dev/stdin \
+{params.sd}/bin/danbing-tk -e 1 -k {params.ksize} -qs {params.od}/pan -fa /dev/stdin \
                            -p {resources.cores} -cth {params.cth} -rth {params.rth} | gzip >{wildcards.genome}.e{params.cth}.fa.gz
 touch {output.ofoo}
 """
@@ -138,7 +163,7 @@ touch {output.ofoo}
 rule LOOGenotying:
     input:
         ifoo = outdir + "checkpoint/{genome}.extract.foo",
-        LOOPBkmers = expand(outdir + "LOO.{{genome}}.PB.{kmerType}.kmers", kmerType=kmerTypes),
+        pggfoo = outdir + "checkpoint/{genome}.genloopgg.foo",
     output:
         ofoo = outdir + "checkpoint/{genome}.LOO.gt.foo"
     resources:
@@ -192,7 +217,7 @@ ulimit -c 20000
 cd {params.od}
 
 zcat {params.fagz} |
-{params.sd}/bin/danbing-tk -gc {params.thcth} -k {params.ksize} -qs {params.pd}/pan -fai /dev/stdin -o pan.{wildcards.genome}.IL -p {resources.cores} -cth {params.cth} -rth {params.rth}
+{params.sd}/bin/danbing-tk -gc {params.thcth} -k {params.ksize} -qs {params.od}/pan -fai /dev/stdin -o pan.{wildcards.genome}.IL -p {resources.cores} -cth {params.cth} -rth {params.rth}
 touch {output.ofoo}
 """
 
