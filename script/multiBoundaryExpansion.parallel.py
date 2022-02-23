@@ -44,6 +44,7 @@ def load_process_pickle(i):
     return obj
 
 def get_ctg(fas, hi, hd):
+    assert hd in hd2is[hi], f"{hi}, {gs[hi//2]}, {hi%2}, {hd}"
     i = hd2is[hi][hd]
     L, s, w = fais[hi][i]
     e = s + (L-1)//w + 1 + L
