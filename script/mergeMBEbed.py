@@ -19,10 +19,14 @@ def parseMergeSet():
             for i in range(1,len(seq)):
                 skip |= seq[i] in bs
                 if seq[i] != seq[i-1] + 1:
+                    skip = True
                     for v in seq:
                         if v in v2si: # check if bad v reported by this hap is good in another hap
                             si_ = v2si[v]
-                            ms[si_] = None
+                            if ms[si_] is not None:
+                                for v_ in ms[si_]:
+                                    bs.add(v_)
+                                ms[si_] = None
                             v2si.pop(v)
                         bs.add(v)
                     print(f"Bad seq {seq} in {hap}")
@@ -33,6 +37,7 @@ def parseMergeSet():
                         bs.add(v)
                         if v in v2si: # check if v was once reported good
                             si_ = v2si[v]
+                            #if si_ == 12968: print("[2XXX]", seq, ms[si_])
                             ms[si_] = None
                             v2si.pop(v)
                     continue
@@ -46,13 +51,24 @@ def parseMergeSet():
                         ms[-1].add(v)
                         v2si[v] = si
                     si += 1
-                elif len(sis) == 1: # expand the existing set
-                    si_ = sis.pop()
-                    for v in seq:
-                        ms[si_].add(v)
-                        v2si[v] = si_
                 else:
-                    print(f"[Warning] {hap} {seq} indicates merging across sets, will be ignored", flush=True) # TODO enable merging >2 loci
+                    si_s = None
+                    if len(sis) > 1:
+                        vstr = f"{seq}"
+                        for si_i in sis:
+                            vstr += f"{ms[si_i]}"
+                        print(f"[Note] {hap} induced merging across {vstr}", flush=True) # enable merging multiple sets
+                    for si_i in sis:
+                        if si_s is None:
+                            si_s = si_i
+                        else:
+                            ms[si_s] |= ms[si_i]
+                            for v in ms[si_i]:
+                                v2si[v] = si_s
+                            ms[si_i] = None
+                    ms[si_s] |= set(seq)
+                    for v in seq:
+                        v2si[v] = si_s
     ms = np.array(ms, dtype=object)
     ms = ms[ms!=None].tolist()
     for i1s_ in ms:
@@ -89,10 +105,6 @@ def writeBed_MergeMBE(MAXSVLEN=10000):
                         print(f"[Note] {i1s} mixed orientation")
                     dist[:,hi] = getdist(panbed[i1s,4+hi*4:7+hi*4])
         good = np.all(np.isfinite(dist), axis=0)
-        #for i in range(nm):
-        #    th = 3*np.nanstd(dist[i]) + 100
-        #    outm = np.abs(dist[i] - np.nanmedian(dist[i])) <= th # outlier haps # XXX more robust thresholding
-        #    good &= outm
         if np.nanmax(dist) > MAXSVLEN:
             qcb.append(i1s_)
             print(f"[Loci removed] huge SV, {i1s}")
