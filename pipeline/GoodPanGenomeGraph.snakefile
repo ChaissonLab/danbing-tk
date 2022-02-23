@@ -7,7 +7,7 @@ srcdir = config["srcDir"]
 indir = config["inputDir"]
 outdir = config["outputDir"]
 
-prune = config["pruning"]
+prune = config["pruning"] == "True"
 gbpair = np.loadtxt(config["pairs"], dtype=object, ndmin=2)
 genomes = gbpair[:,0].tolist()
 bams = dict(gbpair) if prune else None
@@ -18,6 +18,8 @@ binKmerTypes = ["graph.umap", "kmerDBi.umap", "kmerDBi.vv"]
 aligner = config["AsmAligner"]
 ksize = config["ksize"]
 FS = int(config["flankSize"])
+dist_merge = int(config["dist_merge"])
+dist_scan = int(config["dist_scan"])
 cth = config["countThreashold"]
 rth = config["ratioThreashold"]
 rstring = f'{rth*100:.0f}'
@@ -218,6 +220,8 @@ rule JointTRAnnotation:
         refTR = config["refTR"],
         ksize = ksize,
         FS = FS,
+        dist_merge = dist_merge,
+        dist_scan = dist_scan,
         LB = LB,
         TRwindow = TRwindow,
         th1 = mbe_th1,
@@ -238,7 +242,7 @@ for g in {params.genomes}; do
 done
 echo ""
 mkdir -p MBE
-{params.sd}/script/multiBoundaryExpansion.parallel.py {params.ksize} {params.FS} {params.TRwindow} {params.pairs} pan.tr.mbe.v0.bed {params.th1} {params.th2} {resources.cores} {params.indir}
+{params.sd}/script/multiBoundaryExpansion.parallel.py {params.ksize} {params.dist_scan} {params.TRwindow} {params.pairs} pan.tr.mbe.v0.bed {params.th1} {params.th2} {resources.cores} {params.indir}
 hi=0
 for g in {params.genomes}; do
     for h in 0 1; do
@@ -248,7 +252,7 @@ for g in {params.genomes}; do
         grep -v "None" |
         sort -k1,1 -k2,2n -k3,3n >tmp.bed
         if [[ "$(cat tmp.bed | wc -l)" != "0" ]]; then
-            bedtools merge -d {params.FS} -c 4 -o collapse -i tmp.bed |
+            bedtools merge -d {params.dist_merge} -c 4 -o collapse -i tmp.bed |
             cut -f 4 | {{ grep "," || true; }}
         fi
         ((++hi))
@@ -414,5 +418,6 @@ ulimit -c 20000
 module load gcc
 
 {params.sd}/bin/ktools serialize {params.pref}
+{params.sd}/bin/ktools ksi pan.tr.kmers >{params.pref}.tr.ksi
 """
 
