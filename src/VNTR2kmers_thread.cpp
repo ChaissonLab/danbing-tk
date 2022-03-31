@@ -194,15 +194,16 @@ int main(int argc, const char * argv[]) {
     // -----
     cerr << "writing outputs" << endl;
     if (writeKmerName) {
-	    writeKmersWithName(outPref + ".tr", TRkmersDB, threshold);
-	    writeKmersWithName(outPref + ".ntr", NTRkmersDB, threshold);    
+	writeKmersWithName(outPref + ".tr", TRkmersDB, threshold);
+	writeKmersWithName(outPref + ".ntr", NTRkmersDB, threshold);    
+    	if (genGraph)
+            writeKmersWithName(outPref + ".graph", graphDB);
     }
     else {
     	writeKmers(outPref + ".tr", TRkmersDB, threshold);
     	writeKmers(outPref + ".ntr", NTRkmersDB, threshold);
-    }
-    if (genGraph) {
-        writeKmers(outPref + ".graph", graphDB);
+        if (genGraph)
+            writeKmers(outPref + ".graph", graphDB);
     }
 
 
