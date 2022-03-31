@@ -43,7 +43,7 @@ int main(int argc, const char * argv[]) {
 
     if (argc < 2){
         cerr << endl
-             << "usage: vntr2kmers_thread [-th] [-g] [-p] [-m] -k -fs -ntr -o -fa \n"
+             << "usage: vntr2kmers_thread [-th] [-g] [-p] [-m] -k -fs -ntr [-o|-on] -fa \n"
              << "  -th <INT>        Filter out kmers w/ count below this threshold. Default: 0, i.e. no filtering\n"
              << "  -g               output *graph.kmers for threading-based kmer query.\n"
              << "  -p <FILE>        Prune tr/graph kmers with the given kmers file.\n"
@@ -51,13 +51,14 @@ int main(int argc, const char * argv[]) {
              << "  -k <INT>         Kmer size\n"
              << "  -fs <INT>        Length of flanking sequence in *.tr.fasta.\n"
              << "  -ntr <INT>       Length of desired NTR in *kmers.\n"
-             << "  -o <STR>         Output file prefix.\n"
+             << "  -o <STR>         Output file prefix" << endl
+		<< "  -on <STR>        Same as the -o option, but write locus and kmer name as well" << endl
              << "  -fa <n> <list>   Use specified *.fasta in the [list] instead of hapDB.\n"
              << "                   Count the first [n] files and build kmers for the rest\n\n";
         return 0;
     }
     vector<string> args(argv, argv+argc);
-    bool genGraph = false, prune = false, usemap = false;
+    bool genGraph = false, prune = false, usemap = false,writeKmerName = false,;
     size_t argi = 1, threshold = 0, nhap = 0, NTRsize, fs, nfile2count, nloci;
     string pruneFname, outPref, mapf;
     vector<string> infnames;
@@ -82,7 +83,8 @@ int main(int argc, const char * argv[]) {
             NTRsize = stoi(args[++argi]);
             assert(fs >= NTRsize);
         }
-        else if (args[argi] == "-o") { 
+        else if (args[argi] == "-o" or args[argi] == "-on") {
+			writeKmerName = args[argi] == "-on";
             outPref = args[++argi];
             ofstream outf(outPref+".tr.kmers");
             assert(outf);
@@ -191,8 +193,14 @@ int main(int argc, const char * argv[]) {
     // write kmers files for all kmer databases
     // -----
     cerr << "writing outputs" << endl;
-    writeKmers(outPref + ".tr", TRkmersDB, threshold);
-    writeKmers(outPref + ".ntr", NTRkmersDB, threshold);
+    if (writeKmerName) {
+	    writeKmersWithName(outPref + ".tr", TRkmersDB, threshold);
+	    writeKmersWithName(outPref + ".ntr", NTRkmersDB, threshold);    
+    }
+    else {
+    	writeKmers(outPref + ".tr", TRkmersDB, threshold);
+    	writeKmers(outPref + ".ntr", NTRkmersDB, threshold);
+    }
     if (genGraph) {
         writeKmers(outPref + ".graph", graphDB);
     }
