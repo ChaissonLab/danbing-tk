@@ -58,7 +58,7 @@ int main(int argc, const char * argv[]) {
         return 0;
     }
     vector<string> args(argv, argv+argc);
-    bool genGraph = false, prune = false, usemap = false,writeKmerName = false,;
+    bool genGraph = false, prune = false, usemap = false,writeKmerName = false;
     size_t argi = 1, threshold = 0, nhap = 0, NTRsize, fs, nfile2count, nloci;
     string pruneFname, outPref, mapf;
     vector<string> infnames;
