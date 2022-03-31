@@ -53,8 +53,7 @@ int main(int argc, const char * argv[]) {
              << "  -ntr <INT>       Length of desired NTR in *kmers.\n"
              << "  -o <STR>         Output file prefix.\n"
              << "  -fa <n> <list>   Use specified *.fasta in the [list] instead of hapDB.\n"
-             << "                   Count the first [n] files and build kmers for the rest\n"
-             << "  ** The program assumes 800 bp of each NTR region\n\n";
+             << "                   Count the first [n] files and build kmers for the rest\n\n";
         return 0;
     }
     vector<string> args(argv, argv+argc);
