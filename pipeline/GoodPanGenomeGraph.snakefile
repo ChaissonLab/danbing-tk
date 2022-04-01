@@ -312,7 +312,7 @@ module load gcc
 {params.sd}/bin/vntr2kmers_thread -g -m <(cut -f $(({params.hi}+1)),$(({params.hi}+2)) {input.mapping}) -k {params.ksize} -fs {params.FS} -ntr {params.FS} -o {wildcards.genome}.rawPB -fa 2 {input.TRfa}
 """
 
-rule GenPrune:
+rule GeneratePruningAlignments:
     input:
         ILbam = lambda wildcards: [bams[wildcards.genome]] if prune else [],
         serials = lambda wildcards: expand(outdir + "{genome}.rawPB.{binKmerType}", genome=wildcards.genome,binKmerType=binKmerTypes)
@@ -331,11 +331,10 @@ rule GenPrune:
         rth = rth,
         rstring = rstring,
         thcth = thcth,
-        hi = lambda wildcards: 2*genomes.index(wildcards.genome),
-        cores=1,
-        prune = int(prune)
+        hi = lambda wildcards: 2*genomes.index(wildcards.genome)
     shell:
         '''
+    cd {params.od}
     samtools fasta -@2 -n {input.ILbam} |
     {params.sd}/bin/bam2pe -fai /dev/stdin |
     {params.sd}/bin/danbing-tk -g {params.thcth} -k {params.ksize} -qs {params.od}/{wildcards.genome}.rawPB -fai /dev/stdin -o {wildcards.genome}.rawIL -p {resources.cores} -cth {params.cth} -rth {params.rth}
@@ -429,7 +428,7 @@ rule GenSerializedGraphAndIndex:
     input:
         txtKmers = expand(outdir + "{{genome}}.{kmerType}.kmers", kmerType=kmerTypes)
     output:
-        binKmers = expand(outdir + "pan.{binKmerType}", binKmerType=binKmerTypes)
+        binKmers = expand(outdir + "{{genome}}.{binKmerType}", binKmerType=binKmerTypes)
     resources:
         cores = 2,
         mem = lambda wildcards, attempt: 90+20*(attempt-1)
@@ -445,6 +444,6 @@ ulimit -c 20000
 module load gcc
 
 {params.sd}/bin/ktools serialize {params.pref}
-{params.sd}/bin/ktools ksi pan.tr.kmers >{params.pref}.tr.ksi
+{params.sd}/bin/ktools ksi {wildcards.genome}.tr.kmers >{params.pref}.tr.ksi
 """
 
