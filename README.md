@@ -34,7 +34,7 @@ An example usage to genotype SRS sample using the RPGG:
 
 ```shell
 samtools fasta -@2 -n $SRS.bam |
-/$PREFIX/danbing-tk/bin/danbing-tk -gc 80 -ae -kf 4 0 -cth 45 -o $OUT_PREF -k 21 -qs pan -fai /dev/stdin -p $THREADS | gzip >$OUT_PREF.aln.gz
+/$PREFIX/danbing-tk/bin/danbing-tk -gc 80 -ae -kf 4 1 -cth 45 -o $OUT_PREF -k 21 -qs pan -fai /dev/stdin -p $THREADS | gzip >$OUT_PREF.aln.gz
 ```
 
 `danbing-tk align` takes ~12 cpu hours to genotype a 30x SRS sample. This will generate `$OUT_PREF.tr.kmers` and `$OUT_PREF.aln.gz` output with format specified in [File Format](#file-format).
