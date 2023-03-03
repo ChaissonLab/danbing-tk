@@ -43,7 +43,8 @@ int main(int argc, const char * argv[]) {
 
     if (argc < 2){
         cerr << endl
-             << "usage: vntr2kmers_thread [-th] [-g] [-p] [-m] -k -fs -ntr -o -fa \n"
+             << "usage: vntr2kmers_thread [-name] [-th] [-g] [-p] [-m] -k -fs -ntr -o -fa \n"
+		     << "  -name            Keep kmer names in output. Default: False.\n"
              << "  -th <INT>        Filter out kmers w/ count below this threshold. Default: 0, i.e. no filtering\n"
              << "  -g               output *graph.kmers for threading-based kmer query.\n"
              << "  -p <FILE>        Prune tr/graph kmers with the given kmers file.\n"
@@ -57,13 +58,14 @@ int main(int argc, const char * argv[]) {
         return 0;
     }
     vector<string> args(argv, argv+argc);
-    bool genGraph = false, prune = false, usemap = false;
+    bool keepName = false, genGraph = false, prune = false, usemap = false;
     size_t argi = 1, threshold = 0, nhap = 0, NTRsize, fs, nfile2count, nloci;
     string pruneFname, outPref, mapf;
     vector<string> infnames;
 
     while (argi < argc) {
-        if (args[argi] == "-th") { threshold = stoi(args[++argi]); }
+        if (args[argi] == "-name") { keepName = true; }
+        else if (args[argi] == "-th") { threshold = stoi(args[++argi]); }
         else if (args[argi] == "-g") { genGraph = true; }
         else if (args[argi] == "-p") {
             prune = true;
@@ -191,12 +193,17 @@ int main(int argc, const char * argv[]) {
     // write kmers files for all kmer databases
     // -----
     cerr << "writing outputs" << endl;
-    writeKmers(outPref + ".tr", TRkmersDB, threshold);
-    writeKmers(outPref + ".ntr", NTRkmersDB, threshold);
-    if (genGraph) {
-        writeKmers(outPref + ".graph", graphDB);
-    }
+	if (keepName) {
+		writeKmersWithName(outPref + ".tr", TRkmersDB, threshold);
+		writeKmersWithName(outPref + ".ntr", NTRkmersDB, threshold);
+	} else {
+		writeKmers(outPref + ".tr", TRkmersDB, threshold);
+		writeKmers(outPref + ".ntr", NTRkmersDB, threshold);
+	}
 
+    if (genGraph) {
+        writeKmersWithName(outPref + ".graph", graphDB);
+    }
 
     return 0;
 }
