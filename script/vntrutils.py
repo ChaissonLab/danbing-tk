@@ -307,23 +307,38 @@ def readKmerDict(fname, kmerDB=None, threshold=0, checkkmer=False):
     if not hasInput: return kmerDB
 
 
-def readKms(fin, out=None):
+def readKms(fin, ki_tr, out=None):
     """
     Read kmers and compute sum for each locus.
     Use out=ARRAY to change ARRAY inplace.
+    REQUIRE ki_tr since danbing-tk v1.3 since .kmers file does not contain locus info.
+        Use ki_tr=None for backward compatibility.
     """
     ndb = out is None
     if out is None:
         out = []
     with open(fin) as f:
-        idx = -1
-        for line in f:
-            if line[0] == ">":
-                idx += 1
-                if ndb:
-                    out.append(0)
-            else:
-                out[idx] += int(line.split()[1])
+        if ki_tr is None:
+            idx = -1
+            for line in f:
+                if line[0] == ">":
+                    idx += 1
+                    if ndb:
+                        out.append(0)
+                else:
+                    out[idx] += int(line.split()[1])
+        else:
+            idx = 0
+            ki = -1
+            out.append(0)
+            for line in f:
+                ki += 1
+                if ki >= ki_tr[idx]:
+                    idx += 1
+                    if ndb:
+                        out.append(0)
+                out[idx] += int(line.rstrip())
+
     if ndb:
         return out
 
@@ -643,7 +658,7 @@ def plotCrossContamination(ctg0, ctg1, ksize=21, FS=700, ax=None, zoomoutsize=(0
         ax.set_yticklabels([0, ymax//500*500], rotation=90)
 
     if reportbad:
-        return np.any(badkmc)
+        return badkmc
 
     if reportcontam:
         return badxs, badys
@@ -654,8 +669,9 @@ def visSelfRepeat(seq, ksize=13, figsize=(8,6), dpi=100, size=0.1, FS=700):
                             silent=False, showcontam=True, reportcontam=True, size=size, FS=FS)
     plt.show(); plt.close()
 
-def visPairedRepeat(seq1, seq2, ksize=21, figsize=(15,4), dpi=100):
+def visPairedRepeat(seq1, seq2, ksize=21, figsize=(15,4), dpi=100, silent=False, showcontam=True, reportcontam=True, size=0.1, FS=700):
     fig, axes = plt.subplots(1, 3, figsize=figsize, dpi=dpi)
     for i, pair in enumerate([(seq1,seq1), (seq1,seq2), (seq2,seq2)]):
-        plotCrossContamination(pair[0], pair[1], ksize=ksize, ax=axes[i])
+        plotCrossContamination(pair[0], pair[1], ksize=ksize, ax=axes[i], zoomoutsize=(0,0), offset=(0,0),
+                               silent=silent, showcontam=showcontam, reportcontam=reportcontam, size=size, FS=FS)
     plt.show(); plt.close()

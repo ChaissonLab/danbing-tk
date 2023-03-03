@@ -47,18 +47,18 @@ int main(int argc, const char * argv[]) {
              << "  -th <INT>        Filter out kmers w/ count below this threshold. Default: 0, i.e. no filtering\n"
              << "  -g               output *graph.kmers for threading-based kmer query.\n"
              << "  -p <FILE>        Prune tr/graph kmers with the given kmers file.\n"
-			 << "  -m <FILE>        Use orthology map to merge haps.\n"
+             << "  -m <FILE>        Use orthology map to merge haps.\n"
              << "  -k <INT>         Kmer size\n"
              << "  -fs <INT>        Length of flanking sequence in *.tr.fasta.\n"
              << "  -ntr <INT>       Length of desired NTR in *kmers.\n"
              << "  -o <STR>         Output file prefix" << endl
-		<< "  -on <STR>        Same as the -o option, but write locus and kmer name as well" << endl
+             << "  -on <STR>        Same as the -o option, but write locus and kmer name as well" << endl
              << "  -fa <n> <list>   Use specified *.fasta in the [list] instead of hapDB.\n"
              << "                   Count the first [n] files and build kmers for the rest\n\n";
         return 0;
     }
     vector<string> args(argv, argv+argc);
-    bool genGraph = false, prune = false, usemap = false,writeKmerName = false;
+    bool genGraph = false, prune = false, usemap = false, writeKmerName = false;
     size_t argi = 1, threshold = 0, nhap = 0, NTRsize, fs, nfile2count, nloci;
     string pruneFname, outPref, mapf;
     vector<string> infnames;
@@ -194,18 +194,17 @@ int main(int argc, const char * argv[]) {
     // -----
     cerr << "writing outputs" << endl;
     if (writeKmerName) {
-	writeKmersWithName(outPref + ".tr", TRkmersDB, threshold);
-	writeKmersWithName(outPref + ".ntr", NTRkmersDB, threshold);    
-    	if (genGraph)
+        writeKmersWithName(outPref + ".tr", TRkmersDB, threshold);
+        writeKmersWithName(outPref + ".ntr", NTRkmersDB, threshold);    
+        if (genGraph)
             writeKmersWithName(outPref + ".graph", graphDB);
     }
     else {
-    	writeKmers(outPref + ".tr", TRkmersDB, threshold);
-    	writeKmers(outPref + ".ntr", NTRkmersDB, threshold);
+        writeKmers(outPref + ".tr", TRkmersDB, threshold);
+        writeKmers(outPref + ".ntr", NTRkmersDB, threshold);
         if (genGraph)
             writeKmers(outPref + ".graph", graphDB);
     }
-
 
     return 0;
 }
