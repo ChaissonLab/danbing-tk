@@ -284,11 +284,9 @@ done
 rule GenRawGenomeGraph:
     input:
         TRfa = expand(outdir + "{{genome}}.{hap}.tr.fasta", hap=haps),
-        ILbam = lambda wildcards: [bams[wildcards.genome]] if prune else [],
         mapping = outdir + "OrthoMap.v2.tsv",
     output:
         rawPBkmers = expand(outdir + "{{genome}}.rawPB.{kmerType}.kmers", kmerType=kmerTypes),
-        rawILkmers = [outdir + "{genome}.rawIL.tr.kmers"] if prune else []
     resources:
         cores = 24 if prune else 1,
         mem = lambda wildcards, attempt: 55 + 20*(attempt-1)
@@ -312,13 +310,35 @@ cd {params.od}
 module load gcc
 
 {params.sd}/bin/vntr2kmers_thread -g -m <(cut -f $(({params.hi}+1)),$(({params.hi}+2)) {input.mapping}) -k {params.ksize} -fs {params.FS} -ntr {params.FS} -o {wildcards.genome}.rawPB -fa 2 {input.TRfa}
+"""
 
-if [ {params.prune} == "1"  ]; then
+rule GeneratePruningAlignments:
+    input:
+        ILbam = lambda wildcards: [bams[wildcards.genome]] if prune else [],
+        serials = lambda wildcards: expand(outdir + "{genome}.rawPB.{binKmerType}", genome=wildcards.genome,binKmerType=binKmerTypes)
+    output:
+        rawILkmers = outdir + "{genome}.rawIL.tr.kmers"
+    resources:
+        cores=1
+    params:
+      name = "GenRawGenomeGraph",
+        copts = copts,
+        sd = srcdir,
+        od = outdir,
+        ksize = ksize,
+        FS = FS,
+        cth = cth,
+        rth = rth,
+        rstring = rstring,
+        thcth = thcth,
+        hi = lambda wildcards: 2*genomes.index(wildcards.genome)
+    shell:
+        '''
+    cd {params.od}
     samtools fasta -@2 -n {input.ILbam} |
     {params.sd}/bin/bam2pe -fai /dev/stdin |
     {params.sd}/bin/danbing-tk -g {params.thcth} -k {params.ksize} -qs {params.od}/{wildcards.genome}.rawPB -fai /dev/stdin -o {wildcards.genome}.rawIL -p {resources.cores} -cth {params.cth} -rth {params.rth}
-fi
-"""
+        '''
 
 
 rule EvalRawGenomeGraph:
@@ -398,11 +418,17 @@ module load gcc
 {params.sd}/bin/genPanKmers -o pan -m - -k {params.kmerpref}
 """
 
+def get_filename(genome):
+    if genome == 'pan':
+        return 'pan'
+    else:
+        return f'{genome}.rawPB'
+
 rule GenSerializedGraphAndIndex:
     input:
-        panKmers = expand(outdir + "pan.{kmerType}.kmers", kmerType=kmerTypes)
+        txtKmers = expand(outdir + "{{genome}}.{kmerType}.kmers", kmerType=kmerTypes)
     output:
-        binKmers = expand(outdir + "pan.{binKmerType}", binKmerType=binKmerTypes)
+        binKmers = expand(outdir + "{{genome}}.{binKmerType}", binKmerType=binKmerTypes)
     resources:
         cores = 2,
         mem = lambda wildcards, attempt: 90+20*(attempt-1)
@@ -411,13 +437,13 @@ rule GenSerializedGraphAndIndex:
         copts = copts,
         sd = srcdir,
         od = outdir,
-        pref = f"{outdir}/pan"
+        pref = f"{outdir}/{{wildcards.genome}}"
     shell:"""
 cd {params.od}
 ulimit -c 20000
 module load gcc
 
 {params.sd}/bin/ktools serialize {params.pref}
-{params.sd}/bin/ktools ksi pan.tr.kmers >{params.pref}.tr.ksi
+{params.sd}/bin/ktools ksi {wildcards.genome}.tr.kmers >{params.pref}.tr.ksi
 """
 
