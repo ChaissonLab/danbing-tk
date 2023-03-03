@@ -263,6 +263,8 @@ void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank 
     }
 }
 
+// Applied to a read pair to accumulate counts.
+// Assuming maximal kmer counts from a VNTR read pair does not exceed 32 bits
 void noncaVec2CaUmap(vector<size_t>& kmers, kmerCount_umap& out, size_t ksize) {
     size_t RCkmer;
     for (size_t kmer : kmers) {
