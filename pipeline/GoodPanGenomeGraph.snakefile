@@ -311,7 +311,7 @@ ulimit -c 20000
 cd {params.od}
 module load gcc
 
-{params.sd}/bin/vntr2kmers_thread -g -m <(cut -f $(({params.hi}+1)),$(({params.hi}+2)) {input.mapping}) -k {params.ksize} -fs {params.FS} -ntr {params.FS} -o {wildcards.genome}.rawPB -fa 2 {input.TRfa}
+{params.sd}/bin/vntr2kmers_thread -g -m <(cut -f $(({params.hi}+1)),$(({params.hi}+2)) {input.mapping}) -k {params.ksize} -fs {params.FS} -ntr {params.FS} -on {wildcards.genome}.rawPB -fa 2 {input.TRfa}
 
 if [ {params.prune} == "1"  ]; then
     samtools fasta -@2 -n {input.ILbam} |
@@ -367,7 +367,7 @@ cd {params.od}
 ulimit -c 20000
 
 awk '$1 ~ />/ || $2 == 0' {input.rawILkmers} |
-{params.sd}/bin/vntr2kmers_thread -g -p /dev/stdin -m <(cut -f $(({params.hi}+1)),$(({params.hi}+2)) {input.mapping}) -k {params.ksize} -fs {params.FS} -ntr {params.FS} -o {wildcards.genome}.PB -fa 2 {input.TRfa}
+{params.sd}/bin/vntr2kmers_thread -g -p /dev/stdin -m <(cut -f $(({params.hi}+1)),$(({params.hi}+2)) {input.mapping}) -k {params.ksize} -fs {params.FS} -ntr {params.FS} -on {wildcards.genome}.PB -fa 2 {input.TRfa}
 """
 
 def getRPGGin():
