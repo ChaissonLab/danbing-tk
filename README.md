@@ -109,20 +109,10 @@ Submitting jobs to cluster is preferred as `danbing-tk build` is compute-intensi
 
 
 ## danbing-tk predict
-Locus-specific sampling biases (LSB) at VNTR regions are critical for normalizing the sum of *k*-mer counts to VNTR length. We provided precomputed LSB at the VNTR regions for fast comparison, however this assumes the LSB of the dataset of interest is close enough to the dataset in the original paper. Please ensure this assumption is valid by running a joint PCA on the LSB of non-repetitive regions with the original dataset, provided in `LSB.tsv`. If this assumption failed, leave-one-out analysis (next section) on the dataset of interest is necessary to make accurate predictions. The following usage is for when the assumption holds.
+Locus- and sample-specific biases are critical for normalizing the sum of *k*-mer counts to VNTR dosage (as a proxy for predicted length) and normalizing the average of *k*-mer counts to motif dosage. The bias for each locus in each sample is computed from the deviation of local read depth from the global mean given a set of *invariant k-mers*. Examples of this analysis can be found [here](https://github.com/ChaissonLab/eMotif_manuscript_analysis_scripts/tree/main/bias_correction)
 
-Run `getCovByLocus.397.sh` on your SRS dataset.
 
-Run length prediction with:
-
-```bash
-/$PREFIX/danbing-tk/script/kmc2length.py --outdir OUTDIR --ksize KSIZE --kmers KMERS --trbed
-	TRBED --LSB LSB --cov COV --covbed COVBED
-```
-
-Length estimates are written to `estimated_TR_len.tsv`.
-
-## Analysis
+## Miscellaneous
 ### Leave-one-out analysis
 To evaluate the quality of custom RPGG on matching SRS dataset, copy `/$PREFIX/danbing-tk/pipeline/leaveOneOut.snakefile` to your working directory and edit accordingly.
 Run the snakemake pipleine with:
