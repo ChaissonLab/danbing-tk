@@ -11,10 +11,10 @@ The [latest update](https://www.biorxiv.org/content/10.1101/2022.03.17.484784v2)
 ## Download Releases
 The latest release [v1.3.1-manuscript](https://github.com/ChaissonLab/danbing-tk/releases/tag/v1.3.1-manuscript) comes with the lastest version of VNTR set, RPGG, and QC statistics.
 
-|                   | File                                                        | Input of             | Output of                                 |
-|-------------------|-------------------------------------------------------------|----------------------|-------------------------------------------|
-| VNTR set          | `tr.good.bed`                                               | `danbing-tk build`   |                                           |
-| RPGG              | `pan.tr.kmers`,`pan.kmerDBi.umap`,`kmerDBi.vv`,`graph.umap` | `danbing-tk align`   | `danbing-tk build` or `vntr2kmers_thread` |
+|                   | File                                                                   | Input of             | Output of                                 |
+|-------------------|------------------------------------------------------------------------|----------------------|-------------------------------------------|
+| VNTR set          | `tr.good.bed`                                                          | `danbing-tk build`   |                                           |
+| RPGG              | `pan.tr.kmers`, `pan.kmerDBi.umap`, `pan.kmerDBi.vv`, `pan.graph.umap` | `danbing-tk align`   | `danbing-tk build` or `vntr2kmers_thread` |
 
 - Release v1.3.1-manuscript: provided QC statistics and all resources associated with the latest manuscript.
 - Release v1.3: Updated RPGG built from 35 HGSVC genomes.
