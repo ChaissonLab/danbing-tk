@@ -1,6 +1,6 @@
 PREFIX = /home/cmb-16/mjc/tsungyul/work/vntr/danbing-tk
-TARGETS = bin/danbing-tk bin/vntr2kmers_thread bin/genPanKmers bin/ktools
-TARGETSg = bin/danbing-tk_g bin/vntr2kmers_thread_g bin/genPanKmers_g bin/ktools_g
+TARGETS = bin/danbing-tk bin/vntr2kmers_thread bin/genPanKmers bin/ktools bin/danbing-tk-pred
+TARGETSg = bin/danbing-tk_g bin/vntr2kmers_thread_g bin/genPanKmers_g bin/ktools_g bin/danbing-tk-pred_g
 #TARGETS = aQueryFasta amphQueryFasta vntr2kmers kmer2dot seq2num num2seq rvseq bam2pe
 
 CXX = g++ -std=c++11
@@ -19,6 +19,14 @@ bin/danbing-tk:	src/aQueryFasta_thread.cpp
 bin/danbing-tk_g:	src/aQueryFasta_thread.cpp
 	$(dir_guard)
 	$(CXX) -g $(LDFLAGS) -I. -o bin/danbing-tk_g src/aQueryFasta_thread.cpp
+
+bin/danbing-tk-pred:	src/pred.cpp
+	$(dir_guard)
+	$(CXX) $(LDFLAGS) -O3 -I. -o bin/danbing-tk-pred src/pred.cpp
+
+bin/danbing-tk-pred_g:	src/pred.cpp
+	$(dir_guard)
+	$(CXX) -g $(LDFLAGS) -I. -o bin/danbing-tk-pred_g src/pred.cpp
 
 bin/ktools:	src/kmertools.cpp
 	$(dir_guard)
