@@ -23,68 +23,68 @@ sem_t *semreader;
 sem_t *semcount;
 sem_t *semwriter;
 bool testmode;
-size_t ksize;
-size_t N_FILTER = 4; // number of subsampled kmers
-size_t NM_FILTER = 1; // minimal number of hits
+uint64_t ksize;
+uint64_t N_FILTER = 4; // number of subsampled kmers
+uint64_t NM_FILTER = 1; // minimal number of hits
 int verbosity = 0;
 const uint64_t NAN64 = 0xFFFFFFFFFFFFFFFF;
 const uint32_t NAN32 = 0xFFFFFFFF;
 
-typedef unordered_map<size_t, size_t> msa_umap; // dest_locus, counts
+typedef unordered_map<uint64_t, uint64_t> msa_umap; // dest_locus, counts
 // src_locus -> {dest_locus -> [src_count, dest_count_uncorrected, dest_count_corrected]}
-typedef unordered_map<size_t, unordered_map<size_t, std::tuple<size_t,size_t,size_t>>> err_umap;
+typedef unordered_map<uint64_t, unordered_map<uint64_t, std::tuple<uint64_t,uint64_t,uint64_t>>> err_umap;
 typedef std::pair<uint8_t, uint8_t> PE_KMC; // pair-end kmer count // XXX not compatible with reads longer than 255 bp
 
 struct EDIT {
 	vector<char> ops1, ops2; // alignment operation for each end. M: match. S: skip. H: homopolymer. [ACGT]: edits.
-	std::pair<size_t, size_t> map; // <src_locus, dest_locus>
+	std::pair<uint64_t, uint64_t> map; // <src_locus, dest_locus>
 };
 
 struct asgn_t { // pe read assignment
-	size_t idx = NAN32;
-	size_t fc = 0, rc = 0;
+	uint64_t idx = NAN32;
+	uint64_t fc = 0, rc = 0;
 };
 
-void rand_str(char *dest, size_t length) {
+void rand_str(char *dest, uint64_t length) {
     char charset[] = "0123456789"
                      "abcdefghijklmnopqrstuvwxyz"
                      "ABCDEFGHIJKLMNOPQRSTUVWXYZ";		
     while (length-- > 0) {
-        size_t index = (double) rand() / RAND_MAX * (sizeof charset - 1);
+        uint64_t index = (double) rand() / RAND_MAX * (sizeof charset - 1);
         *dest++ = charset[index];
     }
     *dest = '\0';
 }
 
-bool subfilter(vector<size_t>& kmers1, vector<size_t>& kmers2, kmerIndex_uint32_umap& kmerDBi, size_t& nhash) {
-	size_t L1 = kmers1.size(), L2 = kmers2.size();
-	size_t S1 = L1 / (N_FILTER-1), S2 = L2 / (N_FILTER-1);
-	size_t h1 = 0, h2 = 0;
-	for (size_t i = 0; i < N_FILTER; ++i, ++nhash) {
-		size_t i1 = (i != N_FILTER-1 ? i*S1 : L1-1); // XXX no need to use L1-1, i*S1 is okay
+bool subfilter(vector<uint64_t>& kmers1, vector<uint64_t>& kmers2, kmerIndex_uint32_umap& kmerDBi, uint64_t& nhash) {
+	uint64_t L1 = kmers1.size(), L2 = kmers2.size();
+	uint64_t S1 = L1 / (N_FILTER-1), S2 = L2 / (N_FILTER-1);
+	uint64_t h1 = 0, h2 = 0;
+	for (uint64_t i = 0; i < N_FILTER; ++i, ++nhash) {
+		uint64_t i1 = (i != N_FILTER-1 ? i*S1 : L1-1); // XXX no need to use L1-1, i*S1 is okay
 		h1 += kmerDBi.count(kmers1[i1]);
 		if (h1 >= NM_FILTER) { break; }
 	}
 	if (h1 < NM_FILTER) { return true; }
-	for (size_t i = 0; i < N_FILTER; ++i, ++nhash) {
-		size_t i2 = (i != N_FILTER-1 ? i*S2 : L2-1);
+	for (uint64_t i = 0; i < N_FILTER; ++i, ++nhash) {
+		uint64_t i2 = (i != N_FILTER-1 ? i*S2 : L2-1);
 		h2 += kmerDBi.count(kmers2[i2]);
 		if (h2 >= NM_FILTER) { break; }
 	}
 	return h2 < NM_FILTER;
 }
 
-bool kfilter(vector<size_t>& kmers1, vector<size_t>& kmers2, vector<kmerIndex_uint32_umap::iterator>& its1, vector<kmerIndex_uint32_umap::iterator>& its2, kmerIndex_uint32_umap& kmerDBi, uint16_t Cthreshold, size_t& nhash) {
-	size_t ns1 = 0, ns2 = 0;
-    const size_t MAX_NS1 = kmers1.size() - Cthreshold;
-    const size_t MAX_NS2 = kmers2.size() - Cthreshold;
-    for (size_t kmer : kmers1) {
+bool kfilter(vector<uint64_t>& kmers1, vector<uint64_t>& kmers2, vector<kmerIndex_uint32_umap::iterator>& its1, vector<kmerIndex_uint32_umap::iterator>& its2, kmerIndex_uint32_umap& kmerDBi, uint16_t Cthreshold, uint64_t& nhash) {
+	uint64_t ns1 = 0, ns2 = 0;
+    const uint64_t MAX_NS1 = kmers1.size() - Cthreshold;
+    const uint64_t MAX_NS2 = kmers2.size() - Cthreshold;
+    for (uint64_t kmer : kmers1) {
 		++nhash;
         auto it = kmerDBi.find(kmer);
         if (it == kmerDBi.end()) { ++ns1; if (ns1 > MAX_NS1) { return true; } }
         else { its1.push_back(it); }
     }
-    for (size_t kmer : kmers2) {
+    for (uint64_t kmer : kmers2) {
 		++nhash;
         auto it = kmerDBi.find(kmer);
         if (it == kmerDBi.end()) { ++ns2; if (ns2 > MAX_NS2) { return true; } }
@@ -93,14 +93,14 @@ bool kfilter(vector<size_t>& kmers1, vector<size_t>& kmers2, vector<kmerIndex_ui
 	return false;
 }
 
-void getSortedIndex(vector<size_t>& data, vector<size_t>& indices) {
+void getSortedIndex(vector<uint64_t>& data, vector<uint64_t>& indices) {
 	std::iota(indices.begin(), indices.end(), 0);
-	std::sort(indices.begin(), indices.end(), [&data](size_t ind1, size_t ind2) { return data[ind1] < data[ind2]; });
+	std::sort(indices.begin(), indices.end(), [&data](uint64_t ind1, uint64_t ind2) { return data[ind1] < data[ind2]; });
 }
 
-void getSortedIndex(vector<kmerIndex_uint32_umap::iterator>& data, vector<size_t>& indices) {
+void getSortedIndex(vector<kmerIndex_uint32_umap::iterator>& data, vector<uint64_t>& indices) {
     std::iota(indices.begin(), indices.end(), 0);
-    std::sort(indices.begin(), indices.end(), [&data](size_t ind1, size_t ind2) { return data[ind1]->first < data[ind2]->first; });
+    std::sort(indices.begin(), indices.end(), [&data](uint64_t ind1, uint64_t ind2) { return data[ind1]->first < data[ind2]->first; });
 }
 
 void countDupRemove(vector<kmerIndex_uint32_umap::iterator>& its, vector<kmerIndex_uint32_umap::iterator>& its_other, vector<PE_KMC>& dup) {
@@ -114,12 +114,12 @@ void countDupRemove(vector<kmerIndex_uint32_umap::iterator>& its, vector<kmerInd
 	its.insert(its.end(), its_other.begin(), its_other.end());
 	its_other.clear();
 
-    vector<size_t> indorder(its.size());
+    vector<uint64_t> indorder(its.size());
 	getSortedIndex(its, indorder);
     // sort its and orient
     vector<kmerIndex_uint32_umap::iterator> old_its = its;
     vector<bool> old_orient = orient;
-    for (size_t i = 0; i < its.size(); ++i) {
+    for (uint64_t i = 0; i < its.size(); ++i) {
         its[i] = old_its[indorder[i]];
         orient[i] = old_orient[indorder[i]];
     }
@@ -127,10 +127,10 @@ void countDupRemove(vector<kmerIndex_uint32_umap::iterator>& its, vector<kmerInd
     // iterate through its and count the occurrence in each read
     assert(its.size()); // XXX
     auto last = its[0];
-	size_t itsize = 1;
+	uint64_t itsize = 1;
     PE_KMC pe_kmc(0,0);
     (orient[0] ? ++pe_kmc.second : ++pe_kmc.first);
-    for (size_t i = 1; i < its.size(); ++i) {
+    for (uint64_t i = 1; i < its.size(); ++i) {
         if (last != its[i]) { 
             dup.push_back(pe_kmc);
             pe_kmc = std::make_pair(0,0);
@@ -144,40 +144,40 @@ void countDupRemove(vector<kmerIndex_uint32_umap::iterator>& its, vector<kmerInd
     its.resize(itsize);
 }
 
-void countRemain(vector<PE_KMC>& dup, vector<size_t>& remain) {
+void countRemain(vector<PE_KMC>& dup, vector<uint64_t>& remain) {
     remain.resize(dup.size(), 0);
-    size_t dupsum = std::accumulate(dup.begin(), dup.end(), 0, 
-                                    [](size_t partialSum, PE_KMC pe_kmc) { return partialSum + pe_kmc.first + pe_kmc.second; });
+    uint64_t dupsum = std::accumulate(dup.begin(), dup.end(), 0, 
+                                    [](uint64_t partialSum, PE_KMC pe_kmc) { return partialSum + pe_kmc.first + pe_kmc.second; });
     remain[0] = dupsum - dup[0].first - dup[0].second;
-    for (size_t i = 1; i < remain.size()-1; ++i) {
+    for (uint64_t i = 1; i < remain.size()-1; ++i) {
         remain[i] = remain[i-1] - dup[i].first - dup[i].second;
     }
 }
 
-void fillstats(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_umap::iterator>& its, vector<kmerIndex_uint32_umap::iterator>& its_other, vector<PE_KMC>& dup, vector<size_t>& remain) {
+void fillstats(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_umap::iterator>& its, vector<kmerIndex_uint32_umap::iterator>& its_other, vector<PE_KMC>& dup, vector<uint64_t>& remain) {
     countDupRemove(its, its_other, dup); // count the occurrence of kmers in each read
 
     // get # of mapped loci for each kmer
-    size_t nkmers = its.size();
-    vector<size_t> nmappedloci(nkmers, 0); // XXX set to 1 and only change val when multiple loci
-    for (size_t i = 0; i < nkmers; ++i) {
+    uint64_t nkmers = its.size();
+    vector<uint64_t> nmappedloci(nkmers, 0); // XXX set to 1 and only change val when multiple loci
+    for (uint64_t i = 0; i < nkmers; ++i) {
 		uint32_t vi = its[i]->second;
 		nmappedloci[i] = (vi % 2 ? kmerDBi_vv[vi>>1] : 1);
     }
 
     // sort kmers dup w.r.t. nmappedloci; remove entries w/o mapped locus
-    vector<size_t> indorder(nmappedloci.size());
+    vector<uint64_t> indorder(nmappedloci.size());
 	getSortedIndex(nmappedloci, indorder);
     vector<kmerIndex_uint32_umap::iterator> old_its = its; // XXX reserve not copy
     vector<PE_KMC> old_dup = dup; // XXX reserve not copy
-    for (size_t i = 0; i < nkmers; ++i) {
+    for (uint64_t i = 0; i < nkmers; ++i) {
         its[i] = old_its[indorder[i]];
         dup[i] = old_dup[indorder[i]];
     }
     countRemain(dup, remain);
 }
 
-void updatetop2(size_t count_f, uint32_t ind, size_t count_r, asgn_t& top, asgn_t& second) { // for sorted_query algo
+void updatetop2(uint64_t count_f, uint32_t ind, uint64_t count_r, asgn_t& top, asgn_t& second) { // for sorted_query algo
     if (count_f + count_r > top.fc + top.rc) {
         if (top.idx != ind) {
 			second = top;
@@ -195,28 +195,28 @@ void updatetop2(size_t count_f, uint32_t ind, size_t count_r, asgn_t& top, asgn_
     }
 }
 
-inline bool get_cmp(asgn_t& top, asgn_t& second, size_t rem, float rth) {
+inline bool get_cmp(asgn_t& top, asgn_t& second, uint64_t rem, float rth) {
 	return float(top.fc + top.rc      )/(top.fc + top.rc + second.fc + second.rc + rem) <  rth and
            float(top.fc + top.rc + rem)/(top.fc + top.rc + second.fc + second.rc + rem) >= rth;
 }
 
-inline bool get_acm1(asgn_t& top, asgn_t& second, size_t rem, size_t cth) { // XXX speedup second is not used here
+inline bool get_acm1(asgn_t& top, asgn_t& second, uint64_t rem, uint64_t cth) { // XXX speedup second is not used here
 	// accumulate the score of the top locus to identify reads w/ score >= Cthreshold
 	return (top.fc < cth and cth - top.fc <= rem) or (top.rc < cth and cth - top.rc <= rem);
 }
 
-inline bool get_acm2(asgn_t& top, asgn_t& second, size_t rem) { 
+inline bool get_acm2(asgn_t& top, asgn_t& second, uint64_t rem) { 
 	// accumulate the scores of the top 2 loci to assign reads to the most similar locus
 	return (top.fc + top.rc - second.fc - second.rc) < rem;
 }
 
 void find_matching_locus(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_umap::iterator>& its1, vector<uint32_t>& hits1, vector<uint32_t>& hits2, 
-                         vector<PE_KMC>& dup, vector<size_t>& remain, asgn_t& top, asgn_t& second, uint16_t Cthreshold, float Rthreshold) {
-    for (size_t i = 0; i < its1.size(); ++i) {
+                         vector<PE_KMC>& dup, vector<uint64_t>& remain, asgn_t& top, asgn_t& second, uint16_t Cthreshold, float Rthreshold) {
+    for (uint64_t i = 0; i < its1.size(); ++i) {
 		uint32_t vi = its1[i]->second;
 		if (vi % 2) {
-			size_t j0 = (vi>>1) + 1;
-			size_t j1 = j0 + kmerDBi_vv[vi>>1];
+			uint64_t j0 = (vi>>1) + 1;
+			uint64_t j1 = j0 + kmerDBi_vv[vi>>1];
 			for ( ; j0 < j1; ++j0) {
 				uint32_t locus = kmerDBi_vv[j0];
 				hits1[locus] += dup[i].first; // XXX speedup; try unordered_map for hits?
@@ -230,7 +230,7 @@ void find_matching_locus(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_u
 			updatetop2(hits1[locus], locus, hits2[locus], top, second);
 		}
         if (not get_acm2(top, second, remain[i])) { // second hit will not exceed top hit
-            size_t j = i;
+            uint64_t j = i;
             //if (Rthreshold != 0.5) { // continue to count scores until PASS/FAIL can be determined
             //    while (get_cmp(top, second, remain[j], Rthreshold)) { // XXX second.idx might not be fixed yet
             //        unordered_set<uint32_t>& loci = its1[++j]->second;
@@ -248,8 +248,8 @@ void find_matching_locus(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_u
 				if (++j >= its1.size()) { break; }
 				uint32_t vj = its1[j]->second;
 				if (vj % 2) {
-					size_t j0 = (vj>>1) + 1;
-					size_t j1 = j0 + kmerDBi_vv[vj>>1];
+					uint64_t j0 = (vj>>1) + 1;
+					uint64_t j1 = j0 + kmerDBi_vv[vj>>1];
 					for ( ; j0 < j1; ++j0) {
 						uint32_t locus = kmerDBi_vv[j0];
 						if (locus == top.idx) {
@@ -270,10 +270,10 @@ void find_matching_locus(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_u
     }
 }
 
-size_t countHit(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_umap::iterator>& its1, vector<kmerIndex_uint32_umap::iterator>& its2, vector<uint32_t>& hits1, vector<uint32_t>& hits2,
-                vector<PE_KMC>& dup, size_t nloci, uint16_t Cthreshold, float Rthreshold) {
+uint64_t countHit(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_umap::iterator>& its1, vector<kmerIndex_uint32_umap::iterator>& its2, vector<uint32_t>& hits1, vector<uint32_t>& hits2,
+                vector<PE_KMC>& dup, uint64_t nloci, uint16_t Cthreshold, float Rthreshold) {
 	// pre-processing: sort kmer by # mapped loci XXX alternative: sort by frequncy in read
-    vector<size_t> remain;
+    vector<uint64_t> remain;
     fillstats(kmerDBi_vv, its1, its2, dup, remain);
 
     // for each kmer, increment counts of the mapped loci for each read
@@ -293,7 +293,7 @@ size_t countHit(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_umap::iter
 }
 
 inline void prunePEinfo(string& title) {
-	size_t len = title.size();
+	uint64_t len = title.size();
     if (title[len-2] == '/') {
         if (title[len-1] == '1' or title[len-1] == '2') {
 			title = title.substr(0, len-2);
@@ -302,11 +302,11 @@ inline void prunePEinfo(string& title) {
 }
 
 // skip step 1, read destLocus from >[READ_NAME]:[DEST_LOCUS]_[1|2]
-void parseReadNames(vector<string>& titles, vector<size_t>& destLoci, size_t nReads_) {
-	size_t ri = 0;
-	for (size_t di = 0; di < nReads_/2; ++di) {
-		size_t beg = titles[ri].size() - 1;
-		size_t len = 1;
+void parseReadNames(vector<string>& titles, vector<uint64_t>& destLoci, uint64_t nReads_) {
+	uint64_t ri = 0;
+	for (uint64_t di = 0; di < nReads_/2; ++di) {
+		uint64_t beg = titles[ri].size() - 1;
+		uint64_t len = 1;
 		while (titles[ri][--beg] != ':') { ++len; }
 		destLoci[di] = stoul(titles[ri].substr(++beg, len));
 		ri += 2;
@@ -315,10 +315,10 @@ void parseReadNames(vector<string>& titles, vector<size_t>& destLoci, size_t nRe
 
 // simmode = 1; simmulated reads from TR only
 template <typename ValueType>
-void parseReadName(string& title, size_t readn, vector<ValueType>& loci, vector<size_t>& locusReadi) {
+void parseReadName(string& title, uint64_t readn, vector<ValueType>& loci, vector<uint64_t>& locusReadi) {
     string sep = ".";
-    size_t first = title.find(sep);
-    size_t newLocus = stoul(title.substr(1, first)); // skip the 1st '>' char
+    uint64_t first = title.find(sep);
+    uint64_t newLocus = stoul(title.substr(1, first)); // skip the 1st '>' char
     if (readn == 0) {
         loci.push_back(newLocus);
     }
@@ -330,13 +330,13 @@ void parseReadName(string& title, size_t readn, vector<ValueType>& loci, vector<
 
 // OBSOLETE. simmode = 2; simmulated reads from whole genome
 template <typename ValueType>
-void parseReadName(string& title, size_t readn, vector<size_t>& poss, vector<ValueType>& loci, vector<size_t>& locusReadi) {
+void parseReadName(string& title, uint64_t readn, vector<uint64_t>& poss, vector<ValueType>& loci, vector<uint64_t>& locusReadi) {
     string sep = "_";
-    size_t first = title.find(sep);
-    size_t second = title.find(sep, first+1);
+    uint64_t first = title.find(sep);
+    uint64_t second = title.find(sep, first+1);
     float newLocus = stof(title.substr(first+1, second));
     if (readn == 0) {
-        //size_t hap = stoi(title.substr(1, first)); // skip the 1st '>' char
+        //uint64_t hap = stoi(title.substr(1, first)); // skip the 1st '>' char
         loci.push_back(newLocus);
         poss.push_back(stoul(title.substr(second+1, title.find(sep, second+1))));
     }
@@ -348,13 +348,13 @@ void parseReadName(string& title, size_t readn, vector<size_t>& poss, vector<Val
 }
 
 // simmode = 2
-void parseReadName(string& title, vector<std::pair<int, size_t>>& meta, size_t nloci) {
+void parseReadName(string& title, vector<std::pair<int, uint64_t>>& meta, uint64_t nloci) {
 	// input: read name; vector of (read_locus, number_of_pe_reads)
 	static const string sep = ":";
-	size_t p1 = title.find(sep);
-	size_t p2 = title.find(sep, p1+1);
+	uint64_t p1 = title.find(sep);
+	uint64_t p2 = title.find(sep, p1+1);
 	string v = title.substr(p1+1, p2-p1-1);
-	size_t locus;
+	uint64_t locus;
 	if (v[0] == '.') { locus = nloci; }
 	else { locus = stoul(v); }
 	if (meta.size() == 0) { meta.push_back(std::make_pair(locus, 1)); }
@@ -364,7 +364,7 @@ void parseReadName(string& title, vector<std::pair<int, size_t>>& meta, size_t n
 	}
 }
 
-void mapLocus(bool g2pan, vector<std::pair<int, size_t>>& meta, vector<size_t>& locusmap, size_t seqi, size_t& simi, size_t nloci, size_t& srcLocus) {
+void mapLocus(bool g2pan, vector<std::pair<int, uint64_t>>& meta, vector<uint64_t>& locusmap, uint64_t seqi, uint64_t& simi, uint64_t nloci, uint64_t& srcLocus) {
 	if (simi == 0 or seqi / 2 >= meta[simi].second) { 
 		if (seqi / 2 >= meta[simi].second) { ++simi; }
 		if (meta[simi].first == nloci) { srcLocus = nloci; }
@@ -388,26 +388,26 @@ void printVec(vector<T>& vec) {
     cerr << endl;
 }
 
-void getOutNodes(GraphType& g, size_t node, vector<size_t>& nnds, bool (&nnts)[4]) {
+void getOutNodes(GraphType& g, uint64_t node, vector<uint64_t>& nnds, bool (&nnts)[4]) {
     // a node is a kmer and is not neccessarily canonical
     const static uint64_t mask = (1UL << 2*(ksize-1)) - 1;
 	assert(g.count(node)); // prevents error from unclean graph XXX remove this after graph pruning code passes testing
 	uint8_t nucBits = g[node]; // a 4-bit value that corresponds to the presence of trailing TGCA in downstream nodes
-	size_t nnd = (node & mask) << 2;
-	for (size_t i = 0; i < 4; ++i) {
+	uint64_t nnd = (node & mask) << 2;
+	for (uint64_t i = 0; i < 4; ++i) {
 		if (nucBits % 2) { nnds.push_back(nnd + i); }
 		nnts[i] |= nucBits % 2; // CAUTION: OR operator
 		nucBits >>= 1;
     }
 }
 
-void getNextNucs(GraphType& g, size_t node, bool (&nnts)[4]) {
+void getNextNucs(GraphType& g, uint64_t node, bool (&nnts)[4]) {
     const static uint64_t mask = (1UL << 2*(ksize-1)) - 1;
 	uint8_t nucBits;
 	auto it = g.find(node);
 	if (it != g.end()) {
 		nucBits = it->second;
-		for (size_t i = 0; i < 4; ++i) {
+		for (uint64_t i = 0; i < 4; ++i) {
 			nnts[i] = nucBits % 2; // CAUTION: assignment operator
 			nucBits >>= 1;
 		}
@@ -425,16 +425,16 @@ struct thread_ext_t{
 	// nei1: number of extended kmers starting with 1 insertions
 	// nei2: number of extended kmers starting with 2 insertions
 	//                       type_shft
-	size_t nem1[4]  = {}; //  0
-	size_t nem2[16] = {}; //  1
-	size_t nemi[4]  = {}; //  1
-	size_t nemd[16] = {}; //  0
-	size_t ned1[4]  = {}; // -1
-	size_t ned2[16] = {}; // -1
-	size_t nei1 = 0;      //  0
-	size_t nei2 = 0;      //  1
-	size_t score = 0;     // highest number of extended kmers
-	size_t shft = 0;      // read index shifting = type_shft + score
+	uint64_t nem1[4]  = {}; //  0
+	uint64_t nem2[16] = {}; //  1
+	uint64_t nemi[4]  = {}; //  1
+	uint64_t nemd[16] = {}; //  0
+	uint64_t ned1[4]  = {}; // -1
+	uint64_t ned2[16] = {}; // -1
+	uint64_t nei1 = 0;      //  0
+	uint64_t nei2 = 0;      //  1
+	uint64_t score = 0;     // highest number of extended kmers
+	uint64_t shft = 0;      // read index shifting = type_shft + score
 	int dt_kmers = 0, dt_ki = 0;
 	int dt_ops = 0;
 	string edit = "";
@@ -442,12 +442,12 @@ struct thread_ext_t{
 	bool get_edit() {
 		const char dels[4] = {'0','1','2','3'};
 		if (nei1 > score) { score = nei1; shft = 0 + score; edit = "I"; }
-		for (size_t i = 0; i < 4; ++i) { if (ned1[i] > score) { score = ned1[i]; shft = -1 + score; edit = string(1,dels[i]); } }
-		for (size_t i = 0; i < 4; ++i) { if (nem1[i] > score) { score = nem1[i]; shft =  0 + score; edit = string(1,alphabet[i]); } }
+		for (uint64_t i = 0; i < 4; ++i) { if (ned1[i] > score) { score = ned1[i]; shft = -1 + score; edit = string(1,dels[i]); } }
+		for (uint64_t i = 0; i < 4; ++i) { if (nem1[i] > score) { score = nem1[i]; shft =  0 + score; edit = string(1,alphabet[i]); } }
 		if (nei2 > score) { score = nei2; shft = 1 + score; edit = "II"; }
-		for (size_t i = 0; i < 4; ++i) {
+		for (uint64_t i = 0; i < 4; ++i) {
 			if (nemi[i] > score) { score = nemi[i]; shft = 1 + score; edit = string(1,alphabet[i]) + "I"; }
-			for (size_t j = 0; j < 4; ++j) {
+			for (uint64_t j = 0; j < 4; ++j) {
 				if (ned2[i*4+j] > score) { score = ned2[i*4+j]; shft = -1 + score; edit = string(1,dels[i])     + dels[j]; }
 				if (nemd[i*4+j] > score) { score = nemd[i*4+j]; shft =  0 + score; edit = string(1,alphabet[i]) + dels[j]; }
 				if (nem2[i*4+j] > score) { score = nem2[i*4+j]; shft =  1 + score; edit = string(1,alphabet[i]) + alphabet[j]; }
@@ -456,14 +456,14 @@ struct thread_ext_t{
 		return score > 0;
 	}
 
-	void edit_kmers(vector<size_t>& kmers, size_t& ki, bool aln, vector<char>& ops, size_t& opsi, kmer_aCount_umap& trKmers) {
+	void edit_kmers(vector<uint64_t>& kmers, uint64_t& ki, bool aln, vector<char>& ops, uint64_t& opsi, kmer_aCount_umap& trKmers) {
 		const static uint64_t mask = (1UL << 2*(ksize-1)) - 1;
-		size_t nts[kmers.size() - ki];
-		for (size_t i = ki; i < kmers.size(); ++i) {
+		uint64_t nts[kmers.size() - ki];
+		for (uint64_t i = ki; i < kmers.size(); ++i) {
 			nts[i-ki] = kmers[i] % 4;
 		}
-		size_t nti = 0;
-		for (size_t i = 0; i < edit.size(); ++i) {
+		uint64_t nti = 0;
+		for (uint64_t i = 0; i < edit.size(); ++i) {
 			char c = edit[i];
 			if (c == 'A' or c == 'C' or c == 'G' or c == 'T') { kmers[ki+i] = ((kmers[ki+i-1] & mask) << 2) + baseNumConversion[c]; ++nti; }
 			else if (c == '0' or c == '1' or c == '2' or c == '3') { kmers[ki+i] = ((kmers[ki+i-1] & mask) << 2) + stoi(string(1,c)); ++dt_kmers; ++dt_ops; }
@@ -472,13 +472,13 @@ struct thread_ext_t{
 		}
 		kmers.resize(kmers.size() + dt_kmers);
 		ops.resize(ops.size() + dt_ops, '*');
-		for (size_t i = ki+dt_ki; i < kmers.size(); ++i) {
+		for (uint64_t i = ki+dt_ki; i < kmers.size(); ++i) {
 			kmers[i] = ((kmers[i-1] & mask) << 2) + nts[nti++];
 		}
 		ki += dt_ki - 1;
 		if (aln) { 
-			for (size_t i = 0; i < edit.size(); ++i) { ops[opsi++] = edit[i]; } 
-			for (size_t i = 0; i < score; ++i) { ops[opsi++] = trKmers.count(toCaKmer(kmers[++ki], ksize)) ? '=' : '.'; }
+			for (uint64_t i = 0; i < edit.size(); ++i) { ops[opsi++] = edit[i]; } 
+			for (uint64_t i = 0; i < score; ++i) { ops[opsi++] = trKmers.count(toCaKmer(kmers[++ki], ksize)) ? '=' : '.'; }
 		}
 	}
 };
@@ -486,16 +486,16 @@ struct thread_ext_t{
 struct graph_triplet_t {
 	bool mat[64] = {};
 
-	void get_nnts(size_t i, bool (&nnts)[4]) { // CAUTION: OR operator
-		for (size_t j = 0; j < 4; ++j) { for (size_t k = 0; k < 4; ++k) { nnts[j] |= mat[i*16 + j*4 + k]; } }
+	void get_nnts(uint64_t i, bool (&nnts)[4]) { // CAUTION: OR operator
+		for (uint64_t j = 0; j < 4; ++j) { for (uint64_t k = 0; k < 4; ++k) { nnts[j] |= mat[i*16 + j*4 + k]; } }
 	}
 
-	void get_nnts(size_t i, size_t j, bool (&nnts)[4]) { // CAUTION: OR operator
-		for (size_t k = 0; k < 4; ++k) { nnts[k] |= mat[i*16 + j*4 + k]; }
+	void get_nnts(uint64_t i, uint64_t j, bool (&nnts)[4]) { // CAUTION: OR operator
+		for (uint64_t k = 0; k < 4; ++k) { nnts[k] |= mat[i*16 + j*4 + k]; }
 	}
 };
 
-bool find_anchor(GraphType& g, vector<size_t>& kmers, bool aln, vector<char>& ops, size_t& nskip, size_t& pos, size_t& opsi, kmer_aCount_umap& trKmers, size_t& node) {
+bool find_anchor(GraphType& g, vector<uint64_t>& kmers, bool aln, vector<char>& ops, uint64_t& nskip, uint64_t& pos, uint64_t& opsi, kmer_aCount_umap& trKmers, uint64_t& node) {
 	while (not g.count(kmers[pos])) {
 		++nskip;
         if (aln) { ops[opsi++] = '*'; }
@@ -507,18 +507,18 @@ bool find_anchor(GraphType& g, vector<size_t>& kmers, bool aln, vector<char>& op
 }
 
 // 0: not feasible, 1: feasible, w/o correction, 2: feasible w/ correction
-int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& noncakmers, size_t thread_cth, bool correction, 
+int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, uint64_t thread_cth, bool correction, 
 	bool aln, vector<char>& ops, kmer_aCount_umap& trKmers) {
 
     read2kmers(noncakmers, seq, ksize, 0, 0, false, true); // leftflank = 0, rightflank = 0, canonical = false, keepN = true
-	vector<size_t> kmers(noncakmers.begin(), noncakmers.end());
+	vector<uint64_t> kmers(noncakmers.begin(), noncakmers.end());
 
 	static const char nts[] = {'A', 'C', 'G', 'T', 'a', 'c', 'g', 't'};
     static const uint64_t mask = (1UL << 2*(ksize-1)) - 1;
-    const size_t maxnskip = (kmers.size() >= thread_cth ? kmers.size() - thread_cth : 0);
-    const size_t maxncorrection = 2;
-    size_t i = 0, opsi = 0, nskip = 0, ncorrection = 0;
-	size_t node = kmers[nskip];
+    const uint64_t maxnskip = (kmers.size() >= thread_cth ? kmers.size() - thread_cth : 0);
+    const uint64_t maxncorrection = 2;
+    uint64_t i = 0, opsi = 0, nskip = 0, ncorrection = 0;
+	uint64_t node = kmers[nskip];
 
 	if (aln) { ops.resize(kmers.size(), '*'); }
 	if (not find_anchor(g, kmers, aln, ops, nskip, i, opsi, trKmers, node)) { return 0; }
@@ -545,10 +545,10 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& noncakmers, size
 
         bool skip = true;
 		bool nts0[4] = {};
-		size_t nkmers = kmers.size();
-		vector<size_t> nnds;
+		uint64_t nkmers = kmers.size();
+		vector<uint64_t> nnds;
 		getOutNodes(g, node, nnds, nts0);
-		for (size_t nnd : nnds) {
+		for (uint64_t nnd : nnds) {
 			if (kmers[i] == nnd) { // matching node found
 				node = nnd;
 				skip = false;
@@ -562,23 +562,23 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& noncakmers, size
 				nskip += (nkmers - i);
 				return (nskip <= maxnskip ? (ncorrection ? 2 : 1) : 0);
 			}
-            size_t oldnt = kmers[i] % 4;
+            uint64_t oldnt = kmers[i] % 4;
 			thread_ext_t txt;
 			graph_triplet_t gnt3; // 3 consecutive nucleotides in the graph; 4x4x4 matrix
 
             if (correction and ncorrection < maxncorrection) {
 				bool nts1[4] = {};
 				bool nts2[4] = {};
-				for (size_t node_i : nnds) {
-					size_t nt0 = node_i % 4;
-					vector<size_t> nodes_ip1;
+				for (uint64_t node_i : nnds) {
+					uint64_t nt0 = node_i % 4;
+					vector<uint64_t> nodes_ip1;
 					getOutNodes(g, node_i, nodes_ip1, nts1);
-					for (size_t node_ip1 : nodes_ip1) {
-						size_t nt1 = node_ip1 % 4;
-						vector<size_t> nodes_ip2;
+					for (uint64_t node_ip1 : nodes_ip1) {
+						uint64_t nt1 = node_ip1 % 4;
+						vector<uint64_t> nodes_ip2;
 						getOutNodes(g, node_ip1, nodes_ip2, nts2);
-						for (size_t node_ip2 : nodes_ip2) {
-							size_t nt2 = node_ip2 % 4;
+						for (uint64_t node_ip2 : nodes_ip2) {
+							uint64_t nt2 = node_ip2 % 4;
 							gnt3.mat[nt0*4*4 + nt1*4 + nt2] = true;
 						}
 					}
@@ -586,12 +586,12 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& noncakmers, size
 				
 				// One mismatch: match at i+1 position
 				if (nts1[kmers[i+1] % 4]) {
-					for (size_t nt0 = 0; nt0 < 4; ++nt0) {
+					for (uint64_t nt0 = 0; nt0 < 4; ++nt0) {
 						if (not nts0[nt0]) { continue; }
-						size_t crkmer = kmers[i] - oldnt + nt0; // corrected read kmer
+						uint64_t crkmer = kmers[i] - oldnt + nt0; // corrected read kmer
 						bool nnts[4] = {}; // next nucleotides
 						gnt3.get_nnts(nt0, nnts);
-						for (size_t j = 1; j < std::min(ksize, nkmers-i); ++j) {
+						for (uint64_t j = 1; j < std::min(ksize, nkmers-i); ++j) {
 							crkmer = ((crkmer & mask) << 2) + kmers[i+j] % 4;
 							if (nnts[crkmer % 4]) {
 								++txt.nem1[nt0];
@@ -604,17 +604,17 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& noncakmers, size
 				}
 				// Two mismatches: match at i+2 position
 				else if (nts2[kmers[i+2] % 4]) {
-					for (size_t nt0 = 0; nt0 < 4; ++nt0) {
+					for (uint64_t nt0 = 0; nt0 < 4; ++nt0) {
 						if (not nts0[nt0]) { continue; }
-						size_t crkmer0 = kmers[i] - oldnt + nt0; // corrected read kmer at i+0 positionA
+						uint64_t crkmer0 = kmers[i] - oldnt + nt0; // corrected read kmer at i+0 positionA
 						bool nnt0[4] = {}; // next nucleotides for node_{i+0}
 						gnt3.get_nnts(nt0, nnt0);
-						for (size_t nt1 = 0; nt1 < 4; ++nt1) {
+						for (uint64_t nt1 = 0; nt1 < 4; ++nt1) {
 							if (not nnt0[nt1]) { continue; }
-							size_t crkmer1 = ((crkmer0 & mask) << 2) + nt1;
+							uint64_t crkmer1 = ((crkmer0 & mask) << 2) + nt1;
 							bool nnt1[4] = {}; // next nucleotides for node_{i+1}
 							gnt3.get_nnts(nt0, nt1, nnt1);
-							for (size_t j = 2; j < std::min(ksize+1, nkmers-i); ++j) {
+							for (uint64_t j = 2; j < std::min(ksize+1, nkmers-i); ++j) {
 								crkmer1 = ((crkmer1 & mask) << 2) + kmers[i+j] % 4;
 								if (nnt1[crkmer1 % 4]) {
 									++txt.nem2[nt0*4 + nt1];
@@ -628,12 +628,12 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& noncakmers, size
 				}
 				// 1 substitution + 1 insersion
 				if (nts1[kmers[i+2] % 4]) {
-					for (size_t nt0 = 0; nt0 < 4; ++nt0) {
+					for (uint64_t nt0 = 0; nt0 < 4; ++nt0) {
 						if (not nts0[nt0]) { continue; }
-						size_t crkmer = kmers[i] - oldnt + nt0;
+						uint64_t crkmer = kmers[i] - oldnt + nt0;
 						bool nnt0[4] = {};
 						gnt3.get_nnts(nt0, nnt0);
-						for (size_t j = 2; j < std::min(ksize+1, nkmers-i); ++j) {
+						for (uint64_t j = 2; j < std::min(ksize+1, nkmers-i); ++j) {
 							crkmer = ((crkmer & mask) << 2) + kmers[i+j] % 4;
 							if (nnt0[crkmer % 4]) {
 								++txt.nemi[nt0];
@@ -646,17 +646,17 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& noncakmers, size
 				}
 				// 1 substitution + 1 deletion
 				if (nts2[kmers[i+1] % 4]) {
-					for (size_t nt0 = 0; nt0 < 4; ++nt0) {
+					for (uint64_t nt0 = 0; nt0 < 4; ++nt0) {
 						if (not nts0[nt0]) { continue; }
-						size_t crkmer0 = kmers[i] - oldnt + nt0;
+						uint64_t crkmer0 = kmers[i] - oldnt + nt0;
 						bool nnt0[4] = {};
 						gnt3.get_nnts(nt0, nnt0);
-						for (size_t nt1 = 0; nt1 < 4; ++nt1) {
+						for (uint64_t nt1 = 0; nt1 < 4; ++nt1) {
 							if (not nnt0[nt1]) { continue; }
-							size_t crkmer1 = ((crkmer0 & mask) << 2) + nt1;
+							uint64_t crkmer1 = ((crkmer0 & mask) << 2) + nt1;
 							bool nnt1[4] = {};
 							gnt3.get_nnts(nt0, nt1, nnt1);
-							for (size_t j = 1; j < std::min(ksize, nkmers-i); ++j) {
+							for (uint64_t j = 1; j < std::min(ksize, nkmers-i); ++j) {
 								crkmer1 = ((crkmer1 & mask) << 2) + kmers[i+j] % 4;
 								if (nnt1[crkmer1 % 4]) {
 									++txt.nemd[nt0*4 + nt1];
@@ -670,9 +670,9 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& noncakmers, size
 				}
 				// 1 insertion
 				if (nts0[kmers[i+1] % 4]) {
-					size_t crkmer = kmers[i-1];
+					uint64_t crkmer = kmers[i-1];
 					bool nnt0[4] = {nts0[0], nts0[1], nts0[2], nts0[3]};
-					for (size_t j = 1; j < std::min(ksize, nkmers-i); ++j) {
+					for (uint64_t j = 1; j < std::min(ksize, nkmers-i); ++j) {
 						crkmer = ((crkmer & mask) << 2) + kmers[i+j] % 4;
 						if (nnt0[crkmer % 4]) {
 							++txt.nei1;
@@ -684,12 +684,12 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& noncakmers, size
 				}
 				// 1 deletion
 				if (nts1[kmers[i+0] % 4]) {
-					for (size_t nt0 = 0; nt0 < 4; ++nt0) {
+					for (uint64_t nt0 = 0; nt0 < 4; ++nt0) {
 						if (not nts0[nt0]) { continue; }
-						size_t crkmer = kmers[i] - oldnt + nt0;
+						uint64_t crkmer = kmers[i] - oldnt + nt0;
 						bool nnt0[4] = {};
 						gnt3.get_nnts(nt0, nnt0);
-						for (size_t j = 0; j < std::min(ksize-1, nkmers-i); ++j) {
+						for (uint64_t j = 0; j < std::min(ksize-1, nkmers-i); ++j) {
 							crkmer = ((crkmer & mask) << 2) + kmers[i+j] % 4;
 							if (nnt0[crkmer % 4]) {
 								++txt.ned1[nt0];
@@ -702,9 +702,9 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& noncakmers, size
 				}
 				// 2 insertions
 				if (nts0[kmers[i+2] % 4]) {
-					size_t crkmer = kmers[i-1];
+					uint64_t crkmer = kmers[i-1];
 					bool nnt0[4] = {nts0[0], nts0[1], nts0[2], nts0[3]};
-					for (size_t j = 2; j < std::min(ksize+1, nkmers-i); ++j) {
+					for (uint64_t j = 2; j < std::min(ksize+1, nkmers-i); ++j) {
 						crkmer = ((crkmer & mask) << 2) + kmers[i+j] % 4;
 						if (nnt0[crkmer % 4]) {
 							++txt.nei2;
@@ -716,17 +716,17 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& noncakmers, size
 				}
 				// 2 deletions
 				if (nts2[kmers[i+0] % 4]) {
-					for (size_t nt0 = 0; nt0 < 4; ++nt0) {
+					for (uint64_t nt0 = 0; nt0 < 4; ++nt0) {
 						if (not nts0[nt0]) { continue; }
-						size_t crkmer0 = kmers[i] - oldnt + nt0;
+						uint64_t crkmer0 = kmers[i] - oldnt + nt0;
 						bool nnt0[4] = {};
 						gnt3.get_nnts(nt0, nnt0);
-						for (size_t nt1 = 0; nt1 < 4; ++nt1) {
+						for (uint64_t nt1 = 0; nt1 < 4; ++nt1) {
 							if (not nnt0[nt1]) { continue; }
-							size_t crkmer1 = ((crkmer0 & mask) << 2) + nt1;
+							uint64_t crkmer1 = ((crkmer0 & mask) << 2) + nt1;
 							bool nnt1[4] = {};
 							gnt3.get_nnts(nt0, nt1, nnt1);
-							for (size_t j = 0; j < std::min(ksize-1, nkmers-i); ++j) {
+							for (uint64_t j = 0; j < std::min(ksize-1, nkmers-i); ++j) {
 								crkmer1 = ((crkmer1 & mask) << 2) + kmers[i+j] % 4;
 								if (nnt1[crkmer1 % 4]) {
 									++txt.ned2[nt0*4 + nt1];
@@ -760,8 +760,8 @@ int isThreadFeasible(GraphType& g, string& seq, vector<size_t>& noncakmers, size
     return (nskip <= maxnskip and ncorrection <= maxncorrection ? (ncorrection ? 2 : 1) : 0);
 }
 
-void writeExtractedReads(int extractFasta, vector<string>& seqs, vector<string>& titles, vector<size_t>& extractindices, vector<size_t>& assignedloci) {
-	for (size_t i = 0; i < extractindices.size(); ++i) {
+void writeExtractedReads(int extractFasta, vector<string>& seqs, vector<string>& titles, vector<uint64_t>& extractindices, vector<uint64_t>& assignedloci) {
+	for (uint64_t i = 0; i < extractindices.size(); ++i) {
 		if (extractFasta == 1) { cout << titles[--extractindices[i]] << '\n'; } 
 		else { cout << titles[--extractindices[i]] << ":" << assignedloci[i] << '\n'; }
 		cout << seqs[extractindices[i]] << '\n';
@@ -776,8 +776,8 @@ inline void writeOps(vector<char>& ops) {
 	for (char c : ops) { cout << c; }
 }
 
-void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<size_t>& alnindices, vector<EDIT>& sam) {
-	for (size_t i = 0; i < sam.size(); ++i) {
+void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<uint64_t>& alnindices, vector<EDIT>& sam) {
+	for (uint64_t i = 0; i < sam.size(); ++i) {
 		if (sam[i].map.first == -1ULL) { cout << '.' << '\t'; }
 		else { cout << sam[i].map.first << '\t'; }
 		cout << sam[i].map.second << '\t'
@@ -792,8 +792,8 @@ void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<size_t
 	}
 }
 
-void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<size_t>& destLoci, vector<size_t>& alnindices, vector<EDIT>& sam) {
-	for (size_t i = 0; i < sam.size(); ++i) {
+void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<uint64_t>& destLoci, vector<uint64_t>& alnindices, vector<EDIT>& sam) {
+	for (uint64_t i = 0; i < sam.size(); ++i) {
 		if (sam[i].map.first == -1ULL) { cout << '.' << '\t'; }
 		else { cout << sam[i].map.first << '\t'; }
 		cout << sam[i].map.second << '\t'
@@ -812,8 +812,8 @@ class Counts {
 public:
     bool interleaved, bait, threading, correction, aln, aln_minimal, g2pan, skip1;
     uint16_t Cthreshold, thread_cth;
-    size_t *nReads, *nThreadingReads, *nFeasibleReads, *nSubFiltered, *nKmerFiltered;
-    size_t nloci;
+    uint64_t *nReads, *nThreadingReads, *nFeasibleReads, *nSubFiltered, *nKmerFiltered;
+    uint64_t nloci;
     float Rthreshold;
 	unordered_map<string, string>* readDB;
 	kmerIndex_uint32_umap* kmerDBi;
@@ -825,17 +825,17 @@ public:
     int simmode;
     vector<msa_umap>* msaStats;
     err_umap* errdb;
-	vector<size_t>* locusmap;
+	vector<uint64_t>* locusmap;
     // extractFasta only
 	int extractFasta;
 
-    Counts(size_t nloci_) : nloci(nloci_) {}
+    Counts(uint64_t nloci_) : nloci(nloci_) {}
 };
 
 class Threads {
 public:
     vector<Counts> counts;
-    Threads(size_t nproc, size_t nloci) : counts(nproc, Counts(nloci)) {}
+    Threads(uint64_t nproc, uint64_t nloci) : counts(nproc, Counts(nloci)) {}
 };
 
 template <typename ValueType>
@@ -850,18 +850,18 @@ void CountWords(void *data) {
 	bool skip1 = ((Counts*)data)->skip1; // TODO new functionality: allow skipping step1 by reading assigned locus info from extracted reads
     int simmode = ((Counts*)data)->simmode;
     int extractFasta = ((Counts*)data)->extractFasta;
-    size_t nReads_ = 0, nShort_ = 0, nThreadingReads_ = 0, nFeasibleReads_ = 0, nSubFiltered_ = 0, nKmerFiltered_ = 0;
-    size_t& nReads = *((Counts*)data)->nReads;
-    size_t& nThreadingReads = *((Counts*)data)->nThreadingReads;
-    size_t& nFeasibleReads = *((Counts*)data)->nFeasibleReads;
-    size_t& nSubFiltered = *((Counts*)data)->nSubFiltered;
-    size_t& nKmerFiltered = *((Counts*)data)->nKmerFiltered;
+    uint64_t nReads_ = 0, nShort_ = 0, nThreadingReads_ = 0, nFeasibleReads_ = 0, nSubFiltered_ = 0, nKmerFiltered_ = 0;
+    uint64_t& nReads = *((Counts*)data)->nReads;
+    uint64_t& nThreadingReads = *((Counts*)data)->nThreadingReads;
+    uint64_t& nFeasibleReads = *((Counts*)data)->nFeasibleReads;
+    uint64_t& nSubFiltered = *((Counts*)data)->nSubFiltered;
+    uint64_t& nKmerFiltered = *((Counts*)data)->nKmerFiltered;
     uint16_t Cthreshold = ((Counts*)data)->Cthreshold;
     uint16_t thread_cth = ((Counts*)data)->thread_cth;
     float Rthreshold = ((Counts*)data)->Rthreshold;
-    const size_t nloci = ((Counts*)data)->nloci;
-    const size_t readsPerBatch = 300000;
-	const size_t minReadSize = Cthreshold + ksize - 1;
+    const uint64_t nloci = ((Counts*)data)->nloci;
+    const uint64_t readsPerBatch = 300000;
+	const uint64_t minReadSize = Cthreshold + ksize - 1;
     ifstream *in = ((Counts*)data)->in;
     unordered_map<string, string>& readDB = *((Counts*)data)->readDB;
     kmerIndex_uint32_umap& kmerDBi = *((Counts*)data)->kmerDBi;
@@ -871,30 +871,30 @@ void CountWords(void *data) {
     vector<msa_umap>& msaStats = *((Counts*)data)->msaStats;
     err_umap& errdb = *((Counts*)data)->errdb;
 	err_umap err;
-	vector<size_t>& locusmap = *((Counts*)data)->locusmap;
+	vector<uint64_t>& locusmap = *((Counts*)data)->locusmap;
 	vector<string> seqs(readsPerBatch);
 	vector<uint32_t> hits1(nloci+1,0), hits2(nloci+1,0);
 	// extractFasta only
 	vector<string> titles(readsPerBatch);
-	vector<size_t> destLoci(readsPerBatch/2);
+	vector<uint64_t> destLoci(readsPerBatch/2);
     // simmode only
     // loci: loci that are processed in this batch
     vector<ValueType> srcLoci;
-    vector<size_t> poss;
-    unordered_map<size_t, msa_umap> msa;
+    vector<uint64_t> poss;
+    unordered_map<uint64_t, msa_umap> msa;
 
     while (true) {
 
         string title, title1, seq, seq1;
         // for simmode only
         // locusReadi: map locus to nReads_. 0th item = number of reads for 0th item in loci; last item = nReads_; has same length as loci
-        size_t startpos;
-        vector<size_t> locusReadi;
-		vector<std::pair<int, size_t>> meta;
+        uint64_t startpos;
+        vector<uint64_t> locusReadi;
+		vector<std::pair<int, uint64_t>> meta;
         // extractFasta only
-        vector<size_t> extractindices, assignedloci;
+        vector<uint64_t> extractindices, assignedloci;
 		// aln only
-		vector<size_t> alnindices;
+		vector<uint64_t> alnindices;
 
         //
         // begin thread locking
@@ -972,19 +972,19 @@ void CountWords(void *data) {
         sem_post(semreader);
 
         time_t time2 = time(nullptr);
-        size_t seqi = 0;
-		size_t nhash0 = 0, nhash1 = 0;
-		size_t destLocus;
+        uint64_t seqi = 0;
+		uint64_t nhash0 = 0, nhash1 = 0;
+		uint64_t destLocus;
 		// aln only TODO define SAM structure
 		vector<EDIT> sam;
         // simmode only
-        size_t simi = 0;
+        uint64_t simi = 0;
         ValueType srcLocus = -1;
         if (simmode == 1) { srcLocus = srcLoci[simi]; }
 
         while (seqi < nReads_) {
 
-            vector<size_t> kmers1, kmers2;
+            vector<uint64_t> kmers1, kmers2;
 			vector<kmerIndex_uint32_umap::iterator> its1, its2;
             vector<PE_KMC> dup;
 
@@ -1031,7 +1031,7 @@ void CountWords(void *data) {
 				nThreadingReads_ += 2;
 
 				if (threading) {
-					vector<size_t> noncakmers0, noncakmers1;
+					vector<uint64_t> noncakmers0, noncakmers1;
 					feasibility0 = isThreadFeasible(graphDB[destLocus], seq, noncakmers0, thread_cth, correction, aln, edit.ops1, trResults[destLocus]);
 					feasibility1 = isThreadFeasible(graphDB[destLocus], seq1, noncakmers1, thread_cth, correction, aln, edit.ops2, trResults[destLocus]);
 					if (feasibility0 and feasibility1) {
@@ -1055,7 +1055,7 @@ void CountWords(void *data) {
 					}
 					else { // accumulate trKmers for output
 						if (not threading) {
-							for (size_t i = 0; i < its1.size(); ++i) {
+							for (uint64_t i = 0; i < its1.size(); ++i) {
 								auto it = trKmers.find(its1[i]->first);
 								if (it != trKmers.end()) { it->second += (dup[i].first + dup[i].second); }
 							}
@@ -1153,7 +1153,7 @@ int main(int argc, char* argv[]) {
     vector<string> args(argv, argv+argc);
     bool bait = false, aug = false, threading = false, correction = false, aln = false, aln_minimal=false, g2pan = false, skip1 = true, writeKmerName = false, interleaved;
     int simmode = 0, extractFasta = 0;
-    size_t argi = 1, trim = 0, thread_cth = 0, Cthreshold = 0, nproc;
+    uint64_t argi = 1, trim = 0, thread_cth = 0, Cthreshold = 0, nproc;
     float Rthreshold = 0.5;
     string trPrefix, trFname, fastxFname, outPrefix;
     ifstream fastxFile, trFile, augFile, baitFile, mapFile;
@@ -1254,7 +1254,7 @@ int main(int argc, char* argv[]) {
          << "query: " << trPrefix << ".(tr/ntr).kmers" << endl
          << endl
          << "total number of loci in " << trFname << ": ";
-    size_t nloci = countLoci(trFname);
+    uint64_t nloci = countLoci(trFname);
     cerr << nloci << endl;
 
 
@@ -1268,7 +1268,7 @@ int main(int argc, char* argv[]) {
 	unordered_map<string, string> readDB;
     vector<msa_umap> msaStats;
 	err_umap errdb;
-	vector<size_t> locusmap;
+	vector<uint64_t> locusmap;
 
 	if (extractFasta) { // step 1
 		readBinaryIndex(kmerDBi, kmerDBi_vv, trPrefix);
@@ -1290,8 +1290,8 @@ int main(int argc, char* argv[]) {
     cerr << "creating data for each process..." << endl;
     time1 = time(nullptr);
     Threads threaddata(nproc, nloci);
-    size_t nReads = 0, nThreadingReads = 0, nFeasibleReads = 0, nSubFiltered = 0, nKmerFiltered = 0;
-    for (size_t i = 0; i < nproc; ++i) {
+    uint64_t nReads = 0, nThreadingReads = 0, nFeasibleReads = 0, nSubFiltered = 0, nKmerFiltered = 0;
+    for (uint64_t i = 0; i < nproc; ++i) {
         Counts &counts = threaddata.counts[i];
 
         counts.in = &fastxFile;
@@ -1357,18 +1357,18 @@ int main(int argc, char* argv[]) {
 
     pthread_attr_t *threadAttr = new pthread_attr_t[nproc];
 
-    for (size_t t = 0; t < nproc; ++t) {
+    for (uint64_t t = 0; t < nproc; ++t) {
         pthread_attr_init(&threadAttr[t]);
     }
     pthread_t *threads = new pthread_t[nproc];
 
     // start computing
-    for (size_t t = 0; t < nproc; ++t) {
-		pthread_create(&threads[t], &threadAttr[t], (void* (*)(void*))CountWords<size_t>, &threaddata.counts[t]);
+    for (uint64_t t = 0; t < nproc; ++t) {
+		pthread_create(&threads[t], &threadAttr[t], (void* (*)(void*))CountWords<uint64_t>, &threaddata.counts[t]);
     }
     cerr << "threads created" << endl;
  
-    for (size_t t = 0; t < nproc; ++t) {
+    for (uint64_t t = 0; t < nproc; ++t) {
         pthread_join(threads[t], NULL);
     }
 	//ProfilerFlush();
