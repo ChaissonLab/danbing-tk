@@ -22,11 +22,11 @@ bin/danbing-tk_g:	src/aQueryFasta_thread.cpp
 
 bin/danbing-tk-pred:	src/pred.cpp
 	$(dir_guard)
-	$(CXX) $(LDFLAGS) -O3 -I. -o bin/danbing-tk-pred src/pred.cpp
+	$(CXX) $(LDFLAGS) -O3 -I. -I./src -o bin/danbing-tk-pred src/pred.cpp
 
 bin/danbing-tk-pred_g:	src/pred.cpp
 	$(dir_guard)
-	$(CXX) -g $(LDFLAGS) -I. -o bin/danbing-tk-pred_g src/pred.cpp
+	$(CXX) -g $(LDFLAGS) -I./src -o bin/danbing-tk-pred_g src/pred.cpp
 
 bin/ktools:	src/kmertools.cpp
 	$(dir_guard)
