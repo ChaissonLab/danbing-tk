@@ -24,7 +24,7 @@ The latest release [v1.3.1-manuscript](https://github.com/ChaissonLab/danbing-tk
 ## Building on Linux
 ```shell
 git clone https://github.com/ChaissonLab/danbing-tk
-cd danbing-tk && make
+cd danbing-tk && make -j 4
 ```
 
 ## danbing-tk align
