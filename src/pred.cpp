@@ -20,10 +20,8 @@ int main(int argc, char* argv[]) {
 		     << "  col1: *.tr.kmers file name" << endl
 		     << "  col2: read depth" << endl
 		     << "INPUT2: invariant kmers of an RPGG build" << endl
-		     << "OUTPUT1: bias-corrected genotype matrix" << endl
-		     << "OUTPUT2: bias matrix" << endl
-             << "Options:" << endl
-             << "  -v <INT>         Verbosity: 0-3. Default: 0." << endl
+		     << "OUTPUT1: bias-corrected genotype matrix. Row: sample. Column: kmer." << endl
+		     << "OUTPUT2: bias matrix. Row: sample. Column: TR locus." << endl
 		     << endl;
 		return 0;
 	}
