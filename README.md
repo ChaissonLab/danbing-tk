@@ -111,11 +111,11 @@ Submitting jobs to cluster is preferred as `danbing-tk build` is compute-intensi
 ## danbing-tk predict
 Locus- and sample-specific biases are critical for normalizing the sum of *k*-mer counts to VNTR dosage (as a proxy for predicted length) and normalizing the average of *k*-mer counts to motif dosage. The bias for each locus in each sample is computed from the deviation of local read depth from the global mean given a set of *invariant k-mers*. Examples of this analysis can be found [here](https://github.com/ChaissonLab/eMotif_manuscript_analysis_scripts/tree/main/bias_correction) 
 
-Automated bias correction has been added since v1.3.2. Invariant *k*-mer metadata `ikmer.little.meta` (human readable version `ikmer.little.meta.txt`) and example `trkmers.meta.txt` can be found [here](). 
+Automated bias correction has been added since v1.3.2. Invariant *k*-mer metadata `ikmer.meta` (human readable version `ikmer.meta.txt`) and example `trkmers.meta.txt` can be found [here](). 
 
 Example usage:
 ```
-danbing-tk-pred trkmers.meta.txt ikmer.little.meta corrected.gt.tsv bias.tsv
+/$PREFIX/danbing-tk/bin/danbing-tk-pred trkmers.meta.txt ikmer.little.meta corrected.gt.tsv bias.tsv
 ```
 
 Caveat: Estimated *k*-mer dosage could be inaccurate if the bias term is too close to zero.
