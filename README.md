@@ -133,7 +133,7 @@ Submitting jobs to cluster is preferred as this analysis is compute-intensive; o
 
 
 ## File Format
-- \*.graph.kmers
+### \*.graph.kmers
 ```
 >locus i
 kmer0	out_edges0
@@ -144,7 +144,7 @@ kmer1	out_edges1
 ```
 `out_edges` denotes the presence of T/G/C/A as the next nucleotide encoded with 4 bits.
 
-- \*.(tr|ntr).kmers
+### \*.(tr|ntr).kmers
 ```
 >locus i
 kmer0	kmer_count0
@@ -157,18 +157,18 @@ The second field is optional.
 
 **Important Note**: the output of `danbing-tk align` do not contain locus info and the first field for minimal disk usage. The table can be reconstructed using the `danbing_aln_output.tr_kmers.metadata.txt.gz` from `metadata.tar.gz` on [Zenodo](https://sandbox.zenodo.org/record/1169833#.ZAo3FNLMKEJ)
 
-- Alignment output (`-a` option)
-	- Synopsis
-		```
-		<src> <dest> <read_name/0> <read_seq/0> <ops/0> <read_name/1> <read_seq/1> <ops/1>
-		```
-	- `src`: source locus of a read pair (for simulation only)
-	- `dest`: aligned locus for the read pair
-	- `ops`: operations to align the read to the graph
-		- `=`: a match in the repeat
-		- `.`: a match in the flank
-		- `[A|C|G|T]`: a mismatch; letter in the graph is shown
-		- `[0|1|2|3]`: a deletion; letter in the graph is shown as 0123 for ACGT, respectively.
-		- `I`: an insertion in the read
-		- `H`: a nucleotide in the homopolymer run
-		- `*`: unalinged nucleotide
+### Alignment output (`-a` option)
+- Synopsis
+	```
+	<src> <dest> <read_name/0> <read_seq/0> <ops/0> <read_name/1> <read_seq/1> <ops/1>
+	```
+- `src`: source locus of a read pair (for simulation only)
+- `dest`: aligned locus for the read pair
+- `ops`: operations to align the read to the graph
+	- `=`: a match in the repeat
+	- `.`: a match in the flank
+	- `[A|C|G|T]`: a mismatch; letter in the graph is shown
+	- `[0|1|2|3]`: a deletion; letter in the graph is shown as 0123 for ACGT, respectively.
+	- `I`: an insertion in the read
+	- `H`: a nucleotide in the homopolymer run
+	- `*`: unalinged nucleotide
