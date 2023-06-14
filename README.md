@@ -44,7 +44,7 @@ samtools fasta -@2 -n $SRS.bam |
 
 ## danbing-tk build
 ### Install Dependencies
-For users intend to use `danbing-tk align` or the [Scenario 1](#scenario-1:-building-an-rpgg-for-a-single-tr-locus-given-vntr-alleles) of `danbing-tk build`, this step is not required.
+For users intend to use `danbing-tk align` or the [Scenario 1](#scenario-1-building-an-rpgg-for-a-single-tr-locus-given-vntr-alleles) of `danbing-tk build`, this step is not required.
 
 The `danbing-tk build` pipeline and `danbing-tk predict` require several external packages. It is recommended to install all requirements using conda as follows:
 
