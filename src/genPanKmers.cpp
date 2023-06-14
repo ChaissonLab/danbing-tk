@@ -149,9 +149,9 @@ int main(int argc, const char * argv[]) {
 
         cerr << "writing " << filetype << ".kmers" << endl;
         if (graphmode) { 
-			writeKmers(outpref+"."+filetype, graphDB);
+			writeKmersWithName(outpref+"."+filetype, graphDB);
 		} else { 
-			writeKmers(outpref+"."+filetype, kmersDB);
+			writeKmersWithName(outpref+"."+filetype, kmersDB);
 		}
     }
     
