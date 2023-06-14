@@ -61,12 +61,10 @@ conda create -n $MY_ENVIRONMENT -c conda-forge -c bioconda -c intel \
     scikit-learn=0.23.1 statsmodels=0.12.1 pysam=0.15.3
 ```
 
-To check if everything is configured properly:
+To check if everything is configured properly (tested on v1.3.2):
 1. Go to `/$PREFIX/danbing-tk/test/`
 2. Replace `$PREFIX` in `goodPanGenomeGraph.json` and `input/genome.bam.tsv` with the path to danbing-tk
 3. Run `snakemake -p -s ../pipeline/GoodPanGenomeGraph.snakefile -j 4 --rerun-incomplete --output-wait 3`
-
-Tested on v1.0. 
 
 
 ### Running danbing-tk build
