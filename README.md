@@ -5,7 +5,7 @@ A toolkit for variable number tandem repeats (VNTRs) analysis, which enables:
 3. estimating VNTR or motif dosage from the genotype with bias correction (referred to as `danbing-tk predict`).
 
 Our [initial manuscript](https://www.nature.com/articles/s41467-021-24378-0) illustrates the key concept of this tool.
-The [latest update](https://www.biorxiv.org/content/10.1101/2022.03.17.484784v2) details improvements on QC and bias correction, and extended applications on eQTL discoveries with motif compositions.
+The [latest update](https://genome.cshlp.org/content/33/4/511) details improvements on QC and bias correction, and extended applications on eQTL discoveries with motif compositions.
 
 
 ## Download Releases
