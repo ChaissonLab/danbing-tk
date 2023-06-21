@@ -4,8 +4,9 @@ TARGETSg = bin/danbing-tk_g bin/vntr2kmers_thread_g bin/genPanKmers_g bin/ktools
 #TARGETS = aQueryFasta amphQueryFasta vntr2kmers kmer2dot seq2num num2seq rvseq bam2pe
 
 CXX = g++ -std=c++11
-LDFLAGS = -pthread
-dir_guard=@mkdir -p $(@D)
+LDLIBS = -pthread
+dir_guard = @mkdir -p $(@D)
+CPPFLAGS = -I ./cereal/include -I ./Eigen
 
 all: $(TARGETS)
 allg: $(TARGETS) $(TARGETSg)
@@ -14,43 +15,43 @@ allg: $(TARGETS) $(TARGETSg)
 # dependencies between programs and .o files
 bin/danbing-tk:	src/aQueryFasta_thread.cpp
 	$(dir_guard)
-	$(CXX) $(LDFLAGS) -O3 -I. -o bin/danbing-tk src/aQueryFasta_thread.cpp
+	$(CXX) $(LDLIBS) $(CPPFLAGS) -O3 -o bin/danbing-tk src/aQueryFasta_thread.cpp
 
 bin/danbing-tk_g:	src/aQueryFasta_thread.cpp
 	$(dir_guard)
-	$(CXX) -g $(LDFLAGS) -I. -o bin/danbing-tk_g src/aQueryFasta_thread.cpp
+	$(CXX) $(LDLIBS) $(CPPFLAGS) -g -o bin/danbing-tk_g src/aQueryFasta_thread.cpp
 
 bin/danbing-tk-pred:	src/pred.cpp
 	$(dir_guard)
-	$(CXX) $(LDFLAGS) -O3 -I. -I./src -o bin/danbing-tk-pred src/pred.cpp
+	$(CXX) $(CPPFLAGS) -O3 -o bin/danbing-tk-pred src/pred.cpp
 
 bin/danbing-tk-pred_g:	src/pred.cpp
 	$(dir_guard)
-	$(CXX) -g $(LDFLAGS) -I./src -o bin/danbing-tk-pred_g src/pred.cpp
+	$(CXX) $(CPPFLAGS) -g -o bin/danbing-tk-pred_g src/pred.cpp
 
 bin/ktools:	src/kmertools.cpp
 	$(dir_guard)
-	$(CXX) -O3 -I. -o bin/ktools src/kmertools.cpp
+	$(CXX) $(CPPFLAGS) -O3 -o bin/ktools src/kmertools.cpp
 
 bin/ktools_g:	src/kmertools.cpp
 	$(dir_guard)
-	$(CXX) -g -I. -o bin/ktools_g src/kmertools.cpp
+	$(CXX) $(CPPFLAGS) -g -o bin/ktools_g src/kmertools.cpp
 
 bin/vntr2kmers_thread:	src/VNTR2kmers_thread.cpp
 	$(dir_guard)
-	$(CXX) -O3 -I. -o bin/vntr2kmers_thread src/VNTR2kmers_thread.cpp
+	$(CXX) $(CPPFLAGS) -O3 -o bin/vntr2kmers_thread src/VNTR2kmers_thread.cpp
 
 bin/vntr2kmers_thread_g:	src/VNTR2kmers_thread.cpp
 	$(dir_guard)
-	$(CXX) -g -I. -o bin/vntr2kmers_thread_g src/VNTR2kmers_thread.cpp
+	$(CXX) $(CPPFLAGS) -g -o bin/vntr2kmers_thread_g src/VNTR2kmers_thread.cpp
 
 bin/genPanKmers:	src/genPanKmers.cpp
 	$(dir_guard)
-	$(CXX) -O3 -I. -o bin/genPanKmers src/genPanKmers.cpp
+	$(CXX) $(CPPFLAGS) -O3 -o bin/genPanKmers src/genPanKmers.cpp
 
 bin/genPanKmers_g:	src/genPanKmers.cpp
 	$(dir_guard)
-	$(CXX) -g -I. -o bin/genPanKmers_g src/genPanKmers.cpp
+	$(CXX) $(CPPFLAGS) -g -o bin/genPanKmers_g src/genPanKmers.cpp
 
 bin/seq2num:	src/seq2num.cpp
 	$(dir_guard)
