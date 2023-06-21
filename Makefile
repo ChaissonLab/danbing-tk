@@ -4,7 +4,7 @@ TARGETSg = bin/danbing-tk_g bin/vntr2kmers_thread_g bin/genPanKmers_g bin/ktools
 #TARGETS = aQueryFasta amphQueryFasta vntr2kmers kmer2dot seq2num num2seq rvseq bam2pe
 
 CXX = g++ -std=c++11
-LDFLAGS = -lpthread
+LDFLAGS = -pthread
 dir_guard=@mkdir -p $(@D)
 
 all: $(TARGETS)
