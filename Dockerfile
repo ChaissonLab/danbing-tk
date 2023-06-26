@@ -1,10 +1,16 @@
 FROM ubuntu:20.04
 
-RUN apt-get update && apt-get install -y apt-transport-https ca-certificates gnupg curl sudo && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list && curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key --keyring /usr/share/keyrings/cloud.google.gpg add - && apt-get update && sudo apt-get install google-cloud-cli libz-dev libncurses5-dev libbz2-dev liblzma-dev libssl-dev make gcc g++ autoconf
+RUN apt-get update && \
+  apt-get install -y --no-install-recommends apt-transport-https ca-certificates gnupg curl sudo && \
+  echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list && \
+  curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key --keyring /usr/share/keyrings/cloud.google.gpg add - && \
+  apt-get update && \
+  apt-get install -y --no-install-recommends google-cloud-cli libz-dev libncurses5-dev libbz2-dev liblzma-dev libssl-dev make gcc g++ autoconf && \
+  apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt
 
-COPY ../danbing-tk .
+COPY danbing-tk ./danbing-tk
 
 COPY samtools-1.17.tar.bz2 .
 
@@ -17,4 +23,4 @@ RUN bunzip2 samtools-1.17.tar.bz2 && \
 RUN cd danbing-tk && \
   make -j 5 && \
   cp bin/* /usr/local/bin/ && \
-  cd .. && rm -r danbing-tk
+  cd .. && rm -rf danbing-tk
