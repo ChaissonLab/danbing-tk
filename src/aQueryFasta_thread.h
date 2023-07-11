@@ -243,16 +243,17 @@ void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank 
     size_t beg, nbeg, canonicalkmer, kmer, rckmer;
 
     beg = getNextKmer(kmer, leftflank, read, k);
-    if (beg == rlen){ return; }
+    if (beg == rlen) { return; }
+	if (keepN) { kmers.resize(rlen-k+1, -1); }
     rckmer = getNuRC(kmer, k);
 
-    for (size_t i = beg; i < rlen - k - rightflank + 1; ++i){
+    for (size_t i = beg; i < rlen - k - rightflank + 1; ++i) {
         canonicalkmer = (kmer > rckmer ? rckmer : kmer);
-        kmers.push_back(canonical ? canonicalkmer : kmer); // XXX speedup; resize not push_back
+		if (keepN) { kmers[i] = canonical ? canonicalkmer : kmer; }
+        else { kmers.push_back(canonical ? canonicalkmer : kmer); }
 
-        if (std::find(alphabet, alphabet+4, read[i + k]) == alphabet+4){ // XXX speedup
+        if (std::find(alphabet, alphabet+4, read[i + k]) == alphabet+4) { // XXX speedup
             nbeg = getNextKmer(kmer, i+k+1, read, k);
-			if (keepN) { for (size_t j = i+1; j < std::min(nbeg, rlen-k-rightflank+1); ++j) { kmers.push_back(-1); } } // XXX test
             if (nbeg == rlen) { return; }
             rckmer = getNuRC(kmer, k);
             i = nbeg - 1;

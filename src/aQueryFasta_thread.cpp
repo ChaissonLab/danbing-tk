@@ -606,7 +606,7 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ui
 				else if (nts2[kmers[i+2] % 4]) {
 					for (uint64_t nt0 = 0; nt0 < 4; ++nt0) {
 						if (not nts0[nt0]) { continue; }
-						uint64_t crkmer0 = kmers[i] - oldnt + nt0; // corrected read kmer at i+0 positionA
+						uint64_t crkmer0 = kmers[i] - oldnt + nt0; // corrected read kmer at i+0 position
 						bool nnt0[4] = {}; // next nucleotides for node_{i+0}
 						gnt3.get_nnts(nt0, nnt0);
 						for (uint64_t nt1 = 0; nt1 < 4; ++nt1) {
