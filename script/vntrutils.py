@@ -187,6 +187,37 @@ def read2kmers(read, k, leftflank=0, rightflank=0, dtype='uint64', canonical=Tru
 
     return kmers
 
+def read2kmers_noshift(read, k, leftflank=0, rightflank=0, dtype='uint64', canonical=True):
+    """
+    will return max_val_of_uint64 (-1) if there's 'N' within kmer
+    """
+    rlen = len(read)
+    if rlen - k - leftflank - rightflank + 1 <= 0: return np.array([])
+
+    mask = (1 << 2*(k-1)) - 1
+    kmers = np.zeros(rlen-k-leftflank-rightflank+1, dtype=dtype) - 1
+
+    beg, kmer = getNextKmer(leftflank, read, k)
+    if beg == rlen: return kmers
+    rckmer = getRCkmer(kmer, k)
+
+    it = iter(range(beg, rlen-k-rightflank+1))
+    for i in it:
+        canonicalkmer = rckmer if kmer > rckmer else kmer
+        kmers[i] = canonicalkmer if canonical else kmer
+
+        if i + k >= rlen: return kmers
+        if read[i + k] not in baseinv:
+            nbeg, kmer = getNextKmer(i+k+1, read, k)
+            rckmer = getRCkmer(kmer, k)
+            for j in range(nbeg-i-1):
+                next(it, None)
+        else:
+            kmer = ((kmer & mask) << 2) + base[read[i + k]]
+            rckmer = (rckmer >> 2) + (3-base[read[i+k]] << 2*(k-1))
+
+    return kmers
+
 
 def writeKmerDict(fname, kmerDB, precision=0):
     with open(fname+".kmers", 'w') as f:
@@ -387,7 +418,7 @@ def readFasta(fname, nloci=0):
                 seq = ''
                 locus += 1
             else:
-                seq = line.rstrip()
+                seq += line.rstrip()
         else:
             seqDB[locus] = seq
 
@@ -610,8 +641,8 @@ def plotCrossContamination(ctg0, ctg1, ksize=21, FS=700, ax=None, zoomoutsize=(0
 
     relpos0 = (start0, end0-ksize+1)
     relpos1 = (start1, end1-ksize+1)
-    kmers0 = read2kmers(ctg0, ksize, leftflank=-zoomoutsize[0]+offset[0], rightflank=-zoomoutsize[0]-offset[0])
-    kmers1 = read2kmers(ctg1, ksize, leftflank=-zoomoutsize[1]+offset[1], rightflank=-zoomoutsize[1]-offset[1])
+    kmers0 = read2kmers_noshift(ctg0, ksize, leftflank=-zoomoutsize[0]+offset[0], rightflank=-zoomoutsize[0]-offset[0])
+    kmers1 = read2kmers_noshift(ctg1, ksize, leftflank=-zoomoutsize[1]+offset[1], rightflank=-zoomoutsize[1]-offset[1])
     cokmers = (set(kmers0) & set(kmers1)) - set([0xffffffffffffffff])
     cokmersi = getcokmersindex(cokmers, kmers0, kmers1)
 
