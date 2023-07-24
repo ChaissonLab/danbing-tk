@@ -7,7 +7,7 @@ srcdir = config["srcDir"]
 indir = config["inputDir"]
 outdir = config["outputDir"]
 
-prune = config["pruning"] == "True"
+prune = config["pruning"]
 gbpair = np.loadtxt(config["pairs"], dtype=object, ndmin=2)
 genomes = gbpair[:,0].tolist()
 bams = dict(gbpair) if prune else None
@@ -103,7 +103,7 @@ def getMem():
     if aligner == "lra":
         return 60
     else:
-        return 40
+        return 25
 
 rule MapAsm2Ref:
     input:
@@ -111,7 +111,7 @@ rule MapAsm2Ref:
     output:
         faAln = outdir + "{genome}.{hap}.aln.foo",
     resources:
-        cores = 16,
+        cores = 4,
         mem = lambda wildcards, attempt: getMem() + 20*(attempt-1),
     params:
         name = "MapAsm2Ref",
@@ -131,7 +131,7 @@ if [[ {params.aligner} == "lra" ]]; then
 	samtools index -@3 {params.faBam}
 	touch {output.faAln}
 elif [[ {params.aligner} == "minimap2" ]]; then
-	minimap2 {input.fa} {params.ref} -t $(({resources.cores}-1)) -x asm5 -L -c --cs=long -o {params.faPaf}
+	minimap2 {input.fa} {params.ref} -t {resources.cores} -x asm5 -L -c --cs=long -o {params.faPaf}
 	touch {output.faAln}
 else
 	echo "Invalid AsmAligner: {params.aligner}"
@@ -309,7 +309,10 @@ rule GenRawGenomeGraph:
 set -eu
 ulimit -c 20000
 cd {params.od}
-module load gcc
+type module &>/dev/null
+if [ $? == 0 ]; then
+    module load gcc
+fi
 
 {params.sd}/bin/vntr2kmers_thread -g -m <(cut -f $(({params.hi}+1)),$(({params.hi}+2)) {input.mapping}) -k {params.ksize} -fs {params.FS} -ntr {params.FS} -on {wildcards.genome}.rawPB -fa 2 {input.TRfa}
 
