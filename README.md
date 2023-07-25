@@ -49,22 +49,15 @@ For users intend to use `danbing-tk align` or the [Scenario 1](#scenario-1-build
 The `danbing-tk build` pipeline and `danbing-tk predict` require several external packages. It is recommended to install all requirements using conda as follows:
 
 ```bash
-conda install -c conda-forge -c bioconda -c intel \
-    snakemake=5.11.2 samtools=1.10 bedtools=2.29.2 minimap2=2.17 \
-    scikit-learn=0.23.1 statsmodels=0.12.1 pysam=0.15.3
-```
-
-If the requirements are in conflict with existing packages, create a new environment specifically for danbing-tk with:
-```
-conda create -n $MY_ENVIRONMENT -c conda-forge -c bioconda -c intel \
-    snakemake=5.11.2 samtools=1.10 bedtools=2.29.2 minimap2=2.17 \
-    scikit-learn=0.23.1 statsmodels=0.12.1 pysam=0.15.3
+conda create -n $MY_ENVIRONMENT -c conda-forge -c bioconda \
+    python=3.11.4 snakemake=7.30.1 minimap2=2.26 samtools=1.17 bedtools=2.31.0 statsmodels=0.14.0 matplotlib=3.7.2
+conda activate $MY_ENVIRONMENT
 ```
 
 To check if everything is configured properly (tested on v1.3.2):
 1. Go to `/$PREFIX/danbing-tk/test/`
 2. Replace `$PREFIX` in `goodPanGenomeGraph.json` and `input/genome.bam.tsv` with the path to danbing-tk
-3. Run `snakemake -p -s ../pipeline/GoodPanGenomeGraph.snakefile -j 4 --rerun-incomplete --output-wait 3`
+3. Run `snakemake -p -s ../pipeline/GoodPanGenomeGraph.snakefile -j 4 --forceall --output-wait 3`
 
 
 ### Running danbing-tk build
