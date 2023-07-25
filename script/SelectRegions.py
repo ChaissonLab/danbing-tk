@@ -1,14 +1,13 @@
 #!/usr/bin/env python
-import pysam
 import sys
+import vntrutils as vu
 
 if len(sys.argv) != 4:
     print("usage: program region.bed fasta region.fasta")
     sys.exit(1)
 
 bedFile=open(sys.argv[1])
-#asmFile=open(sys.argv[2])
-asm = pysam.FastaFile(sys.argv[2])
+fa = vu.Fasta(sys.argv[2])
 outFile=open(sys.argv[3],'w')
 
 
@@ -22,9 +21,9 @@ for line in bedFile:
         print("valError:\t", vals, file=sys.stderr)
         continue
     else:
-#        sys.stderr.write("/".join(vals[0:3])+"\n")
-        seq = asm.fetch(vals[0], int(vals[1]), int(vals[2]))
+        seq = fa.get_seq(vals[0], int(vals[1]), int(vals[2])).upper()
         outFile.write(seq + "\n")
+fa.close()
 
 
 

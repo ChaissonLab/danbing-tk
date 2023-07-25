@@ -706,3 +706,28 @@ def visPairedRepeat(seq1, seq2, ksize=21, figsize=(15,4), dpi=100, silent=False,
         plotCrossContamination(pair[0], pair[1], ksize=ksize, ax=axes[i], zoomoutsize=(0,0), offset=(0,0),
                                silent=silent, showcontam=showcontam, reportcontam=reportcontam, size=size, FS=FS)
     plt.show(); plt.close()
+
+
+class Fasta:
+    def __init__(self, fa):
+        self.fa = open(fa, 'rb')
+        self.fai = np.loadtxt(f"{fa}.fai", comments="!", dtype=object, ndmin=2)
+        self.ch2i = {}
+        for i, ch in enumerate(self.fai[:,0]):
+            self.ch2i[ch] = i
+        self.Lsw = self.fai[:,1:4].astype(int)
+        self.fai = None
+
+    def get_seq(self, ch, si, ei):
+        i = self.ch2i[ch]
+        L, s, w = self.Lsw[i]
+        e = s + (L-1)//w + L
+        i0 = s + si//w + si
+        i1 = s + ei//w + ei
+        assert si > 0 and ei >= si and i1 <= e
+        self.fa.seek(i0, 0)
+        return self.fa.read(i1-i0).decode("utf-8").replace("\n","")
+
+    def close(self):
+        self.fa.close()
+
