@@ -309,8 +309,8 @@ rule GenRawGenomeGraph:
 set -eu
 ulimit -c 20000
 cd {params.od}
-type module &>/dev/null
-if [ $? == 0 ]; then
+{ type module &>/dev/null ; val="$?"; } || true
+if [ $val == 0 ]; then
     module load gcc
 fi
 
