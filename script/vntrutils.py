@@ -158,6 +158,9 @@ def buildNuKmers(read, k, leftflank=0, rightflank=0, count=True):
 
 def read2kmers(read, k, leftflank=0, rightflank=0, dtype='uint64', canonical=True):
     """
+    CAUTION: 
+      - this function should be avoided and only used for certain visualization
+      - the output kmers vector shifts index if a tract of kmers at the beginning contains N
     will return max_val_of_uint64 (-1) if there's 'N' within kmer
     """
     rlen = len(read)
@@ -204,7 +207,7 @@ def read2kmers_noshift(read, k, leftflank=0, rightflank=0, dtype='uint64', canon
     it = iter(range(beg, rlen-k-rightflank+1))
     for i in it:
         canonicalkmer = rckmer if kmer > rckmer else kmer
-        kmers[i] = canonicalkmer if canonical else kmer
+        kmers[i-leftflank] = canonicalkmer if canonical else kmer
 
         if i + k >= rlen: return kmers
         if read[i + k] not in baseinv:

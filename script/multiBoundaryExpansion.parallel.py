@@ -3,10 +3,12 @@
 import os
 import sys
 import numpy as np
-from vntrutils import read2kmers
+from vntrutils import read2kmers_noshift
 import pickle
 from multiprocessing import Pool, Lock, Manager
 from time import sleep
+
+INVALID_KMER = 0xffffffffffffffff
 
 class expStat:
     def __init__(self, exp, fail, es, opos, npos):
@@ -77,15 +79,16 @@ def multipleBoundaryExpansion(seqs, poss, idx, ibeg, UB, ksize=21):
     for hi in vi:
         seq = seqs[hi]
         s, e = npos[hi]
-        tmp = read2kmers(seq, ksize, leftflank=s, rightflank=len(seq)-e)
+        tmp = read2kmers_noshift(seq, ksize, leftflank=s, rightflank=len(seq)-e)
         for kmer in tmp: # TR
-            trs.add(kmer)
+            if kmer != INVALID_KMER:
+                trs.add(kmer)
     
     # seq,dt can have distinct orientations
     # force kmers/noise to have the same orientation
     exp = False
     dt = np.zeros([nh,2], dtype=int) + FS # hap, delta start/end; initialized with flanksize
-    kmers = np.full([nh, 2, FS], -1, dtype=int)
+    kmers = np.full([nh, 2, FS], -1, dtype='uint64')
     fail = [False]*nh
     while True:
         noise = np.zeros([nh,2,FS], dtype=int) # hap, left/right flank, flank pos 
@@ -140,11 +143,13 @@ def multipleBoundaryExpansion(seqs, poss, idx, ibeg, UB, ksize=21):
                 if np.any(noise[hi,0]):
                     dt[hi,0] = FS - np.nonzero(noise[hi,0])[0][0]
                     for kmer in kmers[hi,0,-dt[hi,0]:]:
-                        trs.add(kmer)
+                        if kmer != INVALID_KMER:
+                            trs.add(kmer)
                 if np.any(noise[hi,1]):
                     dt[hi,1] = np.nonzero(noise[hi,1])[0][-1] + 1
                     for kmer in kmers[hi,1,:dt[hi,1]]:
-                        trs.add(kmer)
+                        if kmer != INVALID_KMER:
+                            trs.add(kmer)
                 #if inv:
                 #    dt = dt[:,::-1]
                 if np.any(noise[hi]):
