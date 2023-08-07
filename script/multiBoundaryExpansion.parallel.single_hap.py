@@ -191,6 +191,7 @@ def writeBed_BE():
 if __name__ == "__main__":
     if len(sys.argv) != 8:
         print("Usage: PROGRAM  bed  fasta  sample_name  kmer_size  flank_size  TR_window  n_process")
+        print("Output will be written to [sample_name].be.bed")
         exit()
     print("Loading data", flush=True)
     BED = np.loadtxt(sys.argv[1], dtype=object, ndmin=2, comments=None)
