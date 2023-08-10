@@ -108,9 +108,9 @@ const unsigned char byteRC[]   = {
   80,  16, 192, 128,  64,   0};
 
 
-string decodeNumericSeq(size_t num, size_t k){
+string decodeNumericSeq(size_t num, size_t k) {
     string seq = "";
-    for (size_t i = 0; i < k; ++i){
+    for (size_t i = 0; i < k; ++i) {
         seq = baseNumConversion[num % 4] + seq;
         num >>= 2;
     }
@@ -119,23 +119,23 @@ string decodeNumericSeq(size_t num, size_t k){
     
 size_t encodeSeq(string& seq, size_t start, size_t k) { // no extra copy
     size_t numericSeq = 0;
-    for (size_t i = start; i < start+k; ++i){
+    for (size_t i = start; i < start+k; ++i) {
         numericSeq = (numericSeq<<2) + baseNumConversion[seq[i]];
     }
     return numericSeq;
 }
 
-size_t getNextKmer(size_t& kmer, size_t beg, string& read, size_t k){
+size_t getNextKmer(size_t& kmer, size_t beg, string& read, size_t k) {
     size_t rlen = read.size();
-    if (beg + k > rlen){
+    if (beg + k > rlen) {
         return rlen;
     }
     size_t validlen = 0;
-    while (validlen != k){
-        if (beg + k > rlen){
+    while (validlen != k) {
+        if (beg + k > rlen) {
             return rlen;
         }
-        if (find(alphabet, alphabet+4, read[beg + validlen]) == alphabet+4){
+        if (find(alphabet, alphabet+4, read[beg + validlen]) == alphabet+4) {
             beg = beg + validlen + 1;
             validlen = 0;
         } else {
@@ -183,10 +183,10 @@ void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t
     size_t beg, nbeg, canonicalkmer, kmer, rckmer;
 
     beg = getNextKmer(kmer, leftflank, read, k);
-    if (beg == rlen){ return; }
+    if (beg == rlen) { return; }
     rckmer = getNuRC(kmer, k);
  
-    for (size_t i = beg; i < rlen - k - rightflank + 1; ++i){
+    for (size_t i = beg; i < rlen - k - rightflank + 1; ++i) {
         if (kmer > rckmer) {
             canonicalkmer = rckmer;
         } else {
@@ -194,7 +194,7 @@ void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t
         }
         kmers[canonicalkmer] += (1 & count);
 
-        if (find(alphabet, alphabet+4, read[i + k]) == alphabet+4){
+        if (find(alphabet, alphabet+4, read[i + k]) == alphabet+4) {
             nbeg = getNextKmer(kmer, i+k+1, read, k);
             if (nbeg == rlen) { return; }
             rckmer = getNuRC(kmer, k);
@@ -212,9 +212,9 @@ void _buildKmerGraph(GraphType& g, string& read, size_t k, size_t leftflank, siz
 
     size_t beg, nbeg, kmer;
     beg = getNextKmer(kmer, leftflank, read, k);
-    if (beg != rlen){
-        for (size_t i = beg; i < rlen - k - rightflank; ++i){
-            if (std::find(alphabet, alphabet+4, read[i + k]) == alphabet+4){
+    if (beg != rlen) {
+        for (size_t i = beg; i < rlen - k - rightflank; ++i) {
+            if (std::find(alphabet, alphabet+4, read[i + k]) == alphabet+4) {
                 g[kmer] |= 0;
                 nbeg = getNextKmer(kmer, i+k+1, read, k);
                 if (nbeg == rlen) { break; }
@@ -281,7 +281,7 @@ size_t countLoci(string fname) {
     string line;
     size_t nloci = 0;
     while (getline(inf, line)) {
-        if (line[0] == '>'){
+        if (line[0] == '>') {
             ++nloci;
         }
     }
@@ -325,10 +325,10 @@ void readGraphKmers(T& kmerDB, string fname) {
 	size_t idx = 0;
     string line;
     getline(f, line);
-    while (true){
-        if (f.peek() == EOF or f.peek() == '>'){
+    while (true) {
+        if (f.peek() == EOF or f.peek() == '>') {
             ++idx;
-            if (f.peek() == EOF){
+            if (f.peek() == EOF) {
                 f.close();
                 break;
             } else {
@@ -352,10 +352,10 @@ void readKmersFile2DB(T& kmerDB, string fname, bool graph=false, bool count=true
     string line;
     getline(f, line);
     cerr <<"reading kmers from " << fname << endl;
-    while (true){
-        if (f.peek() == EOF or f.peek() == '>'){
+    while (true) {
+        if (f.peek() == EOF or f.peek() == '>') {
             ++startInd;
-            if (f.peek() == EOF){
+            if (f.peek() == EOF) {
                 f.close();
                 break;
             } else {
@@ -391,11 +391,11 @@ void mapKmersFile2DB(T& kmerDB, string fname, vector<bool>& omap, bool count=tru
     getline(f, line);
     cerr <<"reading kmers from " << fname << endl;
 	int idx = -1;
-    while (true){
-        if (f.peek() == EOF or f.peek() == '>'){
+    while (true) {
+        if (f.peek() == EOF or f.peek() == '>') {
             ++idx;
 			while (not omap[idx]) { ++idx; }
-            if (f.peek() == EOF){
+            if (f.peek() == EOF) {
                 f.close();
                 break;
             } else {
@@ -421,37 +421,6 @@ void mapKmersFile2DB(T& kmerDB, string fname, vector<bool>& omap, bool count=tru
     }
     f.close();
 }
-
-// record kmerIndex_dict kmerDBi only
-//void readKmersFile2DBi(kmeruIndex_umap& kmerDBi, string fname, size_t startInd = 0, uint16_t threshold = 0) {
-//    ifstream f(fname);
-//    assert(f);
-//    string line;
-//    getline(f, line);
-//    cerr <<"reading kmers from " << fname << endl;
-//    while (true){
-//        if (f.peek() == EOF or f.peek() == '>'){
-//            ++startInd;
-//            if (f.peek() == EOF){
-//                f.close();
-//                break;
-//            } else {
-//                getline(f, line);
-//            }
-//        } else {
-//            getline(f, line, '\t');
-//            size_t kmer = stoul(line);
-//            getline(f, line);
-//            size_t kmercount = stoul(line);
-//
-//            if (kmercount < threshold) { continue; }
-//            if (kmerDBi[kmer].count(startInd) == 0) {
-//                kmerDBi[kmer].insert(startInd);
-//            }
-//        }
-//    }
-//    f.close();
-//}
 
 void readBinaryIndex(kmerIndex_uint32_umap& kmerDBi, vector<uint32_t>& kmerDBi_vv, string& pref) {
 	{
