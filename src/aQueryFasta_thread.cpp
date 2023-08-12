@@ -24,6 +24,7 @@ sem_t *semcount;
 sem_t *semwriter;
 bool testmode;
 uint64_t ksize;
+uint64_t rmask;
 uint64_t N_FILTER = 4; // number of subsampled kmers
 uint64_t NM_FILTER = 1; // minimal number of hits
 int verbosity = 0;
@@ -390,10 +391,9 @@ void printVec(vector<T>& vec) {
 
 void getOutNodes(GraphType& g, uint64_t node, vector<uint64_t>& nnds, bool (&nnts)[4]) {
     // a node is a kmer and is not neccessarily canonical
-    const static uint64_t mask = (1ULL << 2*(ksize-1)) - 1;
 	assert(g.count(node)); // prevents error from unclean graph XXX remove this after graph pruning code passes testing
 	uint8_t nucBits = g[node]; // a 4-bit value that corresponds to the presence of trailing TGCA in downstream nodes
-	uint64_t nnd = (node & mask) << 2;
+	uint64_t nnd = (node & rmask) << 2;
 	for (uint64_t i = 0; i < 4; ++i) {
 		if (nucBits % 2) { nnds.push_back(nnd + i); }
 		nnts[i] |= nucBits % 2; // CAUTION: OR operator
@@ -402,7 +402,6 @@ void getOutNodes(GraphType& g, uint64_t node, vector<uint64_t>& nnds, bool (&nnt
 }
 
 void getNextNucs(GraphType& g, uint64_t node, bool (&nnts)[4]) {
-    const static uint64_t mask = (1ULL << 2*(ksize-1)) - 1;
 	uint8_t nucBits;
 	auto it = g.find(node);
 	if (it != g.end()) {
@@ -414,6 +413,23 @@ void getNextNucs(GraphType& g, uint64_t node, bool (&nnts)[4]) {
 	}
 }
 
+const char leadingEdit[128] = {
+  127,127,127,127,127,127,127,127,
+  127,127,127,127,127,127,127,127,
+  127,127,127,127,127,127,127,127,
+  127,127,127,127,127,127,127,127,
+  127,127,127,127,127,127,127,127,
+  127,127,127,127,127,127,127,127,
+  '4','5','6','7',127,127,127,127,
+  127,127,127,127,127,127,127,127,
+  127,'a',127,'c','d',127,127,'g',
+  127,'i',127,127,127,127,127,127,
+  127,127,127,127,'t',127,127,127,
+  127,127,127,127,127,127,127,127,
+  127,127,127,127,127,127,127,127,
+  127,127,127,127,127,127,127,127,
+  127,127,127,127,127,127,127,127,
+};
 
 struct thread_ext_t {
 	// nem1: number of extended kmers starting with 1 substitution
@@ -458,11 +474,10 @@ struct thread_ext_t {
 	}
 
 	void edit_kmers_leading(vector<uint64_t>& rckmers, vector<uint64_t>& kmers, uint64_t& ki, bool aln, vector<char>& ops, uint64_t& opsi, kmer_aCount_umap& trKmers) {
-		uint64_t nnt = ki;
 		uint64_t nts[ki]; // kmer with the leftmost nucleotide for each leading kmer
 		const static uint64_t lmask = 3ULL << 2*(ksize-1);
 		const static uint64_t lbase = 1ULL << 2*(ksize-1);
-        for (uint64_t i = 0; i < ki; ++i) {
+        for (int i = 0; i < ki; ++i) {
             nts[i] = kmers[i] & lmask;
         }
 		// resize and refill content
@@ -480,50 +495,68 @@ struct thread_ext_t {
 		}
 		ki += dt_kmers;
 		// corrected kmers
-		uint64_t ki_ = ki;
+		int ki_ = ki;
         for (char c : edit) {
             if      (c == 'A' or c == 'C' or c == 'G' or c == 'T') { kmers[ki_-1] = (kmers[ki_] >> 2) + (baseComplement[baseNumConversion[c]] * lbase); --ki_; --dt_nti; }
             else if (c == '0' or c == '1' or c == '2' or c == '3') { kmers[ki_-1] = (kmers[ki_] >> 2) + (baseComplement[(c-'0')] * lbase);              --ki_; ++dt_ops; }
-            else if (c == 'I') { --dt_kmers; --dt_nti; }
+            else if (c == 'I') { --dt_nti; }
         }
-		opsi += dt_ops;
 		// extended kmers
-        for (uint64_t i = ki_; i > 0; --i, --dt_nti) {
-            kmers[i-1] = (kmers[i] >> 2) + nts[nnt-1+dt_nti];
+        for (int i = ki_; i > 0; --i, --dt_nti) {
+            kmers[i-1] = (kmers[i] >> 2) + nts[ki-dt_kmers-1+dt_nti];
         }
         if (aln) {
+			// resize
+			opsi += dt_ops;
 			if (dt_ops) {
-				ops[nnt+dt_ops] = ops[nnt];
-				ops.resize(ops.size() + dt_ops, '*');
+				int i, j;
+				for (i = opsi, j = i-dt_ops; i >= opsi-ksize; --i, --j) { ops[i] = ops[j]; }
+				ops.resize(ops.size() + dt_ops, '?');
 			}
-			int opsi_ = nnt + dt_ops - 1;
-            for (uint64_t i = 0; i < edit.size(); ++i, --opsi_) { ops[opsi_] = baseComplement[edit[i]]; }
-            for (uint64_t i = 0; i < score;       ++i, --opsi_) { ops[opsi_] = trKmers.count(toCaKmer(kmers[--ki_], ksize)) ? '=' : '.'; }
+			// kmer ops
+			int i, opsi_;
+			i = 0;
+			opsi_ = opsi;
+			while (opsi_-ksize >= ksize-1 and i < edit.size()) { ops[opsi_-ksize] = baseComplement[edit[i++]]; --opsi_;}
+			i = 0;
+			opsi_ = opsi - 1;
+			ki_ = ki - 1;
+			while (opsi_ > opsi-ksize and i < score+edit.size() and ki_ >= 0) { ops[opsi_--] = trKmers.count(toCaKmer(kmers[ki_--], ksize)) ? '=' : '.'; ++i; }
+			// nucleotide ops
+			opsi_ = opsi - ksize;
+            for (int i = 0; i < edit.size(); ++i, --opsi_) { 
+				if (opsi_ >= ksize-1) { continue; }
+				ops[opsi_] = leadingEdit[baseComplement[edit[i]]];
+			}
+            for (int i = 0; i < score; ++i, --opsi_) {
+				if (opsi_ >= ksize-1) { continue; }
+				ops[opsi_] = '+';
+			}
         }
 	}
 
+
 	void edit_kmers(vector<uint64_t>& kmers, uint64_t& ki, bool aln, vector<char>& ops, uint64_t& opsi, kmer_aCount_umap& trKmers) {
-		const static uint64_t mask = (1ULL << 2*(ksize-1)) - 1;
 		uint64_t nts[kmers.size() - ki];
-		for (uint64_t i = ki; i < kmers.size(); ++i) {
+		for (int i = ki; i < kmers.size(); ++i) {
 			nts[i-ki] = kmers[i] % 4;
 		}
 		for (char c : edit) {
-			if      (c == 'A' or c == 'C' or c == 'G' or c == 'T') { kmers[ki] = ((kmers[ki-1] & mask) << 2) + baseNumConversion[c]; ++ki; ++dt_nti; }
-			else if (c == '0' or c == '1' or c == '2' or c == '3') { kmers[ki] = ((kmers[ki-1] & mask) << 2) + (c-'0'); ++dt_kmers; ++ki; ++dt_ops; }
+			if      (c == 'A' or c == 'C' or c == 'G' or c == 'T') { kmers[ki] = ((kmers[ki-1] & rmask) << 2) + baseNumConversion[c]; ++ki; ++dt_nti; }
+			else if (c == '0' or c == '1' or c == '2' or c == '3') { kmers[ki] = ((kmers[ki-1] & rmask) << 2) + (c-'0'); ++dt_kmers; ++ki; ++dt_ops; }
 			else if (c == 'I') { --dt_kmers; ++dt_nti; }
 		}
 		kmers.resize(kmers.size() + dt_kmers);
-		for (uint64_t i = ki; i < kmers.size(); ++i) {
-			kmers[i] = ((kmers[i-1] & mask) << 2) + nts[dt_nti++];
+		for (int i = ki; i < kmers.size(); ++i) {
+			kmers[i] = ((kmers[i-1] & rmask) << 2) + nts[dt_nti++];
 		}
 		ki -= 1; // shift to the last edited kmer
 		if (aln) { 
-			if (dt_ops) { ops.resize(ops.size() + dt_ops, '*'); }
-			for (uint64_t i = 0; i < edit.size(); ++i, ++opsi) { ops[opsi] = edit[i]; } 
-			for (uint64_t i = 0; i < score;       ++i, ++opsi) { ops[opsi] = trKmers.count(toCaKmer(kmers[++ki], ksize)) ? '=' : '.'; }
+			if (dt_ops) { ops.resize(ops.size() + dt_ops, '?'); }
+			for (int i = 0; i < edit.size(); ++i, ++opsi) { ops[opsi] = edit[i]; } 
+			for (int i = 0; i < score;       ++i, ++opsi) { ops[opsi] = trKmers.count(toCaKmer(kmers[++ki], ksize)) ? '=' : '.'; }
+			opsi -= 1;
 		}
-		opsi -= 1;
 	}
 };
 
@@ -550,9 +583,7 @@ bool find_anchor(GraphType& g, vector<uint64_t>& kmers, bool aln, vector<char>& 
 	return 1;
 }
 
-// XXX 
 bool errorCorrection(vector<uint64_t>& nnds, GraphType& g, vector<uint64_t>& kmers, uint64_t ki, bool (&nts0)[4], thread_ext_t& txt) {
-    static const uint64_t mask = (1ULL << 2*(ksize-1)) - 1;
 	bool nts1[4] = {};
 	bool nts2[4] = {};
 	graph_triplet_t gnt3; // 3 consecutive nucleotides in the graph; 4x4x4 matrix
@@ -582,7 +613,7 @@ bool errorCorrection(vector<uint64_t>& nnds, GraphType& g, vector<uint64_t>& kme
 			bool nnts[4] = {}; // next nucleotides
 			gnt3.get_nnts(nt0, nnts);
 			for (uint64_t j = 1; j < std::min(ksize, nkmers-ki); ++j) {
-				crkmer = ((crkmer & mask) << 2) + kmers[ki+j] % 4;
+				crkmer = ((crkmer & rmask) << 2) + kmers[ki+j] % 4;
 				if (nnts[crkmer % 4]) {
 					++txt.nem1[nt0];
 					getNextNucs(g, crkmer, nnts);
@@ -601,11 +632,11 @@ bool errorCorrection(vector<uint64_t>& nnds, GraphType& g, vector<uint64_t>& kme
 			gnt3.get_nnts(nt0, nnt0);
 			for (uint64_t nt1 = 0; nt1 < 4; ++nt1) {
 				if (not nnt0[nt1]) { continue; }
-				uint64_t crkmer1 = ((crkmer0 & mask) << 2) + nt1;
+				uint64_t crkmer1 = ((crkmer0 & rmask) << 2) + nt1;
 				bool nnt1[4] = {}; // next nucleotides for node_{ki+1}
 				gnt3.get_nnts(nt0, nt1, nnt1);
 				for (uint64_t j = 2; j < std::min(ksize+1, nkmers-ki); ++j) {
-					crkmer1 = ((crkmer1 & mask) << 2) + kmers[ki+j] % 4;
+					crkmer1 = ((crkmer1 & rmask) << 2) + kmers[ki+j] % 4;
 					if (nnt1[crkmer1 % 4]) {
 						++txt.nem2[nt0*4 + nt1];
 						getNextNucs(g, crkmer1, nnt1);
@@ -624,7 +655,7 @@ bool errorCorrection(vector<uint64_t>& nnds, GraphType& g, vector<uint64_t>& kme
 			bool nnt0[4] = {};
 			gnt3.get_nnts(nt0, nnt0);
 			for (uint64_t j = 2; j < std::min(ksize+1, nkmers-ki); ++j) {
-				crkmer = ((crkmer & mask) << 2) + kmers[ki+j] % 4;
+				crkmer = ((crkmer & rmask) << 2) + kmers[ki+j] % 4;
 				if (nnt0[crkmer % 4]) {
 					++txt.nemi[nt0];
 					getNextNucs(g, crkmer, nnt0);
@@ -643,11 +674,11 @@ bool errorCorrection(vector<uint64_t>& nnds, GraphType& g, vector<uint64_t>& kme
 			gnt3.get_nnts(nt0, nnt0);
 			for (uint64_t nt1 = 0; nt1 < 4; ++nt1) {
 				if (not nnt0[nt1]) { continue; }
-				uint64_t crkmer1 = ((crkmer0 & mask) << 2) + nt1;
+				uint64_t crkmer1 = ((crkmer0 & rmask) << 2) + nt1;
 				bool nnt1[4] = {};
 				gnt3.get_nnts(nt0, nt1, nnt1);
 				for (uint64_t j = 1; j < std::min(ksize, nkmers-ki); ++j) {
-					crkmer1 = ((crkmer1 & mask) << 2) + kmers[ki+j] % 4;
+					crkmer1 = ((crkmer1 & rmask) << 2) + kmers[ki+j] % 4;
 					if (nnt1[crkmer1 % 4]) {
 						++txt.nemd[nt0*4 + nt1];
 						getNextNucs(g, crkmer1, nnt1);
@@ -663,7 +694,7 @@ bool errorCorrection(vector<uint64_t>& nnds, GraphType& g, vector<uint64_t>& kme
 		uint64_t crkmer = kmers[ki-1];
 		bool nnt0[4] = {nts0[0], nts0[1], nts0[2], nts0[3]};
 		for (uint64_t j = 1; j < std::min(ksize, nkmers-ki); ++j) {
-			crkmer = ((crkmer & mask) << 2) + kmers[ki+j] % 4;
+			crkmer = ((crkmer & rmask) << 2) + kmers[ki+j] % 4;
 			if (nnt0[crkmer % 4]) {
 				++txt.nei1;
 				getNextNucs(g, crkmer, nnt0);
@@ -680,7 +711,7 @@ bool errorCorrection(vector<uint64_t>& nnds, GraphType& g, vector<uint64_t>& kme
 			bool nnt0[4] = {};
 			gnt3.get_nnts(nt0, nnt0);
 			for (uint64_t j = 0; j < std::min(ksize-1, nkmers-ki); ++j) {
-				crkmer = ((crkmer & mask) << 2) + kmers[ki+j] % 4;
+				crkmer = ((crkmer & rmask) << 2) + kmers[ki+j] % 4;
 				if (nnt0[crkmer % 4]) {
 					++txt.ned1[nt0];
 					getNextNucs(g, crkmer, nnt0);
@@ -695,7 +726,7 @@ bool errorCorrection(vector<uint64_t>& nnds, GraphType& g, vector<uint64_t>& kme
 		uint64_t crkmer = kmers[ki-1];
 		bool nnt0[4] = {nts0[0], nts0[1], nts0[2], nts0[3]};
 		for (uint64_t j = 2; j < std::min(ksize+1, nkmers-ki); ++j) {
-			crkmer = ((crkmer & mask) << 2) + kmers[ki+j] % 4;
+			crkmer = ((crkmer & rmask) << 2) + kmers[ki+j] % 4;
 			if (nnt0[crkmer % 4]) {
 				++txt.nei2;
 				getNextNucs(g, crkmer, nnt0);
@@ -713,11 +744,11 @@ bool errorCorrection(vector<uint64_t>& nnds, GraphType& g, vector<uint64_t>& kme
 			gnt3.get_nnts(nt0, nnt0);
 			for (uint64_t nt1 = 0; nt1 < 4; ++nt1) {
 				if (not nnt0[nt1]) { continue; }
-				uint64_t crkmer1 = ((crkmer0 & mask) << 2) + nt1;
+				uint64_t crkmer1 = ((crkmer0 & rmask) << 2) + nt1;
 				bool nnt1[4] = {};
 				gnt3.get_nnts(nt0, nt1, nnt1);
 				for (uint64_t j = 0; j < std::min(ksize-1, nkmers-ki); ++j) {
-					crkmer1 = ((crkmer1 & mask) << 2) + kmers[ki+j] % 4;
+					crkmer1 = ((crkmer1 & rmask) << 2) + kmers[ki+j] % 4;
 					if (nnt1[crkmer1 % 4]) {
 						++txt.ned2[nt0*4 + nt1];
 						getNextNucs(g, crkmer1, nnt1);
@@ -741,34 +772,36 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ui
 	static const char nts[] = {'A', 'C', 'G', 'T', 'a', 'c', 'g', 't'};
     const uint64_t maxnskip = (kmers.size() >= thread_cth ? kmers.size() - thread_cth : 0);
     const uint64_t maxncorrection = 3;
-    uint64_t ki = 0, opsi = 0, nskip = 0, ncorrection = 0;
+    uint64_t ki = 0, nskip = 0, ncorrection = 0;
+    uint64_t opsi = ksize - 1;
 	uint64_t node = kmers[0];
 	uint64_t nkmers = kmers.size();
 
-	if (aln) { ops.resize(kmers.size(), '*'); }
+	if (aln) { ops.resize(seq.size(), '?'); }
 	if (not find_anchor(g, kmers, aln, ops, nskip, ki, opsi, trKmers, node)) { return 0; }
-	if (ki > 0) { // if leading unaligned kmers exist, do backward alignment first
-		if (ki >= 3) { // sufficient info for error correction; XXX assuming at most ksize kmers skipped
-			bool nts0[4] = {};
-			vector<uint64_t> nnds;
-			uint64_t rcnode = getNuRC(node, ksize);
-			getOutNodes(g, rcnode, nnds, nts0);
-			vector<uint64_t> rckmers(ki+1);
-			rckmers[0] = rcnode;
-			int j, k;
-			static const uint64_t mask = (1ULL << 2*(ksize-1)) - 1;
-			for (j = ki-1, k = 1; j >= 0; --j, ++k) {
-				rckmers[k] = getNuRC(kmers[j], ksize);
+	else {
+		if (aln) { for (int i = opsi-ksize+1; i < ksize-1; ++i) { ops[i] = '+'; } } // leading matching nucleotides
+		if (ki > 0) { // if leading unaligned kmers exist, do backward alignment first
+			if (ki >= 3) { // sufficient info for error correction; XXX assuming at most ksize kmers skipped
+				bool nts0[4] = {};
+				vector<uint64_t> nnds;
+				uint64_t rcnode = getNuRC(node, ksize);
+				getOutNodes(g, rcnode, nnds, nts0);
+				vector<uint64_t> rckmers(ki+1);
+				rckmers[0] = rcnode;
+				int j, k;
+				for (j = ki-1, k = 1; j >= 0; --j, ++k) {
+					rckmers[k] = getNuRC(kmers[j], ksize);
+				}
+				thread_ext_t txt;
+				bool skip = errorCorrection(nnds, g, rckmers, 1, nts0, txt); // rckmers[1] is the first kmer requires correction
+				if (not skip) {
+					txt.edit_kmers_leading(rckmers, kmers, ki, aln, ops, opsi, trKmers); // resize kmers & ops
+					nskip -= txt.score;
+					++ncorrection;
+				}
 			}
-			thread_ext_t txt;
-			bool skip = errorCorrection(nnds, g, rckmers, 1, nts0, txt); // rckmers[1] is the first kmer requires correction
-			if (not skip) {
-				txt.edit_kmers_leading(rckmers, kmers, ki, aln, ops, opsi, trKmers); // resize kmers & ops
-				assert(nskip >= (txt.edit.size() + txt.score));
-				nskip -= (txt.edit.size() + txt.score);
-				++ncorrection;
-			}
-		}
+		} 
 	}
 
     for (ki=ki+1, opsi=opsi+1; ki < kmers.size(); ++ki, ++opsi) {
@@ -823,6 +856,8 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ui
             }
             else {
 				// resize kmers & ops; shift ki/opsi to the last kmer examined/edited
+				nskip += txt.edit.size();
+				if (nskip > maxnskip) { return 0; }
 				txt.edit_kmers(kmers, ki, aln, ops, opsi, trKmers);
 				node = kmers[ki];
 				++ncorrection;
@@ -1258,7 +1293,10 @@ int main(int argc, char* argv[]) {
 			N_FILTER = stoi(args[++argi]);
 			NM_FILTER = stoi(args[++argi]);
 		}
-        else if (args[argi] == "-k") { ksize = stoi(args[++argi]); }
+        else if (args[argi] == "-k") { 
+			ksize = stoi(args[++argi]);
+			rmask = (1ULL << 2*(ksize-1)) - 1;
+		}
         else if (args[argi] == "-qs") {
             trPrefix = args[++argi];
             trFname = (trim ? trPrefix+".tr.trim"+std::to_string(trim)+".kmers" : trPrefix+".tr.kmers");
