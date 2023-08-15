@@ -27,7 +27,7 @@ uint64_t ksize;
 uint64_t rmask;
 uint64_t N_FILTER = 4; // number of subsampled kmers
 uint64_t NM_FILTER = 1; // minimal number of hits
-uint64_t maxncorrection = 3;
+uint64_t maxncorrection = 4;
 int verbosity = 0;
 const uint64_t NAN64 = 0xFFFFFFFFFFFFFFFF;
 const uint32_t NAN32 = 0xFFFFFFFF;
@@ -1236,7 +1236,7 @@ int main(int argc, char* argv[]) {
              << "  -g <INT>           Use graph threading algorithm w/o error correction" << endl
              << "  -gc <INT1> [INT2]  Use graph threading algorithm w/ error correction" << endl
              << "                     Discard pe reads if # of matching kmers < INT1 " << endl
-             << "                     Maxmimal # of edits allowed = INT2 (default: 4)" << endl
+             << "                     Maxmimal # of edits allowed = INT2 (default: 3)" << endl
 			 << "  -a                 Output alignments for all reads entering threading. Only work with -g or -gc." << endl
 			 << "  -ae                Same as the -a option, but excluding unaligned reads in threading." << endl
 			 << "  -kf <INT> <INT>    Parameters for kmer-based pre-filtering," << endl
