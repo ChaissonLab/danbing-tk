@@ -894,6 +894,32 @@ inline void writeOps(vector<char>& ops) {
 	for (char c : ops) { cout << c; }
 }
 
+void writeCigar(vector<char> ops) {
+	int ct = 1;
+	char op0;
+	op0 = ops[0];
+	for (int i = 1; i < ops.size(); ++i) {
+		if (op0 == '=' or op0 == '.' or op0 == '*') {
+			while (ops[i] == op0) { ++ct; ++i; if (i == ops.size()) { break; } }
+			cout << ct << op0;
+		}
+		else if (op0 == 'A' or op0 == 'C' or op0 == 'G' or op0 == 'T') {
+			cout << 'X' << op0;
+		}
+		else if (op0 == '0' or op0 == '1' or op0 == '2' or op0 == '3') {
+			cout << 'D' << baseNumConversion[op0-'0'];
+		}
+		else if (op0 == 'I') {
+			cout << op0;
+		}
+		else { assert(false); }
+		if (i == ops.size()) { return; }
+		ct = 1;
+		op0 = ops[i];
+	}
+	cout << ct << op0;
+}
+
 void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<uint64_t>& alnindices, vector<sam_t>& sams) {
 	for (uint64_t i = 0; i < sams.size(); ++i) {
 		if (sams[i].src == -1ULL) { cout << '.' << '\t'; }
@@ -921,15 +947,15 @@ void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<uint64
 		cout << sams[i].dst << '\t'
 			 << titles[--alnindices[i]] << ':' << destLoci[alnindices[i]/2] << '\t'
 			 << seqs[alnindices[i]] << '\t';
-		writeOps(sams[i].r2.nt); // read2.nt
+		writeCigar(sams[i].r2.nt); // read2.nt
 		cout << '\t';
-		writeOps(sams[i].r2.tr); // read2.tr
+		writeCigar(sams[i].r2.tr); // read2.tr
 		cout << '\t'
 			 << titles[--alnindices[i]] << ':' << destLoci[alnindices[i]/2] << '\t'
 			 << seqs[alnindices[i]] << '\t';
-		writeOps(sams[i].r1.nt); // read1.nt
+		writeCigar(sams[i].r1.nt); // read1.nt
 		cout << '\t';
-		writeOps(sams[i].r1.tr); // read1.tr
+		writeCigar(sams[i].r1.tr); // read1.tr
 		cout << '\n';
 	}
 }
