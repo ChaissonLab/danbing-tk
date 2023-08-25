@@ -153,15 +153,18 @@ The second field is optional.
 ### Alignment output (`-a` option)
 - Synopsis
 	```
-	<src> <dest> <read_name/0> <read_seq/0> <ops/0> <read_name/1> <read_seq/1> <ops/1>
+	<src> <dest> <read_name/0> <read_seq/0> <ops/0> <annot/0> <read_name/1> <read_seq/1> <ops/1> <annot/1>
 	```
 - `src`: source locus of a read pair (for simulation only)
 - `dest`: aligned locus for the read pair
-- `ops`: operations to align the read to the graph
+- `ops`: nucleotide-level operations to align the read to the graph. `size = read_len + #del`
+	- `=`: a match 
+	- `X[A|C|G|T]`: a mismatch; letter in the graph is shown
+	- `D[A|C|G|T]`: a deletion in the read; letter in the graph is shown
+	- `I`: an insertion in the read
+	- `H`: a nucleotide in the homopolymer run; only shown when length > ksize
+	- `*`: unalinged nucleotide
+- `annot`: kmer-level VNTR annotations after applying `ops` to the read. `size = read_len - ksize + 1 + #del - #ins`
 	- `=`: a match in the repeat
 	- `.`: a match in the flank
-	- `[A|C|G|T]`: a mismatch; letter in the graph is shown
-	- `[0|1|2|3]`: a deletion; letter in the graph is shown as 0123 for ACGT, respectively.
-	- `I`: an insertion in the read
-	- `H`: a nucleotide in the homopolymer run
-	- `*`: unalinged nucleotide
+	- `*`: unaligned kmer
