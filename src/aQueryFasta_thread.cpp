@@ -129,7 +129,7 @@ void getSortedIndex(vector<kmerIndex_uint32_umap::iterator>& data, vector<uint64
 
 void countDupRemove(vector<kmerIndex_uint32_umap::iterator>& its, vector<kmerIndex_uint32_umap::iterator>& its_other, vector<PE_KMC>& dup) {
 	// count the occurrence of kmers in each read
-   	// Return:
+	// Return:
 	// 		its: unique entries only
 	// 		its_other: empty
 	// 		dup: count in <forward,reverse> strand for each entry in kmers
@@ -295,7 +295,7 @@ void find_matching_locus(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_u
 }
 
 uint64_t countHit(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_umap::iterator>& its1, vector<kmerIndex_uint32_umap::iterator>& its2, vector<uint32_t>& hits1, vector<uint32_t>& hits2,
-                vector<PE_KMC>& dup, uint64_t nloci, uint16_t Cthreshold, float Rthreshold) {
+                  vector<PE_KMC>& dup, uint64_t nloci, uint16_t Cthreshold, float Rthreshold) {
 	// pre-processing: sort kmer by # mapped loci XXX alternative: sort by frequncy in read
 	vector<uint64_t> remain;
 	fillstats(kmerDBi_vv, its1, its2, dup, remain);
@@ -890,10 +890,6 @@ void writeExtractedReads(int extractFasta, vector<string>& seqs, vector<string>&
 	}
 }
 
-inline void writeOps(vector<char>& ops) {
-	for (char c : ops) { cout << c; }
-}
-
 void writeCigar(vector<char> ops) {
 	int ct = 1;
 	char op0;
@@ -926,16 +922,15 @@ void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<uint64
 		else { cout << sams[i].src << '\t'; }
 		cout << sams[i].dst << '\t'
 			 << titles[--alnindices[i]] << '\t'
-			 << seqs[alnindices[i]] << '\t';
-		writeOps(sams[i].r2.nt); // read2.nt
+			 << seqs[alnindices[i]] << '\t'
+			 << seqs[--alnindices[i]] << '\t';
+		writeCigar(sams[i].r2.nt); // read2.nt
 		cout << '\t';
-		writeOps(sams[i].r2.tr); // read2.tr
+		writeCigar(sams[i].r2.tr); // read2.tr
 		cout << '\t'
-			 << titles[--alnindices[i]] << '\t'
-			 << seqs[alnindices[i]] << '\t';
-		writeOps(sams[i].r1.nt); // read1.nt
+		writeCigar(sams[i].r1.nt); // read1.nt
 		cout << '\t';
-		writeOps(sams[i].r1.tr); // read1.tr
+		writeCigar(sams[i].r1.tr); // read1.tr
 		cout << '\n';
 	}
 }
@@ -945,14 +940,13 @@ void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<uint64
 		if (sams[i].src == -1ULL) { cout << '.' << '\t'; }
 		else { cout << sams[i].src << '\t'; }
 		cout << sams[i].dst << '\t'
-			 << titles[--alnindices[i]] << ':' << destLoci[alnindices[i]/2] << '\t'
-			 << seqs[alnindices[i]] << '\t';
+			 << titles[--alnindices[i]] << '\t'
+			 << seqs[alnindices[i]] << '\t'
+			 << seqs[--alnindices[i]] << '\t';
 		writeCigar(sams[i].r2.nt); // read2.nt
 		cout << '\t';
 		writeCigar(sams[i].r2.tr); // read2.tr
 		cout << '\t'
-			 << titles[--alnindices[i]] << ':' << destLoci[alnindices[i]/2] << '\t'
-			 << seqs[alnindices[i]] << '\t';
 		writeCigar(sams[i].r1.nt); // read1.nt
 		cout << '\t';
 		writeCigar(sams[i].r1.tr); // read1.tr
@@ -1269,29 +1263,22 @@ int main(int argc, char* argv[]) {
 		cerr << endl
 		     << "Usage: danbing-tk [-v] [-e] [-g|-gc] [-a|-ae] [-kf] [-cth] [-o|-on] -k -qs <-fai|-fa> -p" << endl
 		     << "Options:" << endl
-		     //<< "  -b               (deprecated) Use baitDB to decrease ambiguous mapping" << endl
-		     //<< "  -t <INT>         Used trimmed pangenome graph e.g. \"-t 1\" for pan.*.trim1.kmers" << endl
-		     //<< "  -s <INT>         Run in simulation mode to write the origin and destination of mis-assigned reads to STDOUT" << endl
-		     //<< "                   Specify 1 for simulated reads from TR" << endl
-		     //<< "                   Specify 2 for simulated reads from whole genome" << endl
-			 //<< "  -m <str>         locusMap.tbl, used for mapping g-locus to pan-locus in whole genome simulation" << endl
-		     //<< "  -au              Augmentation mode, use pruned kmers and augkmers" << endl
 		     << "  -v <INT>           Verbosity: 0-3. Default: 0." << endl
 		     << "  -e <INT>           Write mapped reads to STDOUT in fasta format." << endl
 		     << "                     Specify 1 for keeping original read names. Will not write .kmers output." << endl
-			 << "                     Specify 2 for appending assigned locus to each read name. Used to skip step1 for later queries." << endl
+		     << "                     Specify 2 for appending assigned locus to each read name. Used to skip step1 for later queries." << endl
 		     << "  -g <INT>           Use graph threading algorithm w/o error correction" << endl
 		     << "  -gc <INT1> [INT2]  Use graph threading algorithm w/ error correction" << endl
 		     << "                     Discard pe reads if # of matching kmers < INT1 " << endl
 		     << "                     Maxmimal # of edits allowed = INT2 (default: 3)" << endl
-			 << "  -a                 Output alignments for all reads entering threading. Only work with -g or -gc." << endl
-			 << "  -ae                Same as the -a option, but excluding unaligned reads in threading." << endl
-			 << "  -kf <INT> <INT>    Parameters for kmer-based pre-filtering," << endl
-			 << "                     optimized for 150bp paired-end reads." << endl
-			 << "                     1st param: # of sub-sampled kmers. Default: 4." << endl
-			 << "                     2nd param: minimal # of matches. Default: 1." << endl
+		     << "  -a                 Output alignments for all reads entering threading. Only work with -g or -gc." << endl
+		     << "  -ae                Same as the -a option, but excluding unaligned reads in threading." << endl
+		     << "  -kf <INT> <INT>    Parameters for kmer-based pre-filtering," << endl
+		     << "                     optimized for 150bp paired-end reads." << endl
+		     << "                     1st param: # of sub-sampled kmers. Default: 4." << endl
+		     << "                     2nd param: minimal # of matches. Default: 1." << endl
 		     << "  -cth <INT>         Discard both pe reads if maxhit of one pe read is below this threshold." << endl
-			 << "                     Will skip read filtering and run threading directly if not specified." << endl
+		     << "                     Will skip read filtering and run threading directly if not specified." << endl
 		     << "  -o <STR>           Output prefix" << endl
 		     << "  -on <STR>          Same as the -o option, but write locus and kmer name as well" << endl
 		     << "  -k <INT>           Kmer size" << endl
@@ -1300,8 +1287,6 @@ int main(int argc, char* argv[]) {
 		     << "  -fa <STR>          Fasta file e.g. generated by samtools fasta -n" << endl
 		     << "                     Reads will be paired on the fly" << endl
 		     << "  -p <INT>           Use n threads." << endl
-		     //<< "  -rth <FLOAT>     Discard reads with maxhit/(maxhit+secondhit) below this threshold." << endl 
-		     //<< "                   Range [0.5, 1]. 1: does not allow noise. 0.5: no filtering." << endl
 		     << endl;
 		return 0;
 	}
@@ -1491,7 +1476,7 @@ int main(int argc, char* argv[]) {
 	rand_str(id, idLen);
 
 	string readerName = string("/semreader_") + string(id);
-	string countName  = string("/semcount_") + string(id);
+	string countName = string("/semcount_") + string(id);
 	string semwriterName = string("/semwriter_") + string(id);
 
 	semreader = sem_open(readerName.c_str(), O_CREAT, 0644, 1);
