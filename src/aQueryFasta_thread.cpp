@@ -801,12 +801,17 @@ bool errorCorrection(vector<uint64_t>& nnds, GraphType& g, vector<uint64_t>& kme
 // scan read and find anchors
 // set cigars too
 //init_anchors() {}
-
-// when no matching kmer, try error correction with w=1, s=max
-
-// if failed, try backward error correction with w=1, s=max
-
-// if failed, try BFS/chaining
+//void BFS() {
+//	- retract left anchor
+//	- get right anchor
+//	- alternating BFS from both anchors
+//		- init. blackout mismatch node ki. set traversed nodes as sink
+//		- left bfs
+//		- right bfs
+//		- find overlap
+//		- remove search from sink
+//		- convergence criteria?
+//}
 
 
 // 0: not feasible, 1: feasible, w/o correction, 2: feasible w/ correction
