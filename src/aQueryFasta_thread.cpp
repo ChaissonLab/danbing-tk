@@ -425,6 +425,11 @@ void getOutNodes(GraphType& g, uint64_t node, vector<uint64_t>& nnds, bool (&nnt
 	}
 }
 
+void getOutNodes_rc(GraphType& g, uint64_t node, uint64_t& node_rc, vector<uint64_t>& nnds_rc, bool (&nnts_rc)[4]) {
+	node_rc = getNuRC(node, ksize);
+	getOutNodes(g, node_rc, nnds_rc, nnts_rc);
+}
+
 void getNextNucs(GraphType& g, uint64_t node, bool (&nnts)[4]) {
 	uint8_t nucBits;
 	auto it = g.find(node);
@@ -462,13 +467,11 @@ struct thread_ext_t {
 	int dt_km = 0;          // change in the size of aligned/corrected kmers vector
 	int dt_ki = 0;          // change in the index of alinged/corrected kmers vector
 	int dt_nti = 0;         // change in the index in (uncorrected) nucleotide array
-	int _ki;                // starting pos of `edit` in `kmers`
 	vector<char> edit;      // placeholder for up to 2 edits
 
 
 	thread_ext_t(int ms_, int ew_) {
 		ms = ms_;
-		score = ms_ - 1;
 		ew = ew_;
 	}
 
@@ -514,17 +517,17 @@ struct thread_ext_t {
 		if (dt_km > 0) {
 			for (int i = 0; i < dt_km; ++i) { kmers.insert(kmers.begin(), 0); }
 			if (aln) {
-				for (int i = 0; i < dt_km; ++i) { cg.tr.insert(cg.tr.begin(), '*'); }
+				for (int i = 0; i < dt_km; ++i) { cg.tr.insert(cg.tr.begin()+ki, '*'); }
 			}
 		}
 		else if (dt_km < 0) {
 			kmers.erase(kmers.begin(), kmers.begin()-dt_km);
 			if (aln) {
-				cg.tr.erase(cg.tr.begin(), cg.tr.begin()-dt_km);
+				cg.tr.erase(cg.tr.begin()+ki+dt_km, cg.tr.begin()+ki);
 			}
 		}
 		if (nd) {
-			for (int i = 0; i < nd; ++i) { cg.nt.insert(cg.nt.begin(), '*'); }
+			for (int i = 0; i < nd; ++i) { cg.nt.insert(cg.nt.begin()+ki, '*'); }
 		}
 		ki += dt_km;
 		// corrected kmers
@@ -538,17 +541,21 @@ struct thread_ext_t {
 			kmers[i-1] = (kmers[i] >> 2) + nts[ki-dt_km-1+dt_nti];
 		}
 		if (aln) {
-			for (int ki_ = 0; ki_ < ki; ++ki_) { cg.tr[ki_] = trKmers.count(toCaKmer(kmers[ki_], ksize)) ? '=' : '.'; }
+			int lb = ki-nm-nd-score;
+			for (int i = ki-1; i >= lb; --i) { cg.tr[i] = trKmers.count(toCaKmer(kmers[i], ksize)) ? '=' : '.'; }
 			int ni = cg.ni - 1;
 			for (int i = 0; i < edit.size(); ++i, --ni) { cg.nt[ni] = baseComplement[edit[i]];}
-			for (int i = 0; i < score; ++i, --ni) { cg.nt[ni] = '='; }
+			for (int i = 0; i < score; ++i, --ni) {
+				char e = cg.nt[ni];
+				if (e != '=' and e != '*') { break; }
+				cg.nt[ni] = '=';
+			}
 		}
 	}
 
 
 	void edit_kmers(vector<uint64_t>& kmers, uint64_t& ki, bool aln, cigar_t& cg, kmer_aCount_umap& trKmers, bool rc) {
 		if (rc) { // reverse complement
-			_ki = _ki - edit.size() + 1;
 			vector<char> rce(edit.size());
 			for (int i = 0; i < edit.size(); ++i) { rce[edit.size()-1-i] = baseComplement[edit[i]]; }
 			edit = rce;
@@ -625,16 +632,11 @@ bool errorCorrection(vector<uint64_t>& nnds, GraphType& g, vector<uint64_t>& kme
 		getOutNodes(g, node_i, nodes_ip1, nts1);
 		for (uint64_t node_ip1 : nodes_ip1) {
 			uint64_t nt1 = node_ip1 % 4;
-			if (ew > 1) {
-				vector<uint64_t> nodes_ip2;
-				getOutNodes(g, node_ip1, nodes_ip2, nts2);
-				for (uint64_t node_ip2 : nodes_ip2) {
-					uint64_t nt2 = node_ip2 % 4;
-					gnt3.mat[nt0*4*4 + nt1*4 + nt2] = true;
-				}
-			}
-			else {
-				gnt3.mat[nt0*4*4 + nt1*4] = true;
+			vector<uint64_t> nodes_ip2;
+			getOutNodes(g, node_ip1, nodes_ip2, nts2);
+			for (uint64_t node_ip2 : nodes_ip2) {
+				uint64_t nt2 = node_ip2 % 4;
+				gnt3.mat[nt0*4*4 + nt1*4 + nt2] = true;
 			}
 		}
 	}
@@ -814,6 +816,7 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ui
 	read2kmers(noncakmers, seq, ksize, 0, 0, false, true); // leftflank = 0, rightflank = 0, canonical = false, keepN = true
 	vector<uint64_t> kmers(noncakmers.begin(), noncakmers.end());
 
+	static const uint64_t MSC = 5; // min score for thread extension XXX
 	const uint64_t maxnskip = (kmers.size() >= thread_cth ? kmers.size() - thread_cth : 0);
 	uint64_t ki = 0, nskip = 0, ncorrection = 0;
 	uint64_t node = kmers[0];
@@ -824,21 +827,21 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ui
 	else {
 		if (ki > 0 and correction and ncorrection < maxncorrection) { // if leading unaligned kmers exist, do backward alignment first
 			if (ki >= 3) { // sufficient info for error correction; XXX assuming at most ksize kmers skipped
-				bool nts0[4] = {};
-				vector<uint64_t> nnds;
-				uint64_t rcnode = getNuRC(node, ksize);
-				getOutNodes(g, rcnode, nnds, nts0);
-				vector<uint64_t> rckmers(ki+1);
-				rckmers[0] = rcnode;
+				bool nts0_rc[4] = {};
+				uint64_t node_rc;
+				vector<uint64_t> nnds_rc;
+				getOutNodes_rc(g, node, node_rc, nnds_rc, nts0_rc);
+				vector<uint64_t> kmers_rc(ki+1);
+				kmers_rc[0] = node_rc;
 				int j, k;
 				for (j = ki-1, k = 1; j >= 0; --j, ++k) {
-					rckmers[k] = getNuRC(kmers[j], ksize);
+					kmers_rc[k] = getNuRC(kmers[j], ksize);
 				}
 				int ew = 2, ms = 1;
 				thread_ext_t txt(ms, ew);
-				bool skip = errorCorrection(nnds, g, rckmers, 1, nts0, txt, ew); // rckmers[1] is the first kmer requires correction
+				bool skip = errorCorrection(nnds_rc, g, kmers_rc, 1, nts0_rc, txt, ew); // kmers_rc[1] is the first kmer requires correction
 				if (not skip) {
-					txt.edit_kmers_leading(rckmers, kmers, ki, aln, cg, trKmers);
+					txt.edit_kmers_leading(kmers_rc, kmers, ki, aln, cg, trKmers);
 					nskip -= txt.score;
 					++ncorrection;
 				}
@@ -897,18 +900,26 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ui
 
 			if (correction and ncorrection < maxncorrection) {
 				bool rc = 0; // reverse complement
-				int ew = 2; // edit width
-				//int ms = std::min(ksize,kmers.size()-ki)-1; // min score
-				int ms = 1;
+				int ew = 1; // edit width
+				int ms = std::min(MSC,kmers.size()-ki-1); // min score
 				thread_ext_t txt1f(ms, ew);
 				skip = errorCorrection(nnds, g, kmers, ki, nts0, txt1f, ew); // forward correction
 				if (skip) {
+					find_anchor(g, kmers, aln, cg, nskip, ki, trKmers, node);
 					rc = 1;
-					//ms = std::min(ksize-1,ki);
-					ms = 1;
+					ms = std::min(MSC,ki-1);
 					thread_ext_t txt1r(ms, ew);
-					// nnds, nts0
-					// skip = errorCorrection(nnds, g, kmers, ki, nts0, txt1r, ew); // reverse correction
+					bool nts0_rc[4] = {};
+					uint64_t node_rc;
+					vector<uint64_t> nnds_rc;
+					getOutNodes_rc(g, node, node_rc, nnds_rc, nts0_rc);
+					vector<uint64_t> kmers_rc(ki+1);
+					kmers_rc[0] = node_rc;
+					int j, k;
+					for (j = ki-1, k = 1; j >= 0; --j, ++k) {
+						kmers_rc[k] = getNuRC(kmers[j], ksize);
+					}
+					skip = errorCorrection(nnds_rc, g, kmers_rc, 1, nts0_rc, txt1r, ew); // reverse correction
 					if (skip) {
 						// skip = chaining(); // BFS search
 						if (skip) {
@@ -923,7 +934,10 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ui
 						}
 					}
 					else { // passed reverse errorCorrection
-						continue;
+						nskip += txt1r.edit.size();
+						if (nskip > maxnskip) { return 0; }
+						txt1r.edit_kmers_leading(kmers_rc, kmers, ki, aln, cg, trKmers);
+						++ncorrection;
 					}
 				}
 				else { // passed forward errorCorrection
@@ -960,9 +974,10 @@ void writeExtractedReads(int extractFasta, vector<string>& seqs, vector<string>&
 
 void writeCigar(vector<char> ops) {
 	int ct = 1;
-	char op0;
+	char op0, op1, lc; // last_op, last_edit_char
 	op0 = ops[0];
 	for (int i = 1; i < ops.size(); ++i) {
+		op1 = ops[i];
 		if (op0 == '=' or op0 == '.' or op0 == '*') {
 			while (ops[i] == op0) { ++ct; ++i; if (i == ops.size()) { break; } }
 			cout << ct << op0;
@@ -971,10 +986,19 @@ void writeCigar(vector<char> ops) {
 			cout << 'X' << op0;
 		}
 		else if (op0 == '0' or op0 == '1' or op0 == '2' or op0 == '3') {
-			cout << 'D' << baseNumConversion[op0-'0'];
+			lc = baseNumConversion[op0-'0'];
+			if (op1 == 'I') { // special case, merging ins and del as mismatch
+				cout << 'X' << lc;
+				++i;
+			}
+			else { cout << 'D' << lc; }
 		}
 		else if (op0 == 'I') {
-			cout << op0;
+			if (op1 == '0' or op1 == '1' or op1 == '2' or op1 == '3') { // special case, merging ins and del as mismatch
+				cout << 'X' << baseNumConversion[op0-'0'];
+				++i;
+			}
+			else { cout << op0; }
 		}
 		else { assert(false); }
 		if (i == ops.size()) { return; }
@@ -1289,7 +1313,7 @@ void CountWords(void *data) {
 				else { destLocus = nloci; } // removed by threading
 
 				if (aln and threading) {
-					if ((aln_minimal and srcLocus != nloci and destLocus != nloci) or (not aln_minimal and (srcLocus != nloci or destLocus != nloci))) {
+					if ((aln_minimal and srcLocus != nloci and destLocus != nloci) or ((not aln_minimal) and (srcLocus != nloci or destLocus != nloci))) {
 						alnindices.push_back(seqi); // work the same as extractindices
 						sam.src = srcLocus;
 						sam.dst = destLocus;
@@ -1531,6 +1555,7 @@ int main(int argc, char* argv[]) {
 		counts.threading = threading;
 		counts.correction = correction;
 		counts.aln = aln;
+		counts.aln_minimal = aln_minimal;
 		counts.g2pan = g2pan;
 		counts.skip1 = skip1;
 
