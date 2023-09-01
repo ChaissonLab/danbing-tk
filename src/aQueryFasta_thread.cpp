@@ -807,6 +807,7 @@ bool errorCorrection_backward(uint64_t node, GraphType& g, vector<uint64_t>& kme
 }
 
 // scan read and find anchors
+// set cigars too
 //init_anchors() {}
 //void BFS() {
 //	- retract left anchor
