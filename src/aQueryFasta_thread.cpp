@@ -442,7 +442,16 @@ void getNextNucs(GraphType& g, uint64_t node, bool (&nnts)[4]) {
 	}
 }
 
+void report_edits(vector<char>& edit, vector<uint64_t>& kmers, bool reverse) {
+	cerr << "... SUCCESS! ";
+	for (auto c : edit) { cerr << (reverse ? baseComplement[c] : c); } 
+	cerr << endl << '\t' << decodeNumericSeq(kmers[0]>>2, ksize-1);
+	for (auto v : kmers) { cerr << alphabet[v%4]; }
+	cerr << endl;
+}
+
 struct thread_ext_t {
+	bool rv;
 	uint64_t nem1[4]  = {}; // nem1: number of extended kmers starting with 1 substitution
 	uint64_t nem2[16] = {}; // nem2: number of extended kmers starting with 2 substitutions
 	uint64_t nemi[4]  = {}; // nemi: number of extended kmers starting with 1 substitution + 1 insertion
@@ -465,10 +474,11 @@ struct thread_ext_t {
 	vector<char> edit;      // placeholder for up to 2 edits
 
 
-	thread_ext_t(uint64_t MSC, uint64_t mes_) {
+	thread_ext_t(uint64_t MSC, uint64_t mes_, bool rv_) {
 		ms1 = 1*MSC;
 		ms2 = 2*MSC;
 		mes = mes_;
+		rv = rv_;
 	}
 
 	// priority: mismatch > del > ins, according to Illumina error profile. 1bp_edit > 2bp_edit.
@@ -496,7 +506,7 @@ struct thread_ext_t {
 
 	void edit_kmers_backward(vector<uint64_t>& kmers, vector<uint64_t>& rckmers, uint64_t& ki, bool aln, cigar_t& cg, kmer_aCount_umap& trKmers) {
 		int dt_ki = 0;
-		uint64_t nts[ki]; // kmer with the leftmost nucleotide for each leading kmer
+		uint64_t nts[ki]; // leading nucleotides in kmers
 		const static uint64_t lmask = 3ULL << 2*(ksize-1);
 		const static uint64_t lbase = 1ULL << 2*(ksize-1);
 		for (int i = 0; i < ki; ++i) {
@@ -545,16 +555,16 @@ struct thread_ext_t {
 				++nrk;
 			}
 			nrk -= (nm+nd);
-			//int ni = cg.ni - 1;
-			int dtni = 0, ni = 0, ni1 = ki-dt_km-1;
-			while (ni < ni1+dtni) { if (cg.nt[ni++] == 'I') { ++dtni; ++ni; } }
-			for (int i = 0; i < edit.size(); ++i, --ni) { cg.nt[ni] = baseComplement[edit[i]]; }
-			for (int i = 0; i < score; ++i, --ni) {
-				char e = cg.nt[ni];
+			int dt = 0, nti = 0, nti1 = ki+ni-1;
+			while (nti < nti1+dt) { if (cg.nt[nti++] == 'I') { ++dt; ++nti; } }
+			for (int i = 0; i < edit.size(); ++i, --nti) { cg.nt[nti] = baseComplement[edit[i]]; }
+			for (int i = 0; i < score; ++i, --nti) {
+				char e = cg.nt[nti];
 				if (e != '=' and e != '*') { break; }
-				cg.nt[ni] = '=';
+				cg.nt[nti] = '=';
 			}
 		}
+		if (verbosity >= 2) { report_edits(edit, kmers, rv); }
 	}
 
 
@@ -585,6 +595,7 @@ struct thread_ext_t {
 			--cg.ni;
 		}
 		ki += (score - 1); // shift to the last edited kmer
+		if (verbosity >= 2) { report_edits(edit, kmers, rv); }
 	}
 };
 
@@ -616,6 +627,8 @@ bool find_anchor(GraphType& g, vector<uint64_t>& kmers, bool aln, cigar_t& cg, u
 }
 
 bool errorCorrection_forward(vector<uint64_t>& nnds, GraphType& g, vector<uint64_t>& kmers, uint64_t ki, bool (&nts0)[4], thread_ext_t& txt, int mes) {
+	if (verbosity >= 2 and not txt.rv) { cerr << "\tstarting forwrad correction at " << ki; }
+
 	bool nts1[4] = {};
 	bool nts2[4] = {};
 	graph_triplet_t gnt3; // 3 consecutive nucleotides in the graph; 4x4x4 matrix
@@ -791,10 +804,14 @@ bool errorCorrection_forward(vector<uint64_t>& nnds, GraphType& g, vector<uint64
 			}
 		}
 	}
-	return !txt.get_edit(); // longer edits are treated with path-skipping and re-anchoring using find_anchor()
+	bool skip = !txt.get_edit(); // longer edits are treated with path-skipping and re-anchoring using find_anchor()
+	if (skip and verbosity >= 2) { cerr << " failed." << endl; }
+	return skip;
 }
 
 bool errorCorrection_backward(uint64_t node, GraphType& g, vector<uint64_t>& kmers, vector<uint64_t>& kmers_rc, uint64_t ki, thread_ext_t& txt, int mes) {
+	if (verbosity >= 2) { cerr << "\tstarting backward correction at " << ki; }
+
 	bool nts0_rc[4] = {};
 	uint64_t node_rc;
 	vector<uint64_t> nnds_rc;
@@ -806,14 +823,6 @@ bool errorCorrection_backward(uint64_t node, GraphType& g, vector<uint64_t>& kme
 		kmers_rc[k] = getNuRC(kmers[j], ksize);
 	}
 	return errorCorrection_forward(nnds_rc, g, kmers_rc, 1, nts0_rc, txt, mes);
-}
-
-void report_edits(thread_ext_t& txt, vector<uint64_t>& kmers) {
-	cerr << "... SUCCESS! ";
-	for (auto c : txt.edit) { cerr << baseComplement[c]; } 
-	cerr << endl << decodeNumericSeq(kmers[0]>>2, ksize-1);
-	for (auto v : kmers) { cerr << alphabet[v%4]; }
-	cerr << endl;
 }
 
 // scan read and find anchors
@@ -847,21 +856,19 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ve
 	uint64_t nkmers = kmers.size();
 	uint64_t mes; // max_edit_size: edit.size() < mes
 
-
+	if (verbosity >= 2) { cerr << "Threading new read " << seq << endl; }
 	if (not find_anchor(g, kmers, aln, cg, nskip, ki, trKmers, node)) { return 0; }
 	else {
 		if (ki > 0 and correction and ncorrection < maxncorrection) { // if leading unaligned kmers exist, do backward alignment first
 			if (ki >= MSC+1) { // sufficient info for error correction;
-				if (verbosity >= 2) { cerr << "starting backward correction at " << ki; }
 				mes = (ki >= 2*MSC + 2) ? 2 : 1;
-				thread_ext_t txtr(MSC, mes);
+				thread_ext_t txtr(MSC, mes, true);
 				vector<uint64_t> kmers_rc;
 				bool skip = errorCorrection_backward(node, g, kmers, kmers_rc, ki, txtr, mes);
 				if (not skip) {
 					txtr.edit_kmers_backward(kmers, kmers_rc, ki, aln, cg, trKmers);
 					nskip -= txtr.nrk;
 					++ncorrection;
-					if (verbosity >= 2) { report_edits(txtr, kmers); }
 				}
 			}
 		}
@@ -918,30 +925,28 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ve
 
 			if (correction and ncorrection < maxncorrection) {
 				mes = (kmers.size()-ki >= 2*MSC + 2) ? 2 : 1;
-				thread_ext_t txtf(MSC, mes);
-				if (verbosity >= 2) { cerr << "starting forwrad correction at " << ki; }
+				thread_ext_t txtf(MSC, mes, false);
 				skip = errorCorrection_forward(nnds, g, kmers, ki, nts0, txtf, mes);
+
 				if (not skip) { // passed forward correction
 					nskip += txtf.edit.size();
 					if (nskip > maxnskip) { return 0; }
 					txtf.edit_kmers_forward(kmers, ki, aln, cg, trKmers); // // resize kmers/cg.tr/cg.nt; shift ki/cg.ni to the last kmer examined/edited
 					node = kmers[ki];
 					++ncorrection;
-					if (verbosity >= 2) { report_edits(txtf, kmers); }
 				}
 				else {
 					if (not find_anchor(g, kmers, aln, cg, nskip, ki, trKmers, node)) { break; }
 					mes = 2; // always have enough info to make 2 edits
-					thread_ext_t txtr(MSC, mes);
+					thread_ext_t txtr(MSC, mes, true);
 					vector<uint64_t> kmers_rc;
-					if (verbosity >= 2) { cerr << "starting backward correction at " << ki; }
 					skip = errorCorrection_backward(node, g, kmers, kmers_rc, ki, txtr, mes);
+
 					if (not skip) { // passed reverse correction
-						nskip -= (txtr.nrk - txtr.ni); // XXX ins in this case is usually a match to the graph and not counted in `nrk`
+						nskip -= (txtr.nrk - txtr.ni); // XXX ins in this case is usually a match to the graph and not counted in `nrk` (# of rescued kmers)
 						if (nskip > maxnskip) { return 0; }
 						txtr.edit_kmers_backward(kmers, kmers_rc, ki, aln, cg, trKmers);
 						++ncorrection;
-						if (verbosity >= 2) { report_edits(txtr, kmers); }
 
 						bool gap = txtr.score < std::min(ksize-1, ki-txtr.nm-txtr.nd);
 						uint64_t ki0 = ki, ki1 = ki;
@@ -952,18 +957,17 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ve
 								cerr << "backward extension size " << txtr.score << " is short. Starting iterative correction at " << ki1;
 							}
 							mes = (ki1 >= 2*MSC + 2) ? 2 : 1;
-							txtr = thread_ext_t(MSC, mes);
+							txtr = thread_ext_t(MSC, mes, true);
                     		vector<uint64_t> kmers_rc;
 							uint64_t node_ = kmers[ki1];
 							assert(g.count(node_));
                     		skip = errorCorrection_backward(node_, g, kmers, kmers_rc, ki1, txtr, mes);
 							if (not skip) {
-								nskip -= (txtr.nrk - txtr.ni); // XXX ins in this case is usually a match to the graph and not counted in `nrk`
+								nskip -= (txtr.nrk - txtr.ni);
 								if (nskip > maxnskip) { return 0; }
 								txtr.edit_kmers_backward(kmers, kmers_rc, ki1, aln, cg, trKmers);
 								++ncorrection;
 								gap = txtr.score < std::min(ksize-1, ki1-txtr.nm-txtr.nd);
-								if (verbosity >= 2) { report_edits(txtr, kmers); }
 							}
 						}
 					}
@@ -999,15 +1003,13 @@ void threadCheck(GraphType& g, string& seq, vector<uint64_t>& kmers, cigar_t& cg
 	uint64_t ki = 0;
 	while (cg.tr[ki] == '*') { ++ki; }
 	uint64_t node = kmers[ki];
-	if (not g.count(node)) { cerr << "threadCheck failed: " << ki << endl; return; }
-	//assert(g.count(node));
+	if (not g.count(node)) { cerr << "threadCheck failed: " << ki << endl; assert(false); }
 
 	for (ki=ki+1; ki < kmers.size(); ++ki) {
 		if (cg.tr[ki] == '*') { continue; }
 		if (cg.tr[ki-1] == '*') {
 			node = kmers[ki];
-			if (not g.count(node)) { cerr << "threadCheck failed: " << ki << endl; return; }
-			//assert(g.count(node));
+			if (not g.count(node)) { cerr << "threadCheck failed: " << ki << endl; assert(false); }
 			continue;
 		}
 
@@ -1031,8 +1033,27 @@ void threadCheck(GraphType& g, string& seq, vector<uint64_t>& kmers, cigar_t& cg
 			for (auto v : kmers) { cerr << v << ','; }
 			cerr << endl;
 			cerr << ki << '\t' << kmers[ki] << endl;
-			return;
-			//assert(false);
+			assert(false);
+		}
+	}
+
+	string cseq = seq;
+	int i = 0;
+	for (auto c : cg.nt) {
+		if      (c == '=' or c == '*') { }
+		else if (c == 'A' or c == 'C' or c == 'G' or c == 'T') { cseq[i] = c; }
+		else if (c == '0' or c == '1' or c == '2' or c == '3') { cseq.insert(cseq.begin()+i, 'N'); cseq[i] = baseNumConversion[c-'0']; }
+		else if (c == 'I') { cseq.erase(cseq.begin()+i); --i; }
+		++i;
+	}
+	vector<uint64_t> ckmers;
+	read2kmers(ckmers, cseq, ksize, 0, 0, false, true); 
+	assert(kmers.size() == ckmers.size());
+	for (int i = 0; i < kmers.size(); ++i) {
+		if (kmers[i] != ckmers[i]) {
+			cerr << "seq:\t"  << seq  << " !=" << endl
+			     << "cseq:\t" << cseq << endl;
+			assert(false);
 		}
 	}
 }
