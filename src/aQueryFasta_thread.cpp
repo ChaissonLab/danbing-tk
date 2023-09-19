@@ -455,7 +455,7 @@ struct thread_ext_t {
 	uint64_t ms1 = 0;       // min num of extended kmers for 1 edit
 	uint64_t ms2 = 0;       // min num of extended kmers for 2 edits
 	uint64_t score = 0;     // highest number of extended kmers
-	uint64_t nra = 0;       // number of re-aligned kmers (for backward aln only)
+	uint64_t nrk = 0;       // number of re-aligned kmers (for backward aln only)
 	uint64_t nm = 0;        // number of mismatch
 	uint64_t nd = 0;        // number of del
 	uint64_t ni = 0;        // number of ins
@@ -542,11 +542,13 @@ struct thread_ext_t {
 			for (int i = ki-1; i >= lb; --i) {
 				if (cg.tr[i] != '*') { break; }
 				cg.tr[i] = trKmers.count(toCaKmer(kmers[i], ksize)) ? '=' : '.';
-				++nra;
+				++nrk;
 			}
-			nra -= (nm+nd);
-			int ni = cg.ni - 1;
-			for (int i = 0; i < edit.size(); ++i, --ni) { cg.nt[ni] = baseComplement[edit[i]];}
+			nrk -= (nm+nd);
+			//int ni = cg.ni - 1;
+			int dtni = 0, ni = 0, ni1 = ki-dt_km-1;
+			while (ni < ni1+dtni) { if (cg.nt[ni++] == 'I') { ++dtni; ++ni; } }
+			for (int i = 0; i < edit.size(); ++i, --ni) { cg.nt[ni] = baseComplement[edit[i]]; }
 			for (int i = 0; i < score; ++i, --ni) {
 				char e = cg.nt[ni];
 				if (e != '=' and e != '*') { break; }
@@ -806,6 +808,14 @@ bool errorCorrection_backward(uint64_t node, GraphType& g, vector<uint64_t>& kme
 	return errorCorrection_forward(nnds_rc, g, kmers_rc, 1, nts0_rc, txt, mes);
 }
 
+void report_edits(thread_ext_t& txt, vector<uint64_t>& kmers) {
+	cerr << "... SUCCESS! ";
+	for (auto c : txt.edit) { cerr << baseComplement[c]; } 
+	cerr << endl << decodeNumericSeq(kmers[0]>>2, ksize-1);
+	for (auto v : kmers) { cerr << alphabet[v%4]; }
+	cerr << endl;
+}
+
 // scan read and find anchors
 // set cigars too
 //init_anchors() {}
@@ -842,14 +852,16 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ve
 	else {
 		if (ki > 0 and correction and ncorrection < maxncorrection) { // if leading unaligned kmers exist, do backward alignment first
 			if (ki >= MSC+1) { // sufficient info for error correction;
+				if (verbosity >= 2) { cerr << "starting backward correction at " << ki; }
 				mes = (ki >= 2*MSC + 2) ? 2 : 1;
-				thread_ext_t txt(MSC, mes);
+				thread_ext_t txtr(MSC, mes);
 				vector<uint64_t> kmers_rc;
-				bool skip = errorCorrection_backward(node, g, kmers, kmers_rc, ki, txt, mes);
+				bool skip = errorCorrection_backward(node, g, kmers, kmers_rc, ki, txtr, mes);
 				if (not skip) {
-					txt.edit_kmers_backward(kmers, kmers_rc, ki, aln, cg, trKmers);
-					nskip -= txt.nra;
+					txtr.edit_kmers_backward(kmers, kmers_rc, ki, aln, cg, trKmers);
+					nskip -= txtr.nrk;
 					++ncorrection;
+					if (verbosity >= 2) { report_edits(txtr, kmers); }
 				}
 			}
 		}
@@ -907,6 +919,7 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ve
 			if (correction and ncorrection < maxncorrection) {
 				mes = (kmers.size()-ki >= 2*MSC + 2) ? 2 : 1;
 				thread_ext_t txtf(MSC, mes);
+				if (verbosity >= 2) { cerr << "starting forwrad correction at " << ki; }
 				skip = errorCorrection_forward(nnds, g, kmers, ki, nts0, txtf, mes);
 				if (not skip) { // passed forward correction
 					nskip += txtf.edit.size();
@@ -914,19 +927,45 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ve
 					txtf.edit_kmers_forward(kmers, ki, aln, cg, trKmers); // // resize kmers/cg.tr/cg.nt; shift ki/cg.ni to the last kmer examined/edited
 					node = kmers[ki];
 					++ncorrection;
+					if (verbosity >= 2) { report_edits(txtf, kmers); }
 				}
 				else {
 					if (not find_anchor(g, kmers, aln, cg, nskip, ki, trKmers, node)) { break; }
 					mes = 2; // always have enough info to make 2 edits
 					thread_ext_t txtr(MSC, mes);
 					vector<uint64_t> kmers_rc;
+					if (verbosity >= 2) { cerr << "starting backward correction at " << ki; }
 					skip = errorCorrection_backward(node, g, kmers, kmers_rc, ki, txtr, mes);
-					//while ((not skip) and   '*' in this region, keep doing backward errorCorrection
 					if (not skip) { // passed reverse correction
-						nskip -= (txtr.nra - txtr.ni); // XXX ins in this case is usually a match to the graph and not counted in `nra`
+						nskip -= (txtr.nrk - txtr.ni); // XXX ins in this case is usually a match to the graph and not counted in `nrk`
 						if (nskip > maxnskip) { return 0; }
 						txtr.edit_kmers_backward(kmers, kmers_rc, ki, aln, cg, trKmers);
 						++ncorrection;
+						if (verbosity >= 2) { report_edits(txtr, kmers); }
+
+						bool gap = txtr.score < std::min(ksize-1, ki-txtr.nm-txtr.nd);
+						uint64_t ki0 = ki, ki1 = ki;
+						while (not skip and gap) { // forward and backward threads not fully patched
+							ki0 = ki1;
+							ki1 = ki0 - txtr.nm - txtr.nd - txtr.score;
+							if (verbosity >= 2) {
+								cerr << "backward extension size " << txtr.score << " is short. Starting iterative correction at " << ki1;
+							}
+							mes = (ki1 >= 2*MSC + 2) ? 2 : 1;
+							txtr = thread_ext_t(MSC, mes);
+                    		vector<uint64_t> kmers_rc;
+							uint64_t node_ = kmers[ki1];
+							assert(g.count(node_));
+                    		skip = errorCorrection_backward(node_, g, kmers, kmers_rc, ki1, txtr, mes);
+							if (not skip) {
+								nskip -= (txtr.nrk - txtr.ni); // XXX ins in this case is usually a match to the graph and not counted in `nrk`
+								if (nskip > maxnskip) { return 0; }
+								txtr.edit_kmers_backward(kmers, kmers_rc, ki1, aln, cg, trKmers);
+								++ncorrection;
+								gap = txtr.score < std::min(ksize-1, ki1-txtr.nm-txtr.nd);
+								if (verbosity >= 2) { report_edits(txtr, kmers); }
+							}
+						}
 					}
 					else {
 						// add segment to list for BFS search later
@@ -960,13 +999,15 @@ void threadCheck(GraphType& g, string& seq, vector<uint64_t>& kmers, cigar_t& cg
 	uint64_t ki = 0;
 	while (cg.tr[ki] == '*') { ++ki; }
 	uint64_t node = kmers[ki];
-	assert(g.count(node));
+	if (not g.count(node)) { cerr << "threadCheck failed: " << ki << endl; return; }
+	//assert(g.count(node));
 
 	for (ki=ki+1; ki < kmers.size(); ++ki) {
 		if (cg.tr[ki] == '*') { continue; }
 		if (cg.tr[ki-1] == '*') {
 			node = kmers[ki];
-			assert(g.count(node));
+			if (not g.count(node)) { cerr << "threadCheck failed: " << ki << endl; return; }
+			//assert(g.count(node));
 			continue;
 		}
 
@@ -990,7 +1031,8 @@ void threadCheck(GraphType& g, string& seq, vector<uint64_t>& kmers, cigar_t& cg
 			for (auto v : kmers) { cerr << v << ','; }
 			cerr << endl;
 			cerr << ki << '\t' << kmers[ki] << endl;
-			assert(false);
+			return;
+			//assert(false);
 		}
 	}
 }
