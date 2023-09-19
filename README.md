@@ -34,7 +34,7 @@ An example usage to genotype SRS sample using the RPGG:
 
 ```shell
 samtools fasta -@2 -n $SRS.bam |
-/$PREFIX/danbing-tk/bin/danbing-tk -gc 85 -ae -kf 4 1 -cth 45 -o $OUT_PREF -k 21 -qs pan -fai /dev/stdin -p $THREADS | gzip >$OUT_PREF.aln.gz
+/$PREFIX/danbing-tk/bin/danbing-tk -gc 85 3 -ae -kf 4 1 -cth 45 -o $OUT_PREF -k 21 -qs pan -fa /dev/stdin -p $THREADS | gzip >$OUT_PREF.aln.gz
 ```
 
 `danbing-tk align` takes ~12 cpu hours to genotype a 30x SRS sample. This will generate `$OUT_PREF.tr.kmers` and `$OUT_PREF.aln.gz` output with format specified in [File Format](#file-format).
@@ -153,7 +153,7 @@ The second field is optional.
 ### Alignment output (`-a` option)
 - Synopsis
 	```
-	<src> <dest> <read_name/0> <read_seq/0> <ops/0> <annot/0> <read_name/1> <read_seq/1> <ops/1> <annot/1>
+	<src> <dest> <read_name> <read_seq/0> <read_seq/1> <ops/0> <annot/0> <ops/1> <annot/1>
 	```
 - `src`: source locus of a read pair (for simulation only)
 - `dest`: aligned locus for the read pair
