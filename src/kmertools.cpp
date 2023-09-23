@@ -27,6 +27,7 @@ int main (int argc, const char * argv[]) {
 		     << "Commands:" << endl
 			 << "  ksi         generate ksi index for ktools sum" << endl
 		     << "  sum         acculumate kmer counts for each locus" << endl
+		     << "  extract     extract locus-RPGG from RPGG" << endl
 		     << "  serialize   generate kmer index using pan.(graph|ntr|tr).kmers" << endl << endl;
 		return 0;
 	}
@@ -131,6 +132,42 @@ int main (int argc, const char * argv[]) {
 			kmerf.close();
 			fout.close();
 			cerr << idx << " loci and " << ki << " kmers processed in " << args[3] << endl;
+		}
+	}
+	else if (args[1] == "extract") {
+		if (argc == 2) {
+			cerr << "Usage: ktools extract <in.pref> <INT> <out.pref>" << endl
+			     << "  int.pref   prefix of *.(graph|ntr|tr).kmers" << endl
+			     << "  INT        index of the locus of interest" << endl
+			     << "  out.pref   prefix of output kmers" << endl << endl;
+			return 0;
+		}
+
+		int tri = stoi(args[3]);
+		string ipref = args[2];
+		string opref = args[4];
+
+		string line;
+		for (auto ftype : vector<string>{"tr","ntr","graph"}) {
+			int tri_ = -1;
+			ifstream fin(ipref + "." + ftype + ".kmers");
+			ofstream fout(opref + "." + ftype + ".kmers");
+			cerr << "Processing " << ipref + "." + ftype + ".kmers and writing to " opref + "." + ftype + ".kmers" << endl;
+			assert(fin);
+			assert(fout);
+			fout << '>' << tri << '\n';
+			while (fin.peek() != EOF) {
+				getline(fin, line);
+				if (line[0] != '>') {
+					if (tri_ < tri) { continue; }
+					else { fout << line << '\n'; }
+				}
+				else {
+					++tri_;
+					if (tri_ > tri) { break; }
+				}
+			}
+			fout.close();
 		}
 	}
 	else if (args[1] == "serialize") {
