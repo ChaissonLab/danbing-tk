@@ -39,18 +39,26 @@ typedef unordered_map<uint64_t, unordered_map<uint64_t, std::tuple<uint64_t,uint
 typedef std::pair<uint8_t, uint8_t> PE_KMC; // pair-end kmer count // XXX not compatible with reads longer than 255 bp
 
 
+struct edit_t {
+	char t, r, g; // type=['X','I','D'], read_nuc, graph_nuc;
+	edit_t () { t = '*'; r = '\0'; g = '\0'; } 
+	edit_t (char t_) { t = t_; r = '\0'; g = '\0'; }
+	edit_t (char t_, char r_, char g_) { t = t_; r = r_; g = g_; }
+};
+
 struct cigar_t {
-	int ni = 0, dt = 0;
-	// nt.size() == tr.size() + ksize - 1 + dt
+	int ni = 0;
+	// es.size() == tr.size() + ksize - 1 + dt
 	// dt: # of ins
-	// Deletions will increase the size of both nt and tr; insertions will shrink tr only.
-	// nt: operations to convert the read to the thread in the graph
+	// es: edits to convert the read to the thread in the graph
 	// tr: TR annotation for the kmers from the thread
-	vector<char> nt; // `[ACGT]`: mismatch. `=`: match. `I`: insertion. `[0123]`: deletion. `*`: unaligned
+	vector<edit_t> es; // obsolete comment`[ACGT]`: mismatch. `=`: match. `I`: insertion. `[0123]`: deletion. `*`: unaligned
 	vector<char> tr; // `*`: unaligned. `.`: flank. `=`: TR
 
-	void init(int n) {
-		nt.resize(n, '*');
+	void init(string& seq) {
+		int n = seq.size();
+		es.resize(n);
+		for (int i = 0; i < n; ++i) { es[i].r = seq[i]; }
 		tr.resize(n-ksize+1, '*');
 	}
 };
@@ -58,11 +66,8 @@ struct cigar_t {
 struct sam_t {
 	int src, dst;
 	cigar_t r1, r2;
-
-	void init(int n1, int n2) {
-		r1.init(n1);
-		r2.init(n2);
-	}
+	void init1(string& seq) { r1.init(seq); }
+	void init2(string& seq) { r2.init(seq); }
 };
 
 struct asgn_t { // pe read assignment
@@ -452,15 +457,25 @@ void get_kseq(vector<uint64_t>& kmers, vector<char>& kseq) {
 	for (int j = i+ksize; j < kseq.size(); ++j) { kseq[j] = baseNumConversion[kmers[j-ksize+1] % 4]; }
 }
 
-void report_edits(vector<char>& edit, int score, vector<uint64_t>& kmers, bool reverse, log_t& log) {
+char e2c(edit_t& e) {
+	if      (e.t == 'X') { return e.g; }
+	else if (e.t == 'D') { return '0'+baseNumConversion[e.g]; }
+	else                 { return e.t; } // '=', 'I', '*', 'N', 'H'
+}
+
+void report_edits(vector<edit_t>& edits, int score, vector<uint64_t>& kmers, bool reverse, log_t& log) {
 	log.m << "... SUCCESS! ";
-	for (auto c : edit) { log.m << (reverse ? baseComplement[c] : c); } 
+	for (auto& e : edits) { log.m << (reverse ? baseComplement[e2c(e)] : e2c(e)); } 
 	log.m << ' ' << score << "\n\t";
 	uint64_t ksl = kmers.size() + ksize - 1;
 	vector<char> kseq(ksl);
 	get_kseq(kmers, kseq);
 	for (auto v : kseq) { log.m << v; }
 	log.m << '\n';
+}
+
+void report_cg_es(ostringstream& m, vector<edit_t>& es) {
+	for (auto& e : es) { m << e2c(e); }
 }
 
 struct thread_ext_t {
@@ -484,7 +499,7 @@ struct thread_ext_t {
 	int dt_km = 0;          // change in the size of aligned/corrected kmers vector
 	int dt_ki = 0;          // change in the index of alinged/corrected kmers vector
 	int dt_nti = 0;         // change in the index in (uncorrected) nucleotide array
-	vector<char> edit;      // placeholder for up to 2 edits
+	vector<edit_t> edits;   // placeholder for up to 2 edits
 
 
 	thread_ext_t(uint64_t MSC, uint64_t mes_, bool rv_) {
@@ -496,23 +511,22 @@ struct thread_ext_t {
 
 	// priority: mismatch > del > ins, according to Illumina error profile. 1bp_edit > 2bp_edit.
 	bool get_edit() {
-		static const char dels[4] = {'0','1','2','3'};
-		for (uint64_t i = 0; i < 4; ++i) { if (nem1[i] > score and nem1[i] >= ms1) { score = nem1[i]; edit = {alphabet[i]}; } }
-		for (uint64_t i = 0; i < 4; ++i) { if (ned1[i] > score and ned1[i] >= ms1) { score = ned1[i]; edit = {dels[i]}; } }
-		if (nei1 > score and nei1 >= ms1) { score = nei1; edit = {'I'}; }
+		for (uint64_t i = 0; i < 4; ++i) { if (nem1[i] > score and nem1[i] >= ms1) { score = nem1[i]; edits = { edit_t('X', '\0', alphabet[i]) }; } }
+		for (uint64_t i = 0; i < 4; ++i) { if (ned1[i] > score and ned1[i] >= ms1) { score = ned1[i]; edits = { edit_t('D', '\0', alphabet[i]) }; } }
+		if (nei1 > score and nei1 >= ms1) { score = nei1; edits = { edit_t('I', '\0', '\0') }; }
 		if (mes > 1) {
 			for (uint64_t i = 0; i < 4; ++i) {
 				for (uint64_t j = 0; j < 4; ++j) {
 					uint64_t sm2 = nem2[i*4+j];
 					uint64_t smd = nemd[i*4+j];
 					uint64_t sd2 = ned2[i*4+j];
-					if (sm2 > score and sm2 >= ms2) { score = sm2; edit = {alphabet[i], alphabet[j]}; }
-					if (smd > score and smd >= ms2) { score = smd; edit = {alphabet[i], dels[j]}; }
-					if (sd2 > score and sd2 >= ms2) { score = sd2; edit = {dels[i],     dels[j]}; }
+					if (sm2 > score and sm2 >= ms2) { score = sm2; edits = { edit_t('X', '\0', alphabet[i]), edit_t('X', '\0', alphabet[j]) }; }
+					if (smd > score and smd >= ms2) { score = smd; edits = { edit_t('X', '\0', alphabet[i]), edit_t('D', '\0', alphabet[j]) }; }
+					if (sd2 > score and sd2 >= ms2) { score = sd2; edits = { edit_t('D', '\0', alphabet[i]), edit_t('D', '\0', alphabet[j]) }; }
 				}
-				if (nemi[i] > score and nemi[i] >= ms2) { score = nemi[i]; edit = {alphabet[i], 'I'}; }
+				if (nemi[i] > score and nemi[i] >= ms2) { score = nemi[i]; edits = { edit_t('X', '\0', alphabet[i]), edit_t('I', '\0', '\0') }; }
 			}
-			if (nei2 > score and nei2 >= ms2) { score = nei2; edit = {'I', 'I'}; }
+			if (nei2 > score and nei2 >= ms2) { score = nei2; edits = { edit_t('I', '\0', '\0'), edit_t('I', '\0', '\0') }; }
 		}
 		return score > 0;
 	}
@@ -526,10 +540,10 @@ struct thread_ext_t {
 			nts[i] = kmers[i] & lmask;
 		}
 		// resize and refill content
-		for (char c : edit) {
-			if      (c == 'A' or c == 'C' or c == 'G' or c == 'T') { ++nm; }
-			else if (c == '0' or c == '1' or c == '2' or c == '3') { ++nd; }
-			else if (c == 'I') { ++ni; }
+		for (auto& e : edits) {
+			if      (e.t == 'X') { ++nm; }
+			else if (e.t == 'D') { ++nd; }
+			else if (e.t == 'I') { ++ni; }
 		}
 		dt_km = nd - ni;
 		dt_nti = -(nm + ni);
@@ -542,15 +556,11 @@ struct thread_ext_t {
 			kmers.erase(kmers.begin(), kmers.begin()-dt_km);
 			cg.tr.erase(cg.tr.begin()+ki+dt_km, cg.tr.begin()+ki);
 		}
-		if (nd) {
-			for (int i = 0; i < nd; ++i) { cg.nt.insert(cg.nt.begin()+ki, '*'); }
-		}
 		ki += dt_km;
 		// corrected kmers
 		int ki_ = ki;
-		for (char c : edit) {
-			if      (c == 'A' or c == 'C' or c == 'G' or c == 'T') { kmers[ki_-1] = (kmers[ki_] >> 2) + (baseComplement[baseNumConversion[c]] * lbase); --ki_; }
-			else if (c == '0' or c == '1' or c == '2' or c == '3') { kmers[ki_-1] = (kmers[ki_] >> 2) + (baseComplement[(c-'0')] * lbase);              --ki_; }
+		for (auto& e : edits) {
+			if (e.t == 'X' or e.t == 'D') { kmers[ki_-1] = (kmers[ki_] >> 2) + (baseComplement[baseNumConversion[e.g]] * lbase); --ki_; }
 		}
 		// extended kmers
 		for (int i = ki_; i > 0; --i) {
@@ -565,24 +575,73 @@ struct thread_ext_t {
 		}
 		nrk -= (nm+nd);
 		nskip -= nrk;
-		int cni = ni, cnd = 0; // cumulative # of ins/del
-		int nti = 0, nti1 = ki-1;
-		while (nti < nti1+cni) {
-			char c = cg.nt[nti++];
-			if (c == 'I') { ++cni; ++nti; }
-			if (c == '0' or c == '1' or c == '2' or c == '3') { ++cnd; }
+		ncorrection += edits.size();
+		// CIGAR
+		{
+			int cni = ni; // cumulative # of ins
+			int nti = 0;
+			int nti_ = ki-1;
+			while (nti < nti_+cni) {
+				if (cg.es[nti++].t == 'I') { ++cni; ++nti; }
+			}
+			for (int i = 0; i < nd; ++i) { cg.es.insert(cg.es.begin()+nti-nd-nm+1, edit_t('D','\0','*')); }
+			int e0, e1; // start/end of edit_tract
+			e1 = nti;
+			for (int i = 0; i < edits.size(); ++i, --nti) {
+				auto& ed0 = cg.es[nti];
+				auto& ed1 = edits[i];
+				if (ed0.t != 'D') {
+					ed0.t = ed1.t;
+					ed0.g = baseComplement[ed1.g];
+				} else {
+					if      (ed1.t == 'I') { ed0.g = '\0'; }
+					else if (ed1.t == 'X') { ed0.g = baseComplement[ed1.g]; }
+				}
+			}
+			e0 = nti + 1;
+			for (int i = 0; i < score; ++i, --nti) {
+				auto& e = cg.es[nti];
+				if      (e.t == '=') { }
+				else if (e.t == '*') { e.t = '='; }
+				else                 { break; }
+			}
+			{
+				char t;
+				t = cg.es[e1].t;
+				while (t == 'X' or t == 'D' or t == 'I') { ++e1; t = cg.es[e1].t; }
+				t = cg.es[e0-1].t;
+				while (t == 'X' or t == 'D' or t == 'I') { --e0; t = cg.es[e0-1].t; }
+			}
+			vector<char> ets, rnts, gnts;
+			for (int i = e0; i < e1; ++i) {
+				auto& e = cg.es[i];
+				ets.push_back(e.t);
+				if (e.r) { rnts.push_back(e.r); }
+				if (e.g) { gnts.push_back(e.g); }
+			}
+			//cerr << "ets: "; for (char c:ets) {cerr << c;} cerr << " rnts: "; for (char c:rnts) {cerr << c;} cerr << " gnts: "; for (char c:gnts) {cerr << c;} cerr << endl;
+			if (rnts.size() == gnts.size()) {
+				bool no_edit = true;
+				for (int i = 0; i < rnts.size(); ++i) {
+					if (rnts[i] != gnts[i]) { no_edit = false; break; }
+				}
+				if (no_edit) { // edits canceled out
+					log.m << "... changing edits "; for (char c : ets) { log.m << c; } log.m << " to =";
+					int dt_es = 0;
+					for (int i = e0; i < e1; ++i) {
+						char t = cg.es[i].t;
+						while (t == 'D') { cg.es.erase(cg.es.begin()+i); t = cg.es[i].t; --dt_es; }
+						auto& e = cg.es[i];
+						e.t = '=';
+						e.g = '\0';
+					}
+					cg.ni += dt_es;
+					ncorrection -= (e1-e0);
+					nskip -= (e1-e0);
+				}
+			}
 		}
-		for (int i = 0; i < edit.size(); ++i, --nti) {
-			char c = baseComplement[edit[i]];
-			if ((c == 'A' or c == 'C' or c == 'G' or c == 'T') and seq[nti-cnd] == c) { cg.nt[nti] = '='; } // check if backward undoes forward correction
-			else { cg.nt[nti] = c; ++ncorrection; }
-		}
-		for (int i = 0; i < score; ++i, --nti) {
-			char e = cg.nt[nti];
-			if (e != '=' and e != '*') { break; }
-			cg.nt[nti] = '=';
-		}
-		if (verbosity >= 1) { report_edits(edit, score, kmers, rv, log); }
+		if (verbosity >= 1) { report_edits(edits, score, kmers, rv, log); }
 	}
 
 
@@ -591,10 +650,10 @@ struct thread_ext_t {
 		for (int i = ki; i < kmers.size(); ++i) {
 			nts[i-ki] = kmers[i] % 4;
 		}
-		for (char c : edit) {
-			if      (c == 'A' or c == 'C' or c == 'G' or c == 'T') { kmers[ki] = ((kmers[ki-1] & rmask) << 2) + baseNumConversion[c]; ++ki; ++nm; }
-			else if (c == '0' or c == '1' or c == '2' or c == '3') { kmers[ki] = ((kmers[ki-1] & rmask) << 2) + (c-'0');              ++ki; ++nd; }
-			else if (c == 'I') { ++ni; }
+		for (auto& e : edits) {
+			if      (e.t == 'X') { kmers[ki] = ((kmers[ki-1] & rmask) << 2) + baseNumConversion[e.g]; ++ki; ++nm; }
+			else if (e.t == 'D') { kmers[ki] = ((kmers[ki-1] & rmask) << 2) + baseNumConversion[e.g]; ++ki; ++nd; }
+			else if (e.t == 'I') { ++ni; }
 		}
 		dt_nti = nm + ni;
 		dt_ki = nm + nd;
@@ -604,15 +663,21 @@ struct thread_ext_t {
 			kmers[i] = ((kmers[i-1] & rmask) << 2) + nts[dt_nti++];
 		}
 		if (dt_km) { cg.tr.resize(cg.tr.size() + dt_km, '*'); }
-		if (nd)    { cg.nt.resize(cg.nt.size() + nd,    '*'); }
+		for (int i = 0; i < nd; ++i) { cg.es.insert(cg.es.begin()+cg.ni+ksize-1+nm, edit_t('D','\0','*')); }
+
 		int ki_ = ki - dt_ki;
-		for (int i = 0; i < dt_ki + score; ++i         ) { cg.tr[ki_+i] = trKmers.count(toCaKmer(kmers[ki_+i], ksize)) ? '=' : '.'; }
-		for (int i = 0; i < edit.size();   ++i, ++cg.ni) { cg.nt[cg.ni+ksize-1] = edit[i]; } 
-		for (int i = 0; i < score;         ++i, ++cg.ni) { cg.nt[cg.ni+ksize-1] = '=';}
+		for (int i = 0; i < dt_ki + score; ++i) { cg.tr[ki_+i] = trKmers.count(toCaKmer(kmers[ki_+i], ksize)) ? '=' : '.'; }
+		for (int i = 0; i < edits.size(); ++i, ++cg.ni) {
+			auto& e0 = cg.es[cg.ni+ksize-1];
+			auto& e1 = edits[i];
+			e0.t = e1.t;
+			e0.g = e1.g;
+		} 
+		for (int i = 0; i < score; ++i, ++cg.ni) { cg.es[cg.ni+ksize-1].t = '='; }
 		--cg.ni;
 		ki += (score - 1); // shift to the last edited kmer
-		ncorrection += edit.size();
-		if (verbosity >= 1) { report_edits(edit, score, kmers, rv, log); }
+		ncorrection += edits.size();
+		if (verbosity >= 1) { report_edits(edits, score, kmers, rv, log); }
 	}
 };
 
@@ -637,7 +702,7 @@ bool find_anchor(GraphType& g, vector<uint64_t>& kmers, cigar_t& cg, uint64_t& n
 	}
 	node = kmers[ki];
 	cg.tr[ki] = trKmers.count(toCaKmer(node, ksize)) ? '=' : '.';
-	for (int i = cg.ni; i < cg.ni+ksize; ++i) { if (cg.nt[i] == '*') { cg.nt[i] = '='; } }
+	for (int i = cg.ni; i < cg.ni+ksize; ++i) { if (cg.es[i].t == '*') { cg.es[i].t = '='; } }
 	return 1;
 }
 
@@ -898,14 +963,14 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ve
 	for (ki=ki+1, cg.ni=cg.ni+1; ki < kmers.size(); ++ki, ++cg.ni) {
 		if (kmers[ki] == -1ULL) { // "N" in read
 			cg.tr[ki] = 'N';
-			cg.nt[cg.ni+ksize-1] == 'N';
+			cg.es[cg.ni+ksize-1].t = 'N';
 			++nskip;
 			if (nskip > maxnskip) { return 0; }
 			continue;
 		}
 		if (kmers[ki] == kmers[ki-1]) { // skip homopolymer run
 			cg.tr[ki] = trKmers.count(toCaKmer(kmers[ki], ksize)) ? '=' : '.';
-			cg.nt[cg.ni+ksize-1] = 'H';
+			cg.es[cg.ni+ksize-1].t = 'H';
 			++nskip;
 			if (nskip > maxnskip) { return 0; }
 			continue;
@@ -927,7 +992,7 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ve
 				node = nnd;
 				skip = false;
 				cg.tr[ki] = trKmers.count(toCaKmer(kmers[ki], ksize)) ? '=' : '.';
-				cg.nt[cg.ni+ksize-1] = '=';
+				cg.es[cg.ni+ksize-1].t = '=';
 				break;
 			}
 		}
@@ -944,7 +1009,7 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ve
 				skip = errorCorrection_forward(nnds, g, kmers, ki, nts0, txtf, mes, log);
 
 				if (not skip) { // passed forward correction
-					nskip += txtf.edit.size();
+					nskip += txtf.edits.size();
 					if (nskip > maxnskip) { return 0; }
 					txtf.edit_kmers_forward(kmers, ki, cg, trKmers, log, ncorrection); // // resize kmers/cg.tr/cg.nt; shift ki/cg.ni to the last kmer examined/edited
 					node = kmers[ki];
@@ -954,11 +1019,6 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ve
 					vector<uint64_t> kmers_rc;
 
 					if (not find_anchor(g, kmers, cg, nskip, ki, trKmers, node)) { break; }
-					//{ // do not place edits at the same position as forward edits
-					//	char c = cg.nt[cg.ni];
-					//	if (c != '=' and c != '*') { continue; }
-					//}
-
 					mes = 2; // always have enough info to make 2 edits
 					thread_ext_t txtr(MSC, mes, true);
 					skip = errorCorrection_backward(node, g, kmers, kmers_rc, ki, txtr, mes, log);
@@ -1025,7 +1085,7 @@ void log_tc_failure(log_t& log, string& seq, string& cseq, cigar_t& cg, vector<u
 
 	log.m << "threadCheck failed at ki: " << ki << " kmer: " << kmers[ki] << '\n'
 	      << "seq:\t" << seq << '\n'
-	      << "cg.nt:\t"; for (auto c : cg.nt) { log.m << c; } log.m << '\n'
+	      << "cg.es:\t"; report_cg_es(log.m, cg.es); log.m << '\n'
 	      << "cseq:\t" << cseq << '\n'
 	      << "kseq:\t"; for (auto c : kseq) { log.m << c; } log.m  << '\n'
 	      << "cg.tr:\t"; for (auto c : cg.tr) { log.m << c; } log.m << '\n';
@@ -1035,11 +1095,10 @@ void log_tc_failure(log_t& log, string& seq, string& cseq, cigar_t& cg, vector<u
 void threadCheck(GraphType& g, string& seq, vector<uint64_t>& kmers, cigar_t& cg, log_t& log) {
 	string cseq = seq;
 	int i = 0;
-	for (auto c : cg.nt) {
-		if      (c == '=' or c == '*') { }
-		else if (c == 'A' or c == 'C' or c == 'G' or c == 'T') { if (cseq[i] == c) { log.m << "[!]cseq[" << i << "]==" << c << '\n'; log_tc_failure(log, seq, cseq, cg, kmers, i); return; } cseq[i] = c; }
-		else if (c == '0' or c == '1' or c == '2' or c == '3') { cseq.insert(cseq.begin()+i, 'N'); cseq[i] = baseNumConversion[c-'0']; }
-		else if (c == 'I') { cseq.erase(cseq.begin()+i); --i; }
+	for (auto& e : cg.es) {
+		if      (e.t == 'X') { if (cseq[i] == e.g) { log.m << "[!]cseq[" << i << "]==" << e.g << '\n'; log_tc_failure(log, seq, cseq, cg, kmers, i); return; } cseq[i] = e.g; }
+		else if (e.t == 'D') { cseq.insert(cseq.begin()+i, e.g); }
+		else if (e.t == 'I') { cseq.erase(cseq.begin()+i); --i; }
 		++i;
 	}
 
@@ -1088,6 +1147,11 @@ void threadCheck(GraphType& g, string& seq, vector<uint64_t>& kmers, cigar_t& cg
 
 	vector<uint64_t> ckmers;
 	read2kmers(ckmers, cseq, ksize, 0, 0, false, true); 
+	if (kmers.size() != ckmers.size()) {
+		log.m << "[!]kmers.size() " << kmers.size() << "!= ckmers.size() " << ckmers.size() << "\n";
+		log_tc_failure(log, seq, cseq, cg, kmers, ki);
+		assert(false);
+	}
 	assert(kmers.size() == ckmers.size());
 	for (int i = 0; i < kmers.size(); ++i) {
 		if (kmers[i] != ckmers[i]) {
@@ -1111,43 +1175,61 @@ void writeExtractedReads(int extractFasta, vector<string>& seqs, vector<string>&
 	}
 }
 
-void writeCigar(vector<char> ops) {
+void writeAnnot(vector<char> tr) {
 	int ct = 1;
-	char op0, op1, lc; // last_op, last_edit_char
-	op0 = ops[0];
-	for (int i = 1; i < ops.size(); ++i) {
-		op1 = ops[i];
-		if (op0 == '=' or op0 == '.' or op0 == '*') {
-			while (ops[i] == op0) { ++ct; ++i; if (i == ops.size()) { break; } }
-			cout << ct << op0;
+	char c0, c1; // last_annot
+	c0 = tr[0];
+	for (int i = 1; i < tr.size(); ++i) {
+		c1 = tr[i];
+		if (c0 == '=' or c0 == '.' or c0 == '*') {
+			while (tr[i] == c0) { ++ct; ++i; if (i == tr.size()) { break; } }
+			cout << ct << c0;
 		}
-		else if (op0 == 'A' or op0 == 'C' or op0 == 'G' or op0 == 'T') {
-			cout << 'X' << op0;
-		}
-		else if (op0 == '0' or op0 == '1' or op0 == '2' or op0 == '3') {
-			lc = baseNumConversion[op0-'0'];
-			if (op1 == 'I') { // special case, merging ins and del as mismatch
-				cout << 'X' << lc;
-				++i;
-			}
-			else { cout << 'D' << lc; }
-		}
-		else if (op0 == 'I') {
-			if (op1 == '0' or op1 == '1' or op1 == '2' or op1 == '3') { // special case, merging ins and del as mismatch
-				cout << 'X' << baseNumConversion[op0-'0'];
-				++i;
-			}
-			else { cout << op0; }
-		}
-		else if (op0 == '!') { // XXX special case, thread broken
-			cout << op0;
-		}
-		else { assert(false); }
-		if (i == ops.size()) { return; }
+		else { cout << c0; }
+		if (i == tr.size()) { return; }
 		ct = 1;
-		op0 = ops[i];
+		c0 = tr[i];
 	}
-	cout << ct << op0;
+	cout << ct << c0;
+}
+
+void writeCigar(vector<edit_t> edits) {
+	int ct = 1;
+	edit_t e0, e1; // last_edit
+	e0 = edits[0];
+	for (int i = 1; i < edits.size(); ++i) {
+		e1 = edits[i];
+		if (e0.t == '=' or e0.t == '.' or e0.t == '*') {
+			while (e1.t == e0.t) {
+				++ct; ++i;
+				if (i == edits.size()) { break; }
+				e1 = edits[i];
+			}
+			cout << ct << e0.t;
+		}
+		else if (e0.t == 'X') {
+			cout << 'X' << e0.g;
+		}
+		else if (e0.t == 'D') {
+			if (e1.t == 'I') { // special case, merging ins and del as mismatch
+				cout << 'X' << e0.g;
+				++i;
+			}
+			else { cout << 'D' << e0.g; }
+		}
+		else if (e0.t == 'I') {
+			if (e1.t == 'D') { // special case, merging ins and del as mismatch
+				cout << 'X' << e1.g;
+				++i;
+			}
+			else { cout << 'I'; }
+		}
+		else { cout << e0.t; }
+		if (i == edits.size()) { return; }
+		ct = 1;
+		e0 = edits[i];
+	}
+	cout << ct << e0.t;
 }
 
 void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<uint64_t>& alnindices, vector<sam_t>& sams) {
@@ -1158,13 +1240,13 @@ void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<uint64
 			 << titles[--alnindices[i]] << '\t'
 			 << seqs[alnindices[i]] << '\t'
 			 << seqs[--alnindices[i]] << '\t';
-		writeCigar(sams[i].r2.nt); // read2.nt
+		writeCigar(sams[i].r2.es); // read2.es
 		cout << '\t';
-		writeCigar(sams[i].r2.tr); // read2.tr
+		writeAnnot(sams[i].r2.tr); // read2.tr
 		cout << '\t';
-		writeCigar(sams[i].r1.nt); // read1.nt
+		writeCigar(sams[i].r1.es); // read1.es
 		cout << '\t';
-		writeCigar(sams[i].r1.tr); // read1.tr
+		writeAnnot(sams[i].r1.tr); // read1.tr
 		cout << '\n';
 	}
 }
@@ -1177,13 +1259,13 @@ void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<uint64
 			 << titles[--alnindices[i]] << '\t'
 			 << seqs[alnindices[i]] << '\t'
 			 << seqs[--alnindices[i]] << '\t';
-		writeCigar(sams[i].r2.nt); // read2.nt
+		writeCigar(sams[i].r2.es); // read2.es
 		cout << '\t';
-		writeCigar(sams[i].r2.tr); // read2.tr
+		writeAnnot(sams[i].r2.tr); // read2.tr
 		cout << '\t';
-		writeCigar(sams[i].r1.nt); // read1.nt
+		writeCigar(sams[i].r1.es); // read1.es
 		cout << '\t';
-		writeCigar(sams[i].r1.tr); // read1.tr
+		writeAnnot(sams[i].r1.tr); // read1.tr
 		cout << '\n';
 	}
 }
@@ -1414,10 +1496,11 @@ void CountWords(void *data) {
 					vector<uint64_t> noncakmers0, noncakmers1;
 					vector<uint64_t> akmers0, akmers1; // aligned kmers
 
-					sam.init(seq.size(), seq1.size());
+					sam.init1(seq);
 					alned0 = isThreadFeasible(graphDB[destLocus], seq,  noncakmers0, akmers0, thread_cth, correction, sam.r1, trResults[destLocus], log);
 					if (alned0) {
 						if (tc) { threadCheck(graphDB[destLocus], seq, akmers0, sam.r1, log); }
+						sam.init2(seq1);
 						alned1 = isThreadFeasible(graphDB[destLocus], seq1, noncakmers1, akmers1, thread_cth, correction, sam.r2, trResults[destLocus], log);
 						if (alned1) {
 							if (tc) { threadCheck(graphDB[destLocus], seq1, akmers1, sam.r2, log); }
