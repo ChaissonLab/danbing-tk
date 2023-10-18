@@ -90,7 +90,7 @@ struct log_t {
 	ostringstream m;
 
 	void flush() {
-		cerr << m.str();
+		cerr << m.str() << endl;
 		m.clear();
 	}
 };
@@ -453,14 +453,22 @@ void get_kseq(vector<uint64_t>& kmers, vector<char>& kseq) {
 	int i = 0;
 	while (kmers[i] == -1ULL) { kseq[i] = 'N'; ++i; }
 	string km1 = decodeNumericSeq(kmers[i], ksize);
-	for (int j = 0; j < ksize; ++j) { kseq[i+j] = km1[i+j]; }
-	for (int j = i+ksize; j < kseq.size(); ++j) { kseq[j] = baseNumConversion[kmers[j-ksize+1] % 4]; }
+	for (int j = 0; j < ksize; ++j) { kseq[i+j] = km1[j]; }
+
+	for (int j = i+ksize; j < kseq.size(); ++j) {
+		if (kmers[j-ksize+1] == -1ULL) {
+			while (kmers[j-ksize+1] == -1ULL) { kseq[j] = 'N'; ++j; if (j == kseq.size()) { return; } }
+			string km1 = decodeNumericSeq(kmers[j-ksize+1], ksize);
+			for (int k = 0; k < ksize; ++k) { kseq[j-ksize+1+k] = km1[k]; }
+		}
+		else { kseq[j] = baseNumConversion[kmers[j-ksize+1] % 4]; }
+	}
 }
 
 char e2c(edit_t& e) {
 	if      (e.t == 'X') { return e.g; }
 	else if (e.t == 'D') { return '0'+baseNumConversion[e.g]; }
-	else                 { return e.t; } // '=', 'I', '*', 'N', 'H'
+	else                 { return e.t; } // '=', 'I', '*', 'H'
 }
 
 void report_edits(vector<edit_t>& edits, int score, vector<uint64_t>& kmers, bool reverse, log_t& log) {
@@ -533,12 +541,12 @@ struct thread_ext_t {
 
 	void edit_kmers_backward(vector<uint64_t>& kmers, string& seq, uint64_t& ki, cigar_t& cg, kmer_aCount_umap& trKmers, log_t& log, uint64_t& ncorrection, uint64_t& nskip) {
 		int dt_ki = 0;
+		bool good[ki];
 		uint64_t nts[ki]; // leading nucleotides in kmers
 		const static uint64_t lmask = 3ULL << 2*(ksize-1);
 		const static uint64_t lbase = 1ULL << 2*(ksize-1);
-		for (int i = 0; i < ki; ++i) {
-			nts[i] = kmers[i] & lmask;
-		}
+		for (int i = 0; i < ki; ++i) { good[i] = kmers[i] != -1ULL; }
+		for (int i = 0; i < ki; ++i) { nts[i] = kmers[i] & lmask; }
 		// resize and refill content
 		for (auto& e : edits) {
 			if      (e.t == 'X') { ++nm; }
@@ -549,11 +557,13 @@ struct thread_ext_t {
 		dt_nti = -(nm + ni);
 		cg.ni += nd;
 		if (dt_km > 0) {
-			for (int i = 0; i < dt_km; ++i) { kmers.insert(kmers.begin(), 0); }
-			for (int i = 0; i < dt_km; ++i) { cg.tr.insert(cg.tr.begin()+ki, '*'); }
+			for (int i = 0; i < dt_km; ++i) {
+				kmers.insert(kmers.begin()+ki, 0);
+				cg.tr.insert(cg.tr.begin()+ki, '*');
+			}
 		}
 		else if (dt_km < 0) {
-			kmers.erase(kmers.begin(), kmers.begin()-dt_km);
+			kmers.erase(kmers.begin()+ki+dt_km, kmers.begin()+ki);
 			cg.tr.erase(cg.tr.begin()+ki+dt_km, cg.tr.begin()+ki);
 		}
 		ki += dt_km;
@@ -563,55 +573,63 @@ struct thread_ext_t {
 			if (e.t == 'X' or e.t == 'D') { kmers[ki_-1] = (kmers[ki_] >> 2) + (baseComplement[baseNumConversion[e.g]] * lbase); --ki_; }
 		}
 		// extended kmers
-		for (int i = ki_; i > 0; --i) {
-			if (kmers[i-1] == -1ULL) { break; }
+		for (int i = ki_; i > std::max(0, ki_-(int)ksize); --i) { // XXX
+			if (not good[i-1]) { break; }
 			kmers[i-1] = (kmers[i] >> 2) + nts[i-1];
 		}
 		int lb = ki-nm-nd-score;
 		for (int i = ki-1; i >= lb; --i) {
-			if (cg.tr[i] != '*') { break; }
+			if (cg.tr[i] == '*') { ++nrk; }
 			cg.tr[i] = trKmers.count(toCaKmer(kmers[i], ksize)) ? '=' : '.';
-			++nrk;
 		}
 		nrk -= (nm+nd);
 		nskip -= nrk;
 		ncorrection += edits.size();
 		// CIGAR
 		{
-			int cni = ni; // cumulative # of ins
-			int nti = 0;
-			int nti_ = ki-1;
-			while (nti < nti_+cni) {
-				if (cg.es[nti++].t == 'I') { ++cni; ++nti; }
-			}
-			for (int i = 0; i < nd; ++i) { cg.es.insert(cg.es.begin()+nti-nd-nm+1, edit_t('D','\0','*')); }
-			int e0, e1; // start/end of edit_tract
-			e1 = nti;
+			int cni = 0; // cumulative # of ins
+			int nti_ = ki - dt_km; // XXX
+			for (int i = 0; i < nti_+cni; ++i) { if (cg.es[i].t == 'I') { ++cni; } }
+			log.m << " cni: " << cni << " ";
+			int nti = nti_ + cni - 1; // convert eg.tr index (ki) to eg.es index (nti)
+			int e0, e1; // start, end of edit_tract
+			// CIGAR of edits
 			for (int i = 0; i < edits.size(); ++i, --nti) {
-				auto& ed0 = cg.es[nti];
 				auto& ed1 = edits[i];
-				if (ed0.t != 'D') {
-					ed0.t = ed1.t;
-					ed0.g = baseComplement[ed1.g];
-				} else {
-					if      (ed1.t == 'I') { ed0.g = '\0'; }
-					else if (ed1.t == 'X') { ed0.g = baseComplement[ed1.g]; }
+				if (ed1.t == 'D') {
+					++nti;
+					cg.es.insert(cg.es.begin()+nti, edit_t('D','\0','*'));
 				}
+				auto& ed0 = cg.es[nti];
+				if (ed0.t == 'D') {
+					if (ed1.t == 'I') { cg.es.erase(cg.es.begin()+nti); --cg.ni; } // delete edit immediately
+					else              { ed0.g = baseComplement[ed1.g]; }
+				}
+				else {
+					while (cg.es[nti].t == 'I') { --nti; }
+					auto& ed0 = cg.es[nti];
+					ed0.t = ed1.t;
+					ed0.g = ed1.g ? baseComplement[ed1.g] : '\0';
+				}
+				log.m << " nti: " << nti << " ";
 			}
 			e0 = nti + 1;
+			e1 = e0;
+			// CIGAR of extended alignment
 			for (int i = 0; i < score; ++i, --nti) {
 				auto& e = cg.es[nti];
 				if      (e.t == '=') { }
 				else if (e.t == '*') { e.t = '='; }
 				else                 { break; }
 			}
-			{
+			{ // find edit_tract
 				char t;
 				t = cg.es[e1].t;
 				while (t == 'X' or t == 'D' or t == 'I') { ++e1; t = cg.es[e1].t; }
 				t = cg.es[e0-1].t;
 				while (t == 'X' or t == 'D' or t == 'I') { --e0; t = cg.es[e0-1].t; }
 			}
+			// merge edits if possible
 			vector<char> ets, rnts, gnts;
 			for (int i = e0; i < e1; ++i) {
 				auto& e = cg.es[i];
@@ -619,7 +637,9 @@ struct thread_ext_t {
 				if (e.r) { rnts.push_back(e.r); }
 				if (e.g) { gnts.push_back(e.g); }
 			}
-			//cerr << "ets: "; for (char c:ets) {cerr << c;} cerr << " rnts: "; for (char c:rnts) {cerr << c;} cerr << " gnts: "; for (char c:gnts) {cerr << c;} cerr << endl;
+			log.m << "e0/e1: " << e0 << ' ' << e1 << ' ';
+			log.m << "rnts: "; for (auto v : rnts) { log.m << v; } log.m << ' ';
+			log.m << "gnts: "; for (auto v : gnts) { log.m << v; } log.m << ' ';
 			if (rnts.size() == gnts.size()) {
 				bool no_edit = true;
 				for (int i = 0; i < rnts.size(); ++i) {
@@ -629,15 +649,68 @@ struct thread_ext_t {
 					log.m << "... changing edits "; for (char c : ets) { log.m << c; } log.m << " to =";
 					int dt_es = 0;
 					for (int i = e0; i < e1; ++i) {
-						char t = cg.es[i].t;
-						while (t == 'D') { cg.es.erase(cg.es.begin()+i); t = cg.es[i].t; --dt_es; }
-						auto& e = cg.es[i];
-						e.t = '=';
-						e.g = '\0';
+						char t = cg.es[i+dt_es].t;
+						if (t == 'D') { cg.es.erase(cg.es.begin()+i+dt_es); --dt_es; }
+						else {
+							auto& e = cg.es[i+dt_es];
+							e.t = '=';
+							e.g = '\0';
+						}
 					}
 					cg.ni += dt_es;
 					ncorrection -= (e1-e0);
 					nskip -= (e1-e0);
+				}
+				else {
+					if (ets.size() != rnts.size()) { // D+I(same position) -> X case: edits don't fully cancel out except the D+I position, causing a shrink in size
+						log.m << "... changing edits "; for (char c : ets) { log.m << c; } log.m << " to X";
+						int dt_es = 0;
+						int dt_es_ = rnts.size() - ets.size();
+						int i = e0, j = 0, k = 0;
+						for ( ; i < e1; ++i) {
+							char t = cg.es[i+dt_es].t;
+							if (t == 'D' and dt_es != dt_es_) { cg.es.erase(cg.es.begin()+i+dt_es); --dt_es; }
+							else {
+								auto& e = cg.es[i+dt_es];
+								if (rnts[k] == gnts[k]) {
+									e.t = '=';
+									e.g = '\0';
+								}
+								else {
+									e.t = 'X';
+									e.g = gnts[j];
+								}
+								++j;
+								++k;
+							}
+						}
+						assert(dt_es == dt_es_);
+						cg.ni += dt_es;
+						ncorrection += dt_es;
+						nskip += dt_es;
+					}
+					else { // ets.size() == rnts.size() == gnts.size() -> match/mismatch only.
+						for (int i = 0; i < rnts.size(); ++i) {
+							if (rnts[i] == gnts[i]) { // edit reverted
+								auto& e = cg.es[e0+i];
+								e.t = '=';
+								e.g = '\0';
+								--ncorrection;
+								--nskip;
+							}
+						}
+					}
+				}
+			}
+			else { // rnts.size() != gnts.size()
+				for (int i = 0; i < ets.size(); ++i) {
+					auto& e = cg.es[e0+i];
+					if (e.r == e.g) {
+						e.t = '=';
+						e.g = '\0';
+						--ncorrection;
+						--nskip;
+					}
 				}
 			}
 		}
@@ -646,20 +719,21 @@ struct thread_ext_t {
 
 
 	void edit_kmers_forward(vector<uint64_t>& kmers, uint64_t& ki, cigar_t& cg, kmer_aCount_umap& trKmers, log_t& log, uint64_t& ncorrection) {
+		bool good[kmers.size() - ki];
+		for (int i = ki; i < kmers.size(); ++i) { good[i-ki] = kmers[i] != -1ULL; }
 		uint64_t nts[kmers.size() - ki];
-		for (int i = ki; i < kmers.size(); ++i) {
-			nts[i-ki] = kmers[i] % 4;
-		}
+		for (int i = ki; i < kmers.size(); ++i) { nts[i-ki] = kmers[i] % 4; }
 		for (auto& e : edits) {
-			if      (e.t == 'X') { kmers[ki] = ((kmers[ki-1] & rmask) << 2) + baseNumConversion[e.g]; ++ki; ++nm; }
-			else if (e.t == 'D') { kmers[ki] = ((kmers[ki-1] & rmask) << 2) + baseNumConversion[e.g]; ++ki; ++nd; }
-			else if (e.t == 'I') { ++ni; }
+			if      (e.t == 'X') {                                    kmers[ki] = ((kmers[ki-1] & rmask) << 2) + baseNumConversion[e.g]; ++ki; ++nm; }
+			else if (e.t == 'D') { kmers.insert(kmers.begin()+ki, 0); kmers[ki] = ((kmers[ki-1] & rmask) << 2) + baseNumConversion[e.g]; ++ki; ++nd; }
+			else if (e.t == 'I') { kmers.erase(kmers.begin()+ki);                                                                              ++ni; }
 		}
 		dt_nti = nm + ni;
 		dt_ki = nm + nd;
 		dt_km = nd - ni;
-		kmers.resize(kmers.size() + dt_km);
-		for (int i = ki; i < kmers.size(); ++i) {
+		//kmers.resize(kmers.size() + dt_km);
+		for (int i = ki; i < std::min(kmers.size(), ki+ksize); ++i) {
+			if (not good[dt_nti]) { break; }
 			kmers[i] = ((kmers[i-1] & rmask) << 2) + nts[dt_nti++];
 		}
 		if (dt_km) { cg.tr.resize(cg.tr.size() + dt_km, '*'); }
@@ -962,8 +1036,8 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ve
 
 	for (ki=ki+1, cg.ni=cg.ni+1; ki < kmers.size(); ++ki, ++cg.ni) {
 		if (kmers[ki] == -1ULL) { // "N" in read
-			cg.tr[ki] = 'N';
-			cg.es[cg.ni+ksize-1].t = 'N';
+			cg.tr[ki] = '*';
+			cg.es[cg.ni+ksize-1].t = '*';
 			++nskip;
 			if (nskip > maxnskip) { return 0; }
 			continue;
@@ -1046,7 +1120,7 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ve
 								gap = std::min(ksize, ki1-txtr.nm-txtr.nd) - txtr.score;
 							}
 						}
-						if (gap) { annot_gap(gap, ki1, cg); }
+						if (gap) { annot_gap(gap, ki1, cg); } // XXX update nskip too
 						if (nskip > maxnskip) { return 0; }
 					}
 
@@ -1135,12 +1209,11 @@ void threadCheck(GraphType& g, string& seq, vector<uint64_t>& kmers, cigar_t& cg
 		}
 		if (skip) {
 			cg.tr.insert(cg.tr.begin()+ki+dt, '!');
-			log.m << "[!]Thread broken\n";
-			log_tc_failure(log, seq, cseq, cg, kmers, ki);
+			log.m << "[!]Thread broken at " << ki << '\n';
+			//log_tc_failure(log, seq, cseq, cg, kmers, ki, tri);
 			broken = true;
 			find_anchor(g, kmers, ki, node);
 			++dt;
-			//assert(false);
 		}
 	}
 	if (broken) { return; }
@@ -1176,6 +1249,7 @@ void writeExtractedReads(int extractFasta, vector<string>& seqs, vector<string>&
 }
 
 void writeAnnot(vector<char> tr) {
+	if (not tr.size()) { cout << '*'; return; }
 	int ct = 1;
 	char c0, c1; // last_annot
 	c0 = tr[0];
@@ -1194,6 +1268,8 @@ void writeAnnot(vector<char> tr) {
 }
 
 void writeCigar(vector<edit_t> edits) {
+	if (not edits.size()) { cout << '*'; return; }
+
 	int ct = 1;
 	edit_t e0, e1; // last_edit
 	e0 = edits[0];
@@ -1497,7 +1573,7 @@ void CountWords(void *data) {
 					vector<uint64_t> akmers0, akmers1; // aligned kmers
 
 					sam.init1(seq);
-					alned0 = isThreadFeasible(graphDB[destLocus], seq,  noncakmers0, akmers0, thread_cth, correction, sam.r1, trResults[destLocus], log);
+					alned0 = isThreadFeasible(graphDB[destLocus], seq, noncakmers0, akmers0, thread_cth, correction, sam.r1, trResults[destLocus], log);
 					if (alned0) {
 						if (tc) { threadCheck(graphDB[destLocus], seq, akmers0, sam.r1, log); }
 						sam.init2(seq1);
@@ -1551,10 +1627,11 @@ void CountWords(void *data) {
 			}
 		}
 
+		// write reads or alignments to STDOUT
+		// begin thread lock
+		sem_wait(semwriter); 
+
 		if (extractFasta or aln) {
-			// write reads or alignments to STDOUT
-			// begin thread lock
-			sem_wait(semwriter); 
 			if (extractFasta) {
 				writeExtractedReads(extractFasta, seqs, titles, extractindices, assignedloci);
 			}
@@ -1562,11 +1639,7 @@ void CountWords(void *data) {
 				if (skip1) { writeAlignments(seqs, titles, alnindices, sams); }
 				else { writeAlignments(seqs, titles, destLoci, alnindices, sams); }
 			}
-			sem_post(semwriter);
-			//
-			// end of thread lock
 		}
-
 		cerr << "Batch query in " << (time(nullptr) - time2) << " sec. " << 
 		        nShort_ << "/" <<
 		        (float)nhash0/nReads_ << "/" << 
@@ -1575,6 +1648,10 @@ void CountWords(void *data) {
 		        nKmerFiltered_ << "/" << 
 		        nThreadingReads_ << "/" << 
 		        nFeasibleReads_ << endl;
+
+		sem_post(semwriter);
+		//
+		// end of thread lock
 	}
 }
 
