@@ -152,7 +152,7 @@ int main (int argc, const char * argv[]) {
 			int tri_ = -1;
 			ifstream fin(ipref + "." + ftype + ".kmers");
 			ofstream fout(opref + "." + ftype + ".kmers");
-			cerr << "Processing " << ipref + "." + ftype + ".kmers and writing to " opref + "." + ftype + ".kmers" << endl;
+			cerr << "Processing " << ipref + "." + ftype + ".kmers and writing to " << opref + "." + ftype + ".kmers" << endl;
 			assert(fin);
 			assert(fout);
 			fout << '>' << tri << '\n';
