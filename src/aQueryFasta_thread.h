@@ -43,8 +43,8 @@ typedef unordered_map<size_t, unordered_map<size_t, vector<uint16_t>>> nuAdjAttr
 //const unordered_map<char, size_t> base( {{'A', 0}, {'C', 1}, {'G', 2}, {'T', 3}});
 //const char baseinv[] = {'A', 'C', 'G', 'T'};
 //const unordered_map<char, char> Cbase( {{'A', 'T'}, {'C', 'G'}, {'G', 'C'}, {'T', 'A'}, {'N', 'N'}} );
-const char alphabet[] = {'A', 'C', 'G', 'T'};
-const char baseNumConversion[] = {
+const unsigned char alphabet[] = {'A', 'C', 'G', 'T'};
+const unsigned char baseNumConversion[] = {
   'A','C','G','T',127,127,127,127,
   127,127,127,127,127,127,127,127,
   127,127,127,127,127,127,127,127,
@@ -62,7 +62,7 @@ const char baseNumConversion[] = {
   127,127,127,127, 3 ,127,127,127,
 };
 
-const char baseComplement[] = {
+const unsigned char baseComplement[] = {
     3,  2,  1,  0,127,127,127,127,
   127,127,127,127,127,127,127,127,
   127,127,127,127,127,127,127,127,
@@ -111,7 +111,7 @@ const unsigned char byteRC[]   = {
 string decodeNumericSeq(size_t num, size_t k) {
     string seq = "";
     for (size_t i = 0; i < k; ++i) {
-        seq = baseNumConversion[num % 4] + seq;
+        seq = static_cast<char>(baseNumConversion[num % 4]) + seq;
         num >>= 2;
     }
     return seq;
@@ -120,7 +120,7 @@ string decodeNumericSeq(size_t num, size_t k) {
 size_t encodeSeq(string& seq, size_t start, size_t k) { // no extra copy
     size_t numericSeq = 0;
     for (size_t i = start; i < start+k; ++i) {
-        numericSeq = (numericSeq<<2) + baseNumConversion[seq[i]];
+        numericSeq = (numericSeq<<2) + baseNumConversion[static_cast<unsigned char>(seq[i])];
     }
     return numericSeq;
 }
@@ -151,7 +151,7 @@ string getRC(const string &read) {
     size_t rlen = read.size();
     rcread.resize(rlen);
     for (size_t i = 0; i < rlen; ++i) {
-        rcread[i] = baseComplement[read[rlen - 1 - i]];
+        rcread[i] = baseComplement[static_cast<unsigned char>(read[rlen - 1 - i])];
     }
     return rcread;
 }
@@ -200,8 +200,8 @@ void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t
             rckmer = getNuRC(kmer, k);
             i = nbeg - 1;
         } else {
-            kmer = ( (kmer & mask) << 2 ) + baseNumConversion[read[i + k]];
-            rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] & mask) << (2*(k-1))); // XXX test correctness
+            kmer = ( (kmer & mask) << 2 ) + baseNumConversion[static_cast<unsigned char>(read[i + k])];
+            rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[static_cast<unsigned char>(read[i + k])]] & mask) << (2*(k-1))); // XXX test correctness
         }
     }
 }
@@ -220,9 +220,9 @@ void _buildKmerGraph(GraphType& g, string& read, size_t k, size_t leftflank, siz
                 if (nbeg == rlen) { break; }
                 i = nbeg - 1;
             } else {
-                size_t nextkmer = ((kmer & mask) << 2) + baseNumConversion[read[i + k]];
+                size_t nextkmer = ((kmer & mask) << 2) + baseNumConversion[static_cast<unsigned char>(read[i + k])];
                 bool valid = (not noselfloop) or (noselfloop and (kmer != nextkmer));
-                g[kmer] |= ((1 & valid) << baseNumConversion[read[i + k]]);
+                g[kmer] |= ((1 & valid) << baseNumConversion[static_cast<unsigned char>(read[i + k])]);
                 kmer = nextkmer;
             }
         }
@@ -258,8 +258,8 @@ void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank 
             rckmer = getNuRC(kmer, k);
             i = nbeg - 1;
         } else {
-            kmer = ( (kmer & mask) << 2 ) + baseNumConversion[read[i + k]];
-            rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[read[i + k]]] & mask) << (2*(k-1)));
+            kmer = ( (kmer & mask) << 2 ) + baseNumConversion[static_cast<unsigned char>(read[i + k])];
+            rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[static_cast<unsigned char>(read[i + k])]] & mask) << (2*(k-1)));
         }
     }
 }
@@ -1087,7 +1087,7 @@ public:
 
 class BiDBG {
 public:
-    BiDBG(bool hasAttr_, size_t nkmers_, size_t ksize_) : hasAttr(hasAttr_), nkmers(nkmers_), ksize(ksize_) {}
+    BiDBG(size_t nkmers_, size_t ksize_, bool hasAttr_) : nkmers(nkmers_), ksize(ksize_), hasAttr(hasAttr_) {}
 
     void addkmer(const string &kmer, uint16_t count) {
         string s, t, s_rc, t_rc;

@@ -40,7 +40,7 @@ typedef std::pair<uint8_t, uint8_t> PE_KMC; // pair-end kmer count // XXX not co
 
 
 struct edit_t {
-	char t, r, g; // type=['X','I','D'], read_nuc, graph_nuc;
+	unsigned char t, r, g; // type=['X','I','D'], read_nuc, graph_nuc;
 	edit_t () { t = '*'; r = '\0'; g = '\0'; } 
 	edit_t (char t_) { t = t_; r = '\0'; g = '\0'; }
 	edit_t (char t_, char r_, char g_) { t = t_; r = r_; g = g_; }
@@ -465,7 +465,7 @@ void get_kseq(vector<uint64_t>& kmers, vector<char>& kseq) {
 	}
 }
 
-char e2c(edit_t& e) {
+unsigned char e2c(edit_t& e) {
 	if      (e.t == 'X') { return e.g; }
 	else if (e.t == 'D') { return '0'+baseNumConversion[e.g]; }
 	else                 { return e.t; } // '=', 'I', '*', 'H'
@@ -1178,7 +1178,6 @@ void threadCheck(GraphType& g, string& seq, vector<uint64_t>& kmers, cigar_t& cg
 
 	bool broken = false;
 	uint64_t ki = 0, dt = 0;
-	uint64_t foo = 0;
 	while (cg.tr[ki] == '*') { ++ki; }
 	uint64_t node = kmers[ki];
 	if (not g.count(node)) {
@@ -1251,10 +1250,9 @@ void writeExtractedReads(int extractFasta, vector<string>& seqs, vector<string>&
 void writeAnnot(vector<char> tr) {
 	if (not tr.size()) { cout << '*'; return; }
 	int ct = 1;
-	char c0, c1; // last_annot
+	char c0; // last_annot
 	c0 = tr[0];
 	for (int i = 1; i < tr.size(); ++i) {
-		c1 = tr[i];
 		if (c0 == '=' or c0 == '.' or c0 == '*') {
 			while (tr[i] == c0) { ++ct; ++i; if (i == tr.size()) { break; } }
 			cout << ct << c0;
