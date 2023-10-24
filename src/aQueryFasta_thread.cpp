@@ -1043,8 +1043,8 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ve
 			continue;
 		}
 		if (kmers[ki] == kmers[ki-1]) { // skip homopolymer run
-			cg.tr[ki] = trKmers.count(toCaKmer(kmers[ki], ksize)) ? '=' : '.';
-			cg.es[cg.ni+ksize-1].t = 'H';
+			cg.tr[ki] = '*'; //trKmers.count(toCaKmer(kmers[ki], ksize)) ? '=' : '.';
+			cg.es[cg.ni+ksize-1].t = '*'; //'H';
 			++nskip;
 			if (nskip > maxnskip) { return 0; }
 			continue;
