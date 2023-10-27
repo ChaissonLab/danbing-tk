@@ -127,7 +127,7 @@ def multipleBoundaryExpansion(seqs, poss, idx, ibeg, UB, ksize=21):
                     else:
                         ns = FS-dt[hi,sfl]
                         ne = FS
-                    kmers[hi,sfl,ns:ne] = read2kmers(seq, ksize, leftflank=lf[sfl], rightflank=rf[sfl])
+                    kmers[hi,sfl,ns:ne] = read2kmers_noshift(seq, ksize, leftflank=lf[sfl], rightflank=rf[sfl])
                 for ki, kmer in enumerate(kmers[hi,sfl]): # recheck even if not expanded
                     if kmer in trs:
                         noise[hi,sfl,ki] = 1
