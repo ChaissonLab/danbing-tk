@@ -33,7 +33,6 @@ copts = config["clusterOpts"]
 
 rule all:
     input:
-        #chrsize = expand(outdir + "{genome}.{hap}.chrSize", genome=genomes, hap=haps),
         faAln = expand(outdir + "{genome}.{hap}.aln.foo", genome=genomes, hap=haps),
         lift = expand(outdir + "{genome}/lift.foo", genome=genomes),
         TRfa = expand(outdir + "{genome}.{hap}.tr.fasta", genome=genomes, hap=haps),
@@ -43,67 +42,15 @@ rule all:
         binKmers = expand(outdir + "pan.{binKmerType}", binKmerType=binKmerTypes),
         #panILkmers = expand(outdir + "pan.{genome}.IL.tr.kmers", genome=genomes),
         #pred = expand(outdir + "{genome}.LR.pred", genome=genomes),
-        bamcov = [outdir + "ctrl.cov"] if prune else []
         
 
-rule IndexAsm:
-    input:
-        fa = expand(indir + "{{genome}}.{hap}.fa", hap=haps)
-    output:
-        chrsize = expand(outdir + "{{genome}}.{hap}.chrSize", hap=haps)
-    resources:
-        cores = 3,
-        mem = 4,
-    params:
-        name = "IndexAsm",
-        copts = copts,
-        sd = srcdir,
-        od = outdir,
-        indir = indir,
-        genomes = genomes,
-    shell:"""
-set -eu
-cd {params.od}
-
-ln -sf {input.fa} .
-for hap in 0 1; do
-    fa={params.indir}/{wildcards.genome}.$hap.fa
-    ln -sf "$fa".fai .
-done
-"""
-
-rule ComputeBamCoverage:
-    input:
-        ILbam = [bams[g] for g in genomes] if prune else [],
-        #ILbam = expand(indir + "{genome}.final.cram", genome=genomes),
-        #ILbai = expand(indir + "{genome}.final.cram.crai", genome=genomes)
-    output:
-        bamcov = outdir + "ctrl.cov"
-    resources:
-        cores = 4,
-        mem = 4
-    params:
-        copts = copts,
-        refctrl = config["refctrl"],
-        genomes = genomes,
-    shell:"""
-set -eu
-
-bams=( {input.ILbam} )
-gi=0
-for g in {params.genomes}; do
-    samtools bedcov {params.refctrl} ${{bams[$gi]}} | awk '{{ print $4/($3-$2) }}' | tr '\n' '\t' | 
-    awk -v g=$g -v gi=$gi 'BEGIN {{OFS="\t"}} {{$1=$1; print gi, g, $0}}'
-    ((++gi))
-done > {output.bamcov}
-"""
 
 
 def getMem():
     if aligner == "lra":
         return 60
     else:
-        return 25
+        return 35
 
 rule MapAsm2Ref:
     input:
@@ -112,9 +59,10 @@ rule MapAsm2Ref:
         faAln = outdir + "{genome}.{hap}.aln.foo",
     resources:
         cores = 4,
-        mem = lambda wildcards, attempt: getMem() + 20*(attempt-1),
+        mem = lambda wildcards, attempt: getMem() + 15*(attempt-1),
     params:
         name = "MapAsm2Ref",
+        logfile = "slurm.%j.%x.log",
         faBam = outdir + "{genome}.{hap}.srt.bam",
         faPaf = outdir + "{genome}.{hap}.r2a.paf",
         od = outdir,
@@ -150,6 +98,7 @@ rule LiftTR:
         mem = lambda wildcards, attempt: 24 + 16*(attempt-1)
     params:
         name = "LiftTR",
+        logfile = "slurm.%j.%x.log",
         copts = copts,
         sd = srcdir,
         od = outdir,
@@ -213,6 +162,7 @@ rule JointTRAnnotation:
         mem = lambda wildcards, attempt: 110
     params:
         name = "JointTRAnnotation",
+        logfile = "slurm.%j.%x.log",
         copts = copts,
         sd = srcdir,
         od = outdir,
@@ -294,6 +244,7 @@ rule GenRawGenomeGraph:
         mem = lambda wildcards, attempt: 55 + 20*(attempt-1)
     params:
         name = "GenRawGenomeGraph",
+        logfile = "slurm.%j.%x.log",
         copts = copts,
         sd = srcdir,
         od = outdir,
@@ -309,7 +260,7 @@ rule GenRawGenomeGraph:
 set -eu
 ulimit -c 20000
 cd {params.od}
-{ type module &>/dev/null ; val="$?"; } || true
+{{ type module &>/dev/null ; val="$?"; }} || true
 if [ $val == 0 ]; then
     module load gcc
 fi
@@ -335,6 +286,7 @@ rule EvalRawGenomeGraph:
         mem = 8
     params:
         name = "EvalRawGenomeGraph",
+        logfile = "slurm.%j.%x.log",
         copts = copts,
         sd = srcdir,
         od = outdir,
@@ -359,6 +311,7 @@ rule GenPrunedGenomeGraph:
         mem = 20
     params:
         name = "GenPrunedGenomeGraph",
+        logfile = "slurm.%j.%x.log",
         copts = copts,
         sd = srcdir,
         od = outdir,
@@ -389,6 +342,7 @@ rule GenPanGenomeGraph:
         mem = lambda wildcards, attempt: 62+8*attempt
     params:
         name = "GenPanGenomeGraph",
+        logfile = "slurm.%j.%x.log",
         copts = copts,
         sd = srcdir,
         od = outdir,
@@ -411,6 +365,7 @@ rule GenSerializedGraphAndIndex:
         mem = lambda wildcards, attempt: 90+20*(attempt-1)
     params:
         name = "GenSerializedGraphAndIndex",
+        logfile = "slurm.%j.%x.log",
         copts = copts,
         sd = srcdir,
         od = outdir,
