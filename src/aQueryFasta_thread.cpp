@@ -998,9 +998,9 @@ bool errorCorrection_backward(uint64_t node, GraphType& g, vector<uint64_t>& kme
 	return errorCorrection_forward(nnds_rc, g, kmers_rc, 1, nts0_rc, txt, mes, log);
 }
 
-void annot_gap(uint64_t gap, uint64_t ki, cigar_t& cg) {
-	--ki;
-	for (int i = 0; i < gap; ++i) { cg.tr[ki-i] = '*'; }
+void annot_gap(uint64_t gap, uint64_t ki, cigar_t& cg, uint64_t& nskip) {
+	for (int i = 0; i < gap; ++i) { cg.tr[--ki] = '*'; }
+	nskip -= gap;
 }
 
 // 0: not feasible, 1: feasible, w/o correction, 2: feasible w/ correction
@@ -1120,7 +1120,7 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ve
 								gap = std::min(ksize, ki1-txtr.nm-txtr.nd) - txtr.score;
 							}
 						}
-						if (gap) { annot_gap(gap, ki1, cg); } // XXX update nskip too
+						if (gap) { annot_gap(gap, ki1, cg, nskip); } // XXX
 						if (nskip > maxnskip) { return 0; }
 					}
 
