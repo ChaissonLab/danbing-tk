@@ -75,6 +75,33 @@ struct asgn_t { // pe read assignment
 	uint64_t fc = 0, rc = 0;
 };
 
+struct F1score_t {
+	uint64_t nloci;
+	vector<uint64_t> tp, fp, fn; // will be initialized with size (nloci+1); the last element is the genome-wide metric, which avoids duplicate counting
+
+	F1score_t(uint64_t nloci_) {
+		nloci = nloci_;
+		++nloci_;
+		tp.resize(nloci_);
+		fp.resize(nloci_);
+		fn.resize(nloci_);
+	}
+
+	void add(uint64_t src, uint64_t dst) {
+		if (src == nloci and dst == nloci) { return; } // not interested in true negatives
+		if (src == dst) { ++tp[src]; ++tp.back(); }
+		else { 
+			if (src != nloci) { ++fn.back(); ++fn[src]; }
+			else              { ++fp.back(); }
+			if (dst != nloci) { ++fp[dst]; }
+		}
+	}
+
+	float p() { return (float)tp.back() / (float)(tp.back() + fp.back()); }
+	float r() { return (float)tp.back() / (float)(tp.back() + fn.back()); }
+	float f1() { return 2*(float)tp.back() / (float)(2*tp.back() + fp.back() + fn.back()); }
+};
+
 void rand_str(char *dest, uint64_t length) {
 	char charset[] = "0123456789"
 	                 "abcdefghijklmnopqrstuvwxyz"
@@ -381,16 +408,33 @@ void parseReadName(string& title, uint64_t readn, vector<uint64_t>& poss, vector
 	}
 }
 
-// simmode = 2
+// OBSOLETE. simmode = 2
+//void parseReadName(string& title, vector<std::pair<int, uint64_t>>& meta, uint64_t nloci) {
+//	// input: read name; vector of (read_locus, number_of_pe_reads)
+//	static const string sep = ":";
+//	uint64_t p1 = title.find(sep);
+//	uint64_t p2 = title.find(sep, p1+1);
+//	string v = title.substr(p1+1, p2-p1-1);
+//	uint64_t locus;
+//	if (v[0] == '.') { locus = nloci; }
+//	else { locus = stoul(v); }
+//	if (meta.size() == 0) { meta.push_back(std::make_pair(locus, 1)); }
+//	else {
+//		if (meta.back().first == locus) { ++meta.back().second; } // if locus is the same as the last read, increment number_of_pe_reads
+//		else { meta.push_back(std::make_pair(locus, meta.back().second+1)); } // else, append (read_locus, 1)
+//	}
+//}
+
+// simmode = 2. Read title format: >$CHR:$START-$END:$LOCUS/[1|2]
 void parseReadName(string& title, vector<std::pair<int, uint64_t>>& meta, uint64_t nloci) {
 	// input: read name; vector of (read_locus, number_of_pe_reads)
-	static const string sep = ":";
+	static const char sep = ':';
 	uint64_t p1 = title.find(sep);
 	uint64_t p2 = title.find(sep, p1+1);
-	string v = title.substr(p1+1, p2-p1-1);
+	string val = title.substr(p2+1, title.size()-p2-1);
 	uint64_t locus;
-	if (v[0] == '.') { locus = nloci; }
-	else { locus = stoul(v); }
+	if (val[0] == '.') { locus = nloci; }
+	else { locus = stoull(val); }
 	if (meta.size() == 0) { meta.push_back(std::make_pair(locus, 1)); }
 	else {
 		if (meta.back().first == locus) { ++meta.back().second; } // if locus is the same as the last read, increment number_of_pe_reads
@@ -1344,6 +1388,23 @@ void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<uint64
 	}
 }
 
+void writeSimResults(string fn, F1score_t& f1) {
+	ofstream fout(fn);
+	assert(fout);
+	fout << "TP\tFP\tFN\tPrecision\tRecall\tF1\n";
+	int n1 = f1.tp.size();
+	for (int i = 0; i < n1; ++i) {
+		float tp = f1.tp[i];
+		float fp = f1.fp[i];
+		float fn = f1.fn[i];
+		float p  = tp / (tp + fp);
+		float r  = tp / (tp + fn);
+		float f1 = 2*tp / (2*tp + fp + fn);
+		fout << std::fixed << tp << '\t' << fp << '\t' << fn << '\t' << p << '\t' << r << '\t' << f1 << '\n';
+	}
+	fout.close();
+}
+
 class Counts {
 public:
 	bool interleaved, bait, threading, correction, tc, aln, aln_minimal, g2pan, skip1;
@@ -1358,6 +1419,7 @@ public:
 	ifstream *in;
 	// simmode only
 	int simmode;
+	F1score_t* f1_summary;
 	vector<msa_umap>* msaStats;
 	err_umap* errdb;
 	vector<uint64_t>* locusmap;
@@ -1417,6 +1479,7 @@ void CountWords(void *data) {
 	vector<ValueType> srcLoci;
 	vector<uint64_t> poss;
 	unordered_map<uint64_t, msa_umap> msa;
+	F1score_t& f1_summary = *((Counts*)data)->f1_summary;
 
 	while (true) {
 
@@ -1516,6 +1579,7 @@ void CountWords(void *data) {
 		uint64_t simi = 0;
 		ValueType srcLocus = -1;
 		if (simmode == 1) { srcLocus = srcLoci[simi]; }
+		F1score_t f1(nloci);
 
 		while (seqi < nReads_) {
 
@@ -1549,10 +1613,12 @@ void CountWords(void *data) {
 				if (N_FILTER and NM_FILTER) {
 					if (subfilter(kmers1, kmers2, kmerDBi, nhash0)) { 
 						nSubFiltered_ += 2;
+						//if (simmode) { f1.add(srcLocus, nloci); }
 						continue;
 					}
 				}
 				if (kfilter(kmers1, kmers2, its1, its2, kmerDBi, Cthreshold, nhash1)) {
+					//if (simmode) { f1.add(srcLocus, nloci); }
 					nKmerFiltered_ += 2;
 					continue; 
 				}
@@ -1615,14 +1681,24 @@ void CountWords(void *data) {
 				else { destLocus = nloci; } // removed by threading
 
 				if (aln and threading) {
-					if ((aln_minimal and srcLocus != nloci and destLocus != nloci) or ((not aln_minimal) and (srcLocus != nloci or destLocus != nloci))) {
-						alnindices.push_back(seqi); // work the same as extractindices
-						sam.src = srcLocus;
-						sam.dst = destLocus;
-						sams.push_back(sam);
+					if (not simmode) {
+						if ((aln_minimal and destLocus != nloci) or (not aln_minimal)) {
+							alnindices.push_back(seqi); // work the same as extractindices
+							sam.src = srcLocus;
+							sam.dst = destLocus;
+							sams.push_back(sam);
+						}
+					} else { // simmode
+						if ((aln_minimal and (srcLocus != nloci or destLocus != nloci)) or (not aln_minimal)) {
+							alnindices.push_back(seqi); // work the same as extractindices
+							sam.src = srcLocus;
+							sam.dst = destLocus;
+							sams.push_back(sam);
+						}
 					}
 				}
 			}
+			//if (simmode) { f1.add(srcLocus, destLocus); }
 		}
 
 		// write reads or alignments to STDOUT
@@ -1638,14 +1714,21 @@ void CountWords(void *data) {
 				else { writeAlignments(seqs, titles, destLoci, alnindices, sams); }
 			}
 		}
+		//if (simmode) {
+		//	for (int i = 0; i < nloci+1; ++i) {
+		//		f1_summary.tp[i] += f1.tp[i];
+		//		f1_summary.fp[i] += f1.fp[i];
+		//		f1_summary.fn[i] += f1.fn[i];
+		//	}
+		//}
 		cerr << "Batch query in " << (time(nullptr) - time2) << " sec. " << 
-		        nShort_ << "/" <<
-		        (float)nhash0/nReads_ << "/" << 
-		        (float)nhash1/(nReads_ - nSubFiltered_) << "/" << 
-		        nSubFiltered_ << "/" << 
-		        nKmerFiltered_ << "/" << 
-		        nThreadingReads_ << "/" << 
-		        nFeasibleReads_ << endl;
+		        nShort_ << '/' <<
+		        (float)nhash0/nReads_ << '/' <<
+		        (float)nhash1/(nReads_ - nSubFiltered_) << '/' <<
+		        nSubFiltered_ << '/' <<
+		        nKmerFiltered_ << '/' <<
+		        nThreadingReads_ << '/' <<
+		        nFeasibleReads_ << '/' << endl;
 
 		sem_post(semwriter);
 		//
@@ -1684,7 +1767,10 @@ int main(int argc, char* argv[]) {
 		     << "  -fai <STR>          Interleaved pair-end fasta file" << endl
 		     << "  -fa <STR>           Fasta file e.g. generated by samtools fasta -n" << endl
 		     << "                      Reads will be paired on the fly" << endl
-		     << "  -p <INT>            Use n threads." << endl
+		     << "  -p <INT>            Use n threads." << endl << endl
+
+		     << "Developer mode:" << endl
+		     << "  -s <INT>            simulation mode" << endl
 		     << endl;
 		return 0;
 	}
@@ -1804,6 +1890,7 @@ int main(int argc, char* argv[]) {
 	vector<uint32_t> kmerDBi_vv;
 
 	unordered_map<string, string> readDB;
+	F1score_t f1_summary(nloci);
 	vector<msa_umap> msaStats;
 	err_umap errdb;
 	vector<uint64_t> locusmap;
@@ -1843,6 +1930,7 @@ int main(int argc, char* argv[]) {
 		counts.nFeasibleReads = &nFeasibleReads;
 		counts.nSubFiltered = &nSubFiltered;
 		counts.nKmerFiltered = &nKmerFiltered;
+		counts.f1_summary = &f1_summary;
 		counts.msaStats = &msaStats;
 		counts.errdb = &errdb;
 		counts.locusmap = &locusmap;
@@ -1927,6 +2015,10 @@ int main(int argc, char* argv[]) {
 		if (writeKmerName) { writeKmersWithName(outPrefix+".tr", trKmerDB); }
 		else { writeKmers(outPrefix+".tr", trKmerDB); }
 	}
+
+	//if (simmode == 2) {
+	//	writeSimResults(outPrefix+".f1.tsv", f1_summary);
+	//}
 
 	cerr << "all done!" << endl;
 	return 0;
