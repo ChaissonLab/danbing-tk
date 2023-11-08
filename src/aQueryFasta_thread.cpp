@@ -347,22 +347,40 @@ void parseReadName(string& title, uint64_t readn, vector<uint64_t>& poss, vector
     }
 }
 
-// simmode = 2
+// OBSOLETE. simmode = 2
+//void parseReadName(string& title, vector<std::pair<int, uint64_t>>& meta, uint64_t nloci) {
+//	// input: read name; vector of (read_locus, number_of_pe_reads)
+//	static const string sep = ":";
+//	uint64_t p1 = title.find(sep);
+//	uint64_t p2 = title.find(sep, p1+1);
+//	string v = title.substr(p1+1, p2-p1-1);
+//	uint64_t locus;
+//	if (v[0] == '.') { locus = nloci; }
+//	else { locus = stoul(v); }
+//	if (meta.size() == 0) { meta.push_back(std::make_pair(locus, 1)); }
+//	else {
+//		if (meta.back().first == locus) { ++meta.back().second; } // if locus is the same as the last read, increment number_of_pe_reads
+//		else { meta.push_back(std::make_pair(locus, meta.back().second+1)); } // else, append (read_locus, 1)
+//	}
+//}
+
+// simmode = 2. Read title format: >$CHR:$START-$END:$LOCUS/[1|2]
 void parseReadName(string& title, vector<std::pair<int, uint64_t>>& meta, uint64_t nloci) {
 	// input: read name; vector of (read_locus, number_of_pe_reads)
-	static const string sep = ":";
+	static const char sep = ':';
 	uint64_t p1 = title.find(sep);
 	uint64_t p2 = title.find(sep, p1+1);
-	string v = title.substr(p1+1, p2-p1-1);
+	string val = title.substr(p2+1, title.size()-p2-1);
 	uint64_t locus;
-	if (v[0] == '.') { locus = nloci; }
-	else { locus = stoul(v); }
+	if (val[0] == '.') { locus = nloci; }
+	else { locus = stoull(val); }
 	if (meta.size() == 0) { meta.push_back(std::make_pair(locus, 1)); }
 	else {
 		if (meta.back().first == locus) { ++meta.back().second; } // if locus is the same as the last read, increment number_of_pe_reads
 		else { meta.push_back(std::make_pair(locus, meta.back().second+1)); } // else, append (read_locus, 1)
 	}
 }
+
 
 void mapLocus(bool g2pan, vector<std::pair<int, uint64_t>>& meta, vector<uint64_t>& locusmap, uint64_t seqi, uint64_t& simi, uint64_t nloci, uint64_t& srcLocus) {
 	if (simi == 0 or seqi / 2 >= meta[simi].second) { 
@@ -1071,10 +1089,19 @@ void CountWords(void *data) {
 				else { destLocus = nloci; } // removed by threading
 
 				if (aln and threading) {
-					if ((aln_minimal and srcLocus != nloci and destLocus != nloci) or (not aln_minimal and (srcLocus != nloci or destLocus != nloci))) {
-						alnindices.push_back(seqi); // work the same as extractindices
-						edit.map = std::make_pair(srcLocus, destLocus);
-						sam.push_back(edit);
+					if (not simmode) {
+						if ((aln_minimal and destLocus != nloci) or (not aln_minimal)) {
+							alnindices.push_back(seqi); // work the same as extractindices
+							edit.map = std::make_pair(srcLocus, destLocus);
+							sam.push_back(edit);
+						}
+					}
+					else { // simmode
+						if ((aln_minimal and (srcLocus != nloci or destLocus != nloci)) or (not aln_minimal)) {
+							alnindices.push_back(seqi); // work the same as extractindices
+							edit.map = std::make_pair(srcLocus, destLocus);
+							sam.push_back(edit);
+						}
 					}
 				}
 			}
