@@ -162,7 +162,6 @@ The second field is optional.
 	- `X[A|C|G|T]`: a mismatch; letter in the graph is shown
 	- `D[A|C|G|T]`: a deletion in the read; letter in the graph is shown
 	- `I`: an insertion in the read
-	- `H`: a nucleotide in the homopolymer run; only shown when length > ksize
 	- `*`: unalinged nucleotide
 - `annot`: kmer-level VNTR annotations after applying `ops` to the read. `size = read_len - ksize + 1 + #del - #ins`
 	- `=`: a match in the repeat
