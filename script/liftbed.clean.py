@@ -39,10 +39,24 @@ def cleanbed():
             if r2a[r].valid:
                 if r2a[r].asm == f1:
                     r2a[r].dup = True
-                    r2a[r].regions.append((f2,f3))
-                    r2a[r].strand.append(f6)
-                    r2a[r].start = min(r2a[r].start, f2)
-                    r2a[r].end = max(r2a[r].end, f3)
+                    d1 = f2 - r2a[r].end
+                    d2 = f3 - r2a[r].start
+                    d3 = r2a[r].start - f3
+                    if d1 <= 0 and d2 >= 0: # if overlap then merge
+                        r2a[r].start = min(r2a[r].start, f2)
+                        r2a[r].end = max(r2a[r].end, f3)
+                        r2a[r].regions.append((f2,f3))
+                        r2a[r].strand.append(f6)
+                    elif d1 < 1e4 and d1 > 0: # downstream & gap < 1e4
+                        r2a[r].end = f3
+                        r2a[r].regions.append((f2,f3))
+                        r2a[r].strand.append(f6)
+                    elif d3 < 1e4 and d3 > 0: # upstream & gap < 1e4
+                        r2a[r].start = f2
+                        r2a[r].regions.append((f2,f3))
+                        r2a[r].strand.append(f6)
+                    else:
+                        r2a[r].valid = False
                 else:
                     r2a[r].valid = False
                     
