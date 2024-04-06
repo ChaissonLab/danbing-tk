@@ -734,3 +734,46 @@ class Fasta:
     def close(self):
         self.fa.close()
 
+def ids2trseqs(gs, indir, gids, verbose=False, FS=500, flank=False):
+    def get_nxt_i(si, ids):
+        if si >= len(ids):
+            return -2, si
+        i = ids[si]
+        while i == -1:
+            si += 1
+            if si < len(ids):
+                i = ids[si]
+            else:
+                return -2, si
+        return i, si
+
+    N0, N1 = gids.shape
+    trseqs = np.full([N0,N1], None, dtype=object)
+    for gi, gn in enumerate(gs):
+        for h in [0,1]:
+            hi = 2*gi + h
+            if verbose: print(".", end="")
+            ids = gids[:,hi]
+            i, si = get_nxt_i(0, ids)
+            # print(i, si)
+            with open(f"{indir}/{gn}.{h}.tr.fasta") as f:
+                j = -1
+                for line in f:
+                    if line[0] == ">":
+                        j += 1
+                    else:
+                        if j < i:
+                            continue
+                        elif j == i:
+                            if flank:
+                                trseqs[si,hi] = line[:-1]
+                            else:
+                                assert len(line) > 2*FS
+                                trseqs[si,hi] = line[FS:-FS-1]
+                            i, si = get_nxt_i(si+1, ids)
+                            if i == -2:
+                                break
+                        else:
+                            assert False
+    return trseqs
+

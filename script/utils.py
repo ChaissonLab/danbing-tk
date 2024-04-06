@@ -13,18 +13,32 @@ def zscore(x):
 
 def nanzscore(x):
     return (x - np.nanmean(x)) / np.nanstd(x)
-    
-def hist(x, xlab=None, ylab=None, title=None, bins=100, dpi=150):
-    plt.figure(dpi=dpi, figsize=(2,1.8))
-    plt.hist(x, bins=bins, color='gray')
-    plt.xlabel(xlab)
-    plt.ylabel(ylab)
-    plt.title(title)
-    plt.show(); plt.close()
 
-def plot(x, y, xlab=None, ylab=None, title=None, alpha=1, dpi=150, figsize=(2,1.8), s=2, get_ax=False):
+def hist(x, xlab=None, ylab=None, title=None, dpi=150, alpha=1, color='gray', figsize=(2,1.8), get_ax=False):
     fig, ax = plt.subplots(1, 1, dpi=dpi, figsize=figsize)
-    ax.plot(x, y, '.k', mew=0, markersize=s, alpha=alpha)
+    ax.hist(x, bins=100, color=color, alpha=alpha)
+    ax.set_xlabel(xlab)
+    ax.set_ylabel(ylab)
+    ax.set_title(title)
+    if get_ax:
+        return fig, ax
+    else:
+        plt.show(); plt.close()
+
+def hist_int(x, xlab=None, ylab=None, title=None, rwidth=0.8, dpi=150, figsize=(2,1.8), get_ax=False):
+    fig, ax = plt.subplots(1, 1, dpi=dpi, figsize=figsize)
+    ax.hist(x, range=(min(x)-0.5, max(x)+0.5), bins=max(x)-min(x)+1, rwidth=rwidth, color='gray')
+    ax.set_xlabel(xlab)
+    ax.set_ylabel(ylab)
+    ax.set_title(title)
+    if get_ax:
+        return fig, ax
+    else:
+        plt.show(); plt.close()
+
+def plot(x, y, xlab=None, ylab=None, title=None, alpha=1, dpi=150, figsize=(2,1.8), m='.', c='k', s=2, get_ax=False):
+    fig, ax = plt.subplots(1, 1, dpi=dpi, figsize=figsize)
+    ax.plot(x, y, f'{m}{c}', mew=0, markersize=s, alpha=alpha)
     ax.set_xlabel(xlab)
     ax.set_ylabel(ylab)
     ax.set_title(title)
