@@ -39,6 +39,7 @@ typedef unordered_map<string, unordered_map<string, uint16_t>> adj_dict;
 typedef unordered_map<string, unordered_map<string, vector<uint16_t>>> adjAttr_dict;
 typedef unordered_map<size_t, unordered_map<size_t, uint16_t>> nuAdj_dict;
 typedef unordered_map<size_t, unordered_map<size_t, vector<uint16_t>>> nuAdjAttr_dict;
+typedef vector<kmerCount_umap> bubble_db_t;
 
 //const unordered_map<char, size_t> base( {{'A', 0}, {'C', 1}, {'G', 2}, {'T', 3}});
 //const char baseinv[] = {'A', 'C', 'G', 'T'};
@@ -653,7 +654,7 @@ void writeKmersWithName(string outfpref, T& kmerDB, size_t threshold = 0) {
     ofstream fout(outfpref+".kmers");
     assert(fout);
     for (size_t i = 0; i < kmerDB.size(); ++i) {
-        fout << ">" << i <<"\n";
+        fout << '>' << i <<'\n';
         for (auto &p : kmerDB[i]) {
             if (p.second < threshold) { continue; }
             fout << p.first << '\t' << (size_t)p.second << '\n';
@@ -679,7 +680,7 @@ void writeKmers(string outfpref, vector<kmerAttr_dict>& kmerAttrDB) {
     ofstream fout(outfpref+".kmers");
     assert(fout);
     for (size_t i = 0; i < kmerAttrDB.size(); ++i) {
-        fout << ">" << i <<"\n";
+        fout << '>' << i <<'\n';
         for (auto &p : kmerAttrDB[i]) {
             fout << p.first;
             for (auto &q : p.second) {
@@ -689,6 +690,19 @@ void writeKmers(string outfpref, vector<kmerAttr_dict>& kmerAttrDB) {
         }
     }
     fout.close();
+}
+
+void writeBubbles(string fn, bubble_db_t& bubbleDB) {
+    ofstream fout(fn);
+    assert(fout);
+    for (size_t i = 0; i < bubbleDB.size(); ++i) {
+		auto& bu = bubbleDB[i];
+        fout << '>' << i << '\n';
+        for (auto &p : bu) {
+            fout << p.first << '\t' << p.second << '\n';
+        }
+    }
+
 }
 
 void readOrthoMap(string& mapf, vector<vector<bool>>& omap, size_t nhap) {

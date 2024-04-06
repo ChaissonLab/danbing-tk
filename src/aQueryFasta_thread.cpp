@@ -33,10 +33,12 @@ int verbosity = 0;
 const uint64_t NAN64 = 0xFFFFFFFFFFFFFFFF;
 const uint32_t NAN32 = 0xFFFFFFFF;
 
+
 typedef unordered_map<uint64_t, uint64_t> msa_umap; // dest_locus, counts
 // src_locus -> {dest_locus -> [src_count, dest_count_uncorrected, dest_count_corrected]}
 typedef unordered_map<uint64_t, unordered_map<uint64_t, std::tuple<uint64_t,uint64_t,uint64_t>>> err_umap;
 typedef std::pair<uint8_t, uint8_t> PE_KMC; // pair-end kmer count // XXX not compatible with reads longer than 255 bp
+typedef unordered_map<uint64_t, kmerCount_umap> bubbles_t;
 
 
 struct edit_t {
@@ -75,32 +77,15 @@ struct asgn_t { // pe read assignment
 	uint64_t fc = 0, rc = 0;
 };
 
-struct F1score_t {
-	uint64_t nloci;
-	vector<uint64_t> tp, fp, fn; // will be initialized with size (nloci+1); the last element is the genome-wide metric, which avoids duplicate counting
+struct log_t {
+	ostringstream m;
 
-	F1score_t(uint64_t nloci_) {
-		nloci = nloci_;
-		++nloci_;
-		tp.resize(nloci_);
-		fp.resize(nloci_);
-		fn.resize(nloci_);
+	void flush() {
+		cerr << m.str() << endl;
+		m.clear();
 	}
-
-	void add(uint64_t src, uint64_t dst) {
-		if (src == nloci and dst == nloci) { return; } // not interested in true negatives
-		if (src == dst) { ++tp[src]; ++tp.back(); }
-		else { 
-			if (src != nloci) { ++fn.back(); ++fn[src]; }
-			else              { ++fp.back(); }
-			if (dst != nloci) { ++fp[dst]; }
-		}
-	}
-
-	float p() { return (float)tp.back() / (float)(tp.back() + fp.back()); }
-	float r() { return (float)tp.back() / (float)(tp.back() + fn.back()); }
-	float f1() { return 2*(float)tp.back() / (float)(2*tp.back() + fp.back() + fn.back()); }
 };
+
 
 void rand_str(char *dest, uint64_t length) {
 	char charset[] = "0123456789"
@@ -112,15 +97,6 @@ void rand_str(char *dest, uint64_t length) {
 	}
 	*dest = '\0';
 }
-
-struct log_t {
-	ostringstream m;
-
-	void flush() {
-		cerr << m.str() << endl;
-		m.clear();
-	}
-};
 
 bool subfilter(vector<uint64_t>& kmers1, vector<uint64_t>& kmers2, kmerIndex_uint32_umap& kmerDBi, uint64_t& nhash) {
 	uint64_t L1 = kmers1.size(), L2 = kmers2.size();
@@ -389,42 +365,6 @@ void parseReadName(string& title, uint64_t readn, vector<ValueType>& loci, vecto
 	}
 }
 
-// OBSOLETE. simmode = 2; simmulated reads from whole genome
-template <typename ValueType>
-void parseReadName(string& title, uint64_t readn, vector<uint64_t>& poss, vector<ValueType>& loci, vector<uint64_t>& locusReadi) {
-	string sep = "_";
-	uint64_t first = title.find(sep);
-	uint64_t second = title.find(sep, first+1);
-	float newLocus = stof(title.substr(first+1, second));
-	if (readn == 0) {
-		//uint64_t hap = stoi(title.substr(1, first)); // skip the 1st '>' char
-		loci.push_back(newLocus);
-		poss.push_back(stoul(title.substr(second+1, title.find(sep, second+1))));
-	}
-	else if (newLocus != loci.back()) {
-		loci.push_back(newLocus);
-		poss.push_back(stoul(title.substr(second+1, title.find(sep, second+1))));
-		locusReadi.push_back(readn);
-	}
-}
-
-// OBSOLETE. simmode = 2
-//void parseReadName(string& title, vector<std::pair<int, uint64_t>>& meta, uint64_t nloci) {
-//	// input: read name; vector of (read_locus, number_of_pe_reads)
-//	static const string sep = ":";
-//	uint64_t p1 = title.find(sep);
-//	uint64_t p2 = title.find(sep, p1+1);
-//	string v = title.substr(p1+1, p2-p1-1);
-//	uint64_t locus;
-//	if (v[0] == '.') { locus = nloci; }
-//	else { locus = stoul(v); }
-//	if (meta.size() == 0) { meta.push_back(std::make_pair(locus, 1)); }
-//	else {
-//		if (meta.back().first == locus) { ++meta.back().second; } // if locus is the same as the last read, increment number_of_pe_reads
-//		else { meta.push_back(std::make_pair(locus, meta.back().second+1)); } // else, append (read_locus, 1)
-//	}
-//}
-
 // simmode = 2. Read title format: >$CHR:$START-$END:$LOCUS/[1|2]
 void parseReadName(string& title, vector<std::pair<int, uint64_t>>& meta, uint64_t nloci) {
 	// input: read name; vector of (read_locus, number_of_pe_reads)
@@ -632,7 +572,7 @@ struct thread_ext_t {
 		// CIGAR
 		{
 			int cni = 0; // cumulative # of ins
-			int nti_ = ki - dt_km; // XXX
+			int nti_ = ki - dt_km;
 			for (int i = 0; i < nti_+cni; ++i) { if (cg.es[i].t == 'I') { ++cni; } }
 			log.m << " cni: " << cni << " ";
 			int nti = nti_ + cni - 1; // convert eg.tr index (ki) to eg.es index (nti)
@@ -1156,7 +1096,7 @@ int isThreadFeasible(GraphType& g, string& seq, vector<uint64_t>& noncakmers, ve
 							txtr = thread_ext_t(MSC, mes, true);
 							vector<uint64_t> kmers_rc;
 							uint64_t node_ = kmers[ki1];
-							assert(g.count(node_)); // XXX
+							assert(g.count(node_));
 							skip = errorCorrection_backward(node_, g, kmers, kmers_rc, ki1, txtr, mes, log);
 							if (not skip) {
 								txtr.edit_kmers_backward(kmers, seq, ki1, cg, trKmers, log, ncorrection, nskip);
@@ -1278,6 +1218,56 @@ void threadCheck(GraphType& g, string& seq, vector<uint64_t>& kmers, cigar_t& cg
 	}
 }
 
+void fill_nnts(GraphType::iterator& it, bool (&nnts)[4]) {
+	uint8_t nucBits = it->second;
+	for (uint64_t i = 0; i < 4; ++i) {
+		nnts[i] = nucBits % 2; // CAUTION: assignment operator
+		nucBits >>= 1;
+	}
+}
+
+// TODO count novel edges. bu: bubble
+void countNovelEdges(vector<uint64_t>& noncakmers, GraphType& g, kmerCount_umap& bu) {
+	uint64_t km0, km1, e, n;
+	bool nnts[4];
+	GraphType::iterator it;
+	
+	km0 = noncakmers[0];
+	it = g.find(km0);
+	n = noncakmers.size();
+	for (int i = 1; i < n; ++i) {
+		km1 = noncakmers[i];
+		while (it == g.end()) {
+			if (km0 != -1ULL and km1 != -1ULL) {
+				e = (km0 << 2) + (km1 % 4);
+				++bu[e];
+			}
+			km0 = km1;
+			it = km0 != -1ULL? g.find(km0) : g.end();
+			++i;
+			if (i == n) { return; }
+			km1 = noncakmers[i];
+		}
+		if (km1 != -1ULL) {
+			fill_nnts(it, nnts);
+			if (not nnts[km1%4]) {
+				e = (km0 << 2) + (km1 % 4);
+				++bu[e];
+			}
+		}
+		km0 = km1;
+		it = km0 != -1ULL? g.find(km0) : g.end();
+	}
+}
+
+void accumBubbles(bubbles_t& bubbles, bubble_db_t& bubbleDB) {
+	for (auto& p : bubbles) {
+		uint64_t destLocus = p.first;
+		auto& bu_i = p.second;
+		auto& bu_o = bubbleDB[destLocus];
+		for (auto& q : bu_i) { bu_o[q.first] += q.second; }
+	}
+}
 
 void writeExtractedReads(int extractFasta, vector<string>& seqs, vector<string>& titles, vector<uint64_t>& extractindices, vector<uint64_t>& assignedloci) {
 	for (uint64_t i = 0; i < extractindices.size(); ++i) {
@@ -1388,26 +1378,10 @@ void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<uint64
 	}
 }
 
-void writeSimResults(string fn, F1score_t& f1) {
-	ofstream fout(fn);
-	assert(fout);
-	fout << "TP\tFP\tFN\tPrecision\tRecall\tF1\n";
-	int n1 = f1.tp.size();
-	for (int i = 0; i < n1; ++i) {
-		float tp = f1.tp[i];
-		float fp = f1.fp[i];
-		float fn = f1.fn[i];
-		float p  = tp / (tp + fp);
-		float r  = tp / (tp + fn);
-		float f1 = 2*tp / (2*tp + fp + fn);
-		fout << std::fixed << tp << '\t' << fp << '\t' << fn << '\t' << p << '\t' << r << '\t' << f1 << '\n';
-	}
-	fout.close();
-}
 
 class Counts {
 public:
-	bool interleaved, bait, threading, correction, tc, aln, aln_minimal, g2pan, skip1;
+	bool interleaved, outputBubbles, bait, threading, correction, tc, aln, aln_minimal, g2pan, skip1;
 	uint16_t Cthreshold, thread_cth;
 	uint64_t *nReads, *nThreadingReads, *nFeasibleReads, *nSubFiltered, *nKmerFiltered;
 	uint64_t nloci;
@@ -1416,10 +1390,10 @@ public:
 	vector<uint32_t>* kmerDBi_vv;
 	vector<GraphType>* graphDB;
 	vector<kmer_aCount_umap>* trResults;
+	bubble_db_t* bubbleDB;
 	ifstream *in;
 	// simmode only
 	int simmode;
-	F1score_t* f1_summary;
 	vector<msa_umap>* msaStats;
 	err_umap* errdb;
 	vector<uint64_t>* locusmap;
@@ -1438,6 +1412,7 @@ public:
 template <typename ValueType>
 void CountWords(void *data) {
 	bool interleaved = ((Counts*)data)->interleaved;
+	bool outputBubbles = ((Counts*)data)->outputBubbles;
 	bool bait = ((Counts*)data)->bait;
 	bool threading = ((Counts*)data)->threading;
 	bool correction = ((Counts*)data)->correction;
@@ -1465,6 +1440,7 @@ void CountWords(void *data) {
 	vector<uint32_t>& kmerDBi_vv = *((Counts*)data)->kmerDBi_vv;
 	vector<GraphType>& graphDB = *((Counts*)data)->graphDB;
 	vector<kmer_aCount_umap>& trResults = *((Counts*)data)->trResults;
+	bubble_db_t& bubbleDB = *((Counts*)data)->bubbleDB;
 	vector<msa_umap>& msaStats = *((Counts*)data)->msaStats;
 	err_umap& errdb = *((Counts*)data)->errdb;
 	err_umap err;
@@ -1479,7 +1455,6 @@ void CountWords(void *data) {
 	vector<ValueType> srcLoci;
 	vector<uint64_t> poss;
 	unordered_map<uint64_t, msa_umap> msa;
-	F1score_t& f1_summary = *((Counts*)data)->f1_summary;
 
 	while (true) {
 
@@ -1573,13 +1548,13 @@ void CountWords(void *data) {
 		uint64_t seqi = 0;
 		uint64_t nhash0 = 0, nhash1 = 0;
 		uint64_t destLocus;
+		bubbles_t bubbles;
 		// aln only
 		vector<sam_t> sams;
 		// simmode only
 		uint64_t simi = 0;
 		ValueType srcLocus = -1;
 		if (simmode == 1) { srcLocus = srcLoci[simi]; }
-		F1score_t f1(nloci);
 
 		while (seqi < nReads_) {
 
@@ -1630,10 +1605,10 @@ void CountWords(void *data) {
 				int alned0 = 0, alned1 = 0;
 				kmerCount_umap cakmers;
 				sam_t sam;
+				vector<uint64_t> noncakmers0, noncakmers1;
 				nThreadingReads_ += 2;
 
 				if (threading) {
-					vector<uint64_t> noncakmers0, noncakmers1;
 					vector<uint64_t> akmers0, akmers1; // aligned kmers
 
 					sam.init1(seq);
@@ -1663,7 +1638,8 @@ void CountWords(void *data) {
 							assignedloci.push_back(destLocus);
 						}
 					}
-					else { // accumulate trKmers for output
+					else {
+						// accumulate trKmers for output
 						if (not threading) {
 							for (uint64_t i = 0; i < its1.size(); ++i) {
 								auto it = trKmers.find(its1[i]->first);
@@ -1675,6 +1651,11 @@ void CountWords(void *data) {
 								auto it = trKmers.find(p.first);
 								if (it != trKmers.end()) { it->second += p.second; }
 							}
+						}
+
+						if (outputBubbles) {
+							countNovelEdges(noncakmers0, graphDB[destLocus], bubbles[destLocus]);
+							countNovelEdges(noncakmers1, graphDB[destLocus], bubbles[destLocus]);
 						}
 					}
 				}
@@ -1714,13 +1695,8 @@ void CountWords(void *data) {
 				else { writeAlignments(seqs, titles, destLoci, alnindices, sams); }
 			}
 		}
-		//if (simmode) {
-		//	for (int i = 0; i < nloci+1; ++i) {
-		//		f1_summary.tp[i] += f1.tp[i];
-		//		f1_summary.fp[i] += f1.fp[i];
-		//		f1_summary.fn[i] += f1.fn[i];
-		//	}
-		//}
+		if (outputBubbles) { accumBubbles(bubbles, bubbleDB); }
+
 		cerr << "Batch query in " << (time(nullptr) - time2) << " sec. " << 
 		        nShort_ << '/' <<
 		        (float)nhash0/nReads_ << '/' <<
@@ -1741,12 +1717,13 @@ int main(int argc, char* argv[]) {
 
 	if (argc < 2) {
 		cerr << endl
-		     << "Usage: danbing-tk [-v] [-e] [-g|-gc] [-a|-ae] [-kf] [-cth] [-o|-on] -k -qs <-fai|-fa> -p" << endl
+		     << "Usage: danbing-tk [-v] [-e] [-b] [-g|-gc] [-a|-ae] [-kf] [-cth] [-o|-on] -k -qs <-fai|-fa> -p" << endl
 		     << "Options:" << endl
 		     << "  -v <INT>            Verbosity: 0-3. Default: 0." << endl
 		     << "  -e <INT>            Write mapped reads to STDOUT in fasta format." << endl
 		     << "                      Specify 1 for keeping original read names. Will not write .kmers output." << endl
 		     << "                      Specify 2 for appending assigned locus to each read name. Used to skip step1 for later queries." << endl
+		     << "  -bu                 Write read (k+1)-mers divergent from graph to .bub" << endl
 		     << "  -g <INT>            Use graph threading algorithm w/o error correction" << endl
 		     << "  -gc <INT1> [INT2]   Use graph threading algorithm w/ error correction" << endl
 		     << "                      Discard pe reads if # of matching kmers < INT1 " << endl
@@ -1776,7 +1753,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	vector<string> args(argv, argv+argc);
-	bool bait = false, aug = false, threading = false, correction = false, tc = false, aln = false, aln_minimal=false, g2pan = false, skip1 = true, writeKmerName = false, interleaved;
+	bool bait = false, aug = false, threading = false, correction = false, tc = false, aln = false, aln_minimal=false, g2pan = false, skip1 = true, writeKmerName = false, outputBubbles = false, interleaved;
 	int simmode = 0, extractFasta = 0;
 	uint64_t argi = 1, trim = 0, thread_cth = 0, Cthreshold = 0, nproc;
 	string trPrefix, trFname, fastxFname, outPrefix;
@@ -1791,6 +1768,7 @@ int main(int argc, char* argv[]) {
 		}
 		else if (args[argi] == "-v") { verbosity = stoi(args[++argi]); }
 		else if (args[argi] == "-e") { extractFasta = stoi(args[++argi]); }
+		else if (args[argi] == "-bu") { outputBubbles = true; }
 		else if (args[argi] == "-t") { trim = stoi(args[++argi]); }
 		else if (args[argi] == "-s") { simmode = stoi(args[++argi]); }
 		else if (args[argi] == "-m") {
@@ -1861,6 +1839,7 @@ int main(int argc, char* argv[]) {
 	// report parameters
 	cerr << "use baitDB: " << bait << endl
 	     << "extract fasta: " << extractFasta << endl
+		 << "output bubbles: " << outputBubbles << endl
 	     << "interleaved: " << interleaved << endl
 	     << "sim mode: " << simmode << endl
 	     << "trim mode: " << trim << endl
@@ -1890,7 +1869,7 @@ int main(int argc, char* argv[]) {
 	vector<uint32_t> kmerDBi_vv;
 
 	unordered_map<string, string> readDB;
-	F1score_t f1_summary(nloci);
+	bubble_db_t bubbleDB(nloci);
 	vector<msa_umap> msaStats;
 	err_umap errdb;
 	vector<uint64_t> locusmap;
@@ -1922,6 +1901,7 @@ int main(int argc, char* argv[]) {
 		counts.in = &fastxFile;
 		counts.readDB = &readDB;
 		counts.trResults = &trKmerDB;
+		counts.bubbleDB = &bubbleDB;
 		counts.graphDB = &graphDB;
 		counts.kmerDBi = &kmerDBi;
 		counts.kmerDBi_vv = &kmerDBi_vv;
@@ -1930,13 +1910,13 @@ int main(int argc, char* argv[]) {
 		counts.nFeasibleReads = &nFeasibleReads;
 		counts.nSubFiltered = &nSubFiltered;
 		counts.nKmerFiltered = &nKmerFiltered;
-		counts.f1_summary = &f1_summary;
 		counts.msaStats = &msaStats;
 		counts.errdb = &errdb;
 		counts.locusmap = &locusmap;
 
 		counts.interleaved = interleaved;
 		counts.extractFasta = extractFasta;
+		counts.outputBubbles = outputBubbles;
 		counts.bait = bait;
 		counts.simmode = simmode;
 		counts.threading = threading;
@@ -2014,11 +1994,12 @@ int main(int argc, char* argv[]) {
 		cerr << "writing kmers..." << endl;
 		if (writeKmerName) { writeKmersWithName(outPrefix+".tr", trKmerDB); }
 		else { writeKmers(outPrefix+".tr", trKmerDB); }
-	}
 
-	//if (simmode == 2) {
-	//	writeSimResults(outPrefix+".f1.tsv", f1_summary);
-	//}
+		if (outputBubbles) {
+			cerr << "writing bubbles..." << endl;
+			writeBubbles(outPrefix+".bub", bubbleDB);
+		}
+	}
 
 	cerr << "all done!" << endl;
 	return 0;
