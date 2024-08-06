@@ -353,6 +353,7 @@ ulimit -c 20000
 module load gcc
 
 {params.sd}/bin/genPanKmers -o pan -m - -k {params.kmerpref}
+{params.sd}/bin/genPanKmers -tr -o pan.reindex -m - -k pan
 """
 
 rule GenSerializedGraphAndIndex:

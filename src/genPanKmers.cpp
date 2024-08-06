@@ -72,7 +72,8 @@ void getgmap(vector<vector<bool>>& omap, vector<bool>& gmap, vector<size_t> his)
 int main(int argc, const char * argv[]) {
 
     if (argc < 2) {
-        cerr << "usage: program  -o <output_prefix>  -m <mapping>  -k <kmer_file_prefixes>\n"
+        cerr << "usage: program  [-tr]  -o <output_prefix>  -m <mapping>  -k <kmer_file_prefixes>\n"
+		     << "  -tr      precess *.tr.kmers only, skipping ntr and graph\n"
              << "  -m       if is '-', the program assumes no missing loci\n"
              << "           full path name for <mapping> is required in any case\n"
              << "  -k       requires PREFIX.TYPE.kmers\n"
@@ -86,10 +87,10 @@ int main(int argc, const char * argv[]) {
     }
 
     vector<string> args(argv, argv+argc);
-    bool nomissing = false;
-    size_t argi = 1, ngenome = argc-6, nloci;
+    bool nomissing = false, TRonly = false;
+    size_t argi = 1, ngenome, nloci;
     string indir, outpref, mapfname;
-    vector<string> kmerpref(ngenome);
+    vector<string> kmerpref;
 
     while (argi < argc) {
         if (args[argi] == "-o") { outpref = args[++argi]; }
@@ -98,9 +99,12 @@ int main(int argc, const char * argv[]) {
             nomissing = (mapfname == "-");
         }
         else if (args[argi] == "-k") {
+			kmerpref.resize(argc-argi);
             kmerpref.assign(argv+argi+1, argv+argc);
+			ngenome = kmerpref.size();
             break;
         }
+		else if (args[argi] == "-tr") { TRonly = true; }
         else {
             cerr << "Error: invalid option " << args[argi] << '\n';
             return 1;
@@ -120,6 +124,7 @@ int main(int argc, const char * argv[]) {
 
     vector<string> filetypes = {"tr", "ntr", "graph"};
     for (string& filetype : filetypes) {
+		if (TRonly and filetype != "tr") { continue; }
         cerr << "merging " << filetype << ".kmers" << endl;
 
         bool graphmode = (filetype == "graph");
