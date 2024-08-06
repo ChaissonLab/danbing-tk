@@ -37,7 +37,6 @@ def parseMergeSet():
                         bs.add(v)
                         if v in v2si: # check if v was once reported good
                             si_ = v2si[v]
-                            #if si_ == 12968: print("[2XXX]", seq, ms[si_])
                             ms[si_] = None
                             v2si.pop(v)
                     continue
