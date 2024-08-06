@@ -14,9 +14,9 @@ def zscore(x):
 def nanzscore(x):
     return (x - np.nanmean(x)) / np.nanstd(x)
 
-def hist(x, xlab=None, ylab=None, title=None, dpi=150, alpha=1, color='gray', figsize=(2,1.8), get_ax=False):
+def hist(x, xlab=None, ylab=None, title=None, dpi=150, alpha=1, color='gray', bins=100, figsize=(2,1.8), get_ax=False, **kwargs):
     fig, ax = plt.subplots(1, 1, dpi=dpi, figsize=figsize)
-    ax.hist(x, bins=100, color=color, alpha=alpha)
+    ax.hist(x, bins=bins, color=color, alpha=alpha, **kwargs)
     ax.set_xlabel(xlab)
     ax.set_ylabel(ylab)
     ax.set_title(title)
@@ -36,9 +36,9 @@ def hist_int(x, xlab=None, ylab=None, title=None, rwidth=0.8, dpi=150, figsize=(
     else:
         plt.show(); plt.close()
 
-def plot(x, y, xlab=None, ylab=None, title=None, alpha=1, dpi=150, figsize=(2,1.8), m='.', c='k', s=2, get_ax=False):
+def plot(x, y, xlab=None, ylab=None, title=None, alpha=1, dpi=150, figsize=(2,1.8), m='.', c='k', s=2, mew=0, get_ax=False, **kwargs):
     fig, ax = plt.subplots(1, 1, dpi=dpi, figsize=figsize)
-    ax.plot(x, y, f'{m}{c}', mew=0, markersize=s, alpha=alpha)
+    ax.plot(x, y, f'{m}{c}', mew=mew, markersize=s, alpha=alpha, **kwargs)
     ax.set_xlabel(xlab)
     ax.set_ylabel(ylab)
     ax.set_title(title)

@@ -3,6 +3,7 @@ import numpy as np
 import statsmodels.api as sm
 import matplotlib
 import matplotlib.pyplot as plt
+import sys
 
 base = {'A':0, 'C':1,  'G':2,  'T':3}
 baseinv = ['A', 'C', 'G', 'T']
@@ -656,7 +657,7 @@ def plotCrossContamination(ctg0, ctg1, ksize=21, FS=700, ax=None, zoomoutsize=(0
         indices1 = cokmersi[1][kmer]
 
         # analyze contamination
-        badkmc_, badindices = getbadkmc_bothhaps(indices0, indices1, relpos0, relpos1, getindices=True)
+        badkmc_, badindices = getbadkmc_bothhaps(indices0, indices1, relpos0, relpos1, fs=FS, getindices=True)
         badkmc += badkmc_
 
         # for plotting
@@ -699,9 +700,10 @@ def plotCrossContamination(ctg0, ctg1, ksize=21, FS=700, ax=None, zoomoutsize=(0
 
 def visSelfRepeat(seq, ksize=13, figsize=(8,6), dpi=100, size=0.1, FS=700):
     fig, ax = plt.subplots(1,1, figsize=figsize, dpi=dpi)
-    plotCrossContamination(seq, seq, ksize=ksize, ax=ax, zoomoutsize=(0,0), offset=(0,0), 
-                            silent=False, showcontam=True, reportcontam=True, size=size, FS=FS)
+    badxs, badys = plotCrossContamination(seq, seq, ksize=ksize, ax=ax, zoomoutsize=(0,0), offset=(0,0), 
+                                          silent=False, showcontam=True, reportcontam=True, size=size, FS=FS)
     plt.show(); plt.close()
+    return badxs, badys
 
 def visPairedRepeat(seq1, seq2, ksize=21, figsize=(15,4), dpi=100, silent=False, showcontam=True, reportcontam=True, size=0.1, FS=700):
     fig, axes = plt.subplots(1, 3, figsize=figsize, dpi=dpi)
@@ -727,7 +729,7 @@ class Fasta:
         e = s + (L-1)//w + L
         i0 = s + si//w + si
         i1 = s + ei//w + ei
-        assert si > 0 and ei >= si and i1 <= e
+        assert si >= 0 and ei >= si and i1 <= e, print(ch, si, ei, i0, i1, e, L, s, w, file=sys.stderr)
         self.fa.seek(i0, 0)
         return self.fa.read(i1-i0).decode("utf-8").replace("\n","")
 
@@ -755,7 +757,7 @@ def ids2trseqs(gs, indir, gids, verbose=False, FS=500, flank=False):
             if verbose: print(".", end="")
             ids = gids[:,hi]
             i, si = get_nxt_i(0, ids)
-            # print(i, si)
+            if i == -2: continue
             with open(f"{indir}/{gn}.{h}.tr.fasta") as f:
                 j = -1
                 for line in f:
@@ -776,4 +778,55 @@ def ids2trseqs(gs, indir, gids, verbose=False, FS=500, flank=False):
                         else:
                             assert False
     return trseqs
+
+def visSelfRepeat_general(ctg0, ctg1, ksize=21, FS=0, figsize=(3.4,3), dpi=150, showFS=False, size=0.1):
+    def read2kmers(seq, ksize):
+        return np.array([seq[i:i+ksize] for i in range(len(seq)-ksize+1)])
+
+    start0, end0 = FS, len(ctg0)-FS
+    start1, end1 = FS, len(ctg1)-FS
+    TRsize0 = end0 - start0
+    TRsize1 = end1 - start1
+
+    relpos0 = (start0, end0-ksize+1)
+    relpos1 = (start1, end1-ksize+1)
+    kmers0 = read2kmers(ctg0, ksize)
+    kmers1 = read2kmers(ctg1, ksize)
+    cokmers = (set(kmers0) & set(kmers1))
+    cokmersi = getcokmersindex(cokmers, kmers0, kmers1)
+
+    xs, ys, badxs, badys = [], [], [], []
+    badkmc = np.zeros(4, dtype=int) # 0L, 0R, 1L, 1R
+    for kmer in cokmers:
+        indices0 = cokmersi[0][kmer]
+        indices1 = cokmersi[1][kmer]
+
+        # analyze contamination
+        badkmc_, badindices = getbadkmc_bothhaps(indices0, indices1, relpos0, relpos1, getindices=True)
+        badkmc += badkmc_
+
+        # for plotting
+        for i in indices0:
+            for j in indices1:
+                xs.append(i)
+                ys.append(j)
+        for i in badindices[0]: badxs.append(i)
+        for j in badindices[1]: badys.append(j)
+
+    fig, ax = plt.subplots(1,1, figsize=figsize, dpi=dpi)
+    if showFS:
+        # TR + NTR region
+        xlines, ylines = getrectangle((relpos0[0]-FS, relpos0[1]+FS), relpos1)
+        ax.plot(xlines, ylines, '-r', linewidth=1, alpha=0.8)
+        xlines, ylines = getrectangle(relpos0, (relpos1[0]-FS, relpos1[1]+FS))
+        ax.plot(xlines, ylines, '-r', linewidth=1, alpha=0.8)
+
+    ax.scatter(xs, ys, c='k', s=size, linewidths=0)
+    xmax = end0 - start0 + 2*FS - ksize + 1
+    ymax = end1 - start1 + 2*FS - ksize + 1
+    ax.set_xlim((0, xmax))
+    ax.set_ylim((0, ymax))
+    ax.set_yticks((0, ymax//500*500))
+    ax.set_yticklabels([0, ymax//500*500], rotation=90)
+    plt.show(); plt.close()
 
