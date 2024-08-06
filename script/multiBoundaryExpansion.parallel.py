@@ -23,13 +23,14 @@ class expStat:
 def loadbeds(panmap):
     beds = np.full([nh, nloci, 4], None, dtype=object)
     for gi, g in enumerate(gs):
-        m = panmap[:,gi]==1
         for h in [0,1]:
             hi = 2*gi + h
+            m0 = panmap[:,hi]==1
             bed = np.loadtxt(f"{g}/tmp1.{h}.bed", dtype=object, usecols=[0,1,2,6], ndmin=2, comments=None)
-            if np.sum(m) != bed.shape[0]:
-                raise ValueError(f"[Error] Inconsistent # of supports between {g}/tmp1.{h}.bed ({bed.shape[0]}) and column {gi+3} of pan.tr.mbe.v0.bed (np.sum(m))")
-            beds[hi,m] = bed
+            m1 = bed[:,0] != "."
+            if np.sum(m0) != np.sum(m1):
+                raise ValueError(f"[Error] Inconsistent # of supports between {g}/tmp1.{h}.bed ({np.sum(m1)}) and column {hi+3} of pan.tr.mbe.v0.bed {np.sum(m0)}")
+            beds[hi,m0] = bed[m1]
         print(".", end="", flush=True)
     return beds
 
@@ -51,7 +52,10 @@ def get_ctg(fas, hi, hd):
     L, s, w = fais[hi][i]
     e = s + (L-1)//w + 1 + L
     fas[hi].seek(s, 0)
-    return fas[hi].read(e-s).decode("utf-8").replace("\n","").upper(), L, s, e
+    if IGNORE_CASE:
+        return fas[hi].read(e-s).decode("utf-8").replace("\n","").upper(), L, s, e
+    else:
+        return fas[hi].read(e-s).decode("utf-8").replace("\n",""), L, s, e
 
 def get_seq_pos(fas, beds, ctgs, hds, idx, ibeg):
     seqs, poss = [None] * nh, [None] * nh
@@ -213,8 +217,8 @@ def gwMBE(batch, stat):
 
 def writeBed_MBE(th1=0.1, th2=0.8):
     """
-    th1: maximal fraction of haps failing MBE
-    th2: minimal fraction of haps remaining
+    th1: mimimal fraction of haps remaining & locus was expanded
+    th2: minimal fraction of haps remaining & locus was not expanded
     """
     panmap = np.loadtxt(sys.argv[5], dtype=object, ndmin=2)[:,3:].astype(int)
     bs = set() # bad set
@@ -223,12 +227,13 @@ def writeBed_MBE(th1=0.1, th2=0.8):
             if len(expstat.fail) == nh:
                 bs.add(idx)
             else:
-                ns = np.sum([v is not None for v in expstat.npos])
-                nf = len(expstat.fail)
+                #ns = np.sum([v is not None for v in expstat.npos])
+                nf = len(expstat.fail) + np.sum([v is None for v in expstat.npos])
                 #print(idx,nf/ns)
-                if nf/ns > th1:
+                #if nf/ns > th1:
+                if 1 - nf/nh < th1:
                     bs.add(idx)
-    ns = ng * th2
+    ns = nh * th2
     bs |= set(np.nonzero(np.sum(panmap, axis=1)<ns)[0].tolist())
     vi = sorted(list(set(range(nloci))-bs)) # valid indices
     np.savetxt("locusMap.v1.to.v0.txt", vi, fmt='%i')
@@ -239,8 +244,9 @@ def writeBed_MBE(th1=0.1, th2=0.8):
         g = gs[hi//2]
         h = hi % 2
         bed = np.loadtxt(f"{g}/tmp1.{h}.bed", dtype=object, ndmin=2, comments=None) # iterate w/ genome index
+        bed = bed[bed[:,0] != "."]
         p2g = np.full(nloci, None, dtype=object) # map pan index to genome index
-        p2g[panmap[:,hi//2]==1] = np.arange(bed.shape[0])
+        p2g[panmap[:,hi]==1] = np.arange(bed.shape[0])
         f = open(f"{g}/tmp2.{h}.mbe.bed", 'w')
         for pid in vi:
             if idx2exp[pid].opos[hi] is None: # missing hap
@@ -261,6 +267,13 @@ def writeBed_MBE(th1=0.1, th2=0.8):
     np.savetxt("pan.tr.mbe.v1.bed", panbed[vi], delimiter="\t", fmt='%s')
 
 if __name__ == "__main__":
+    IGNORE_CASE = False
+    if len(sys.argv) == 11:
+        if sys.argv[10] == "--ignore-case":
+            IGNORE_CASE = True
+        else:
+            print(f"unknown option {sys.argv[10]}", file=sys.stderr)
+            exit
     KSIZE, FS, TRWINDOW = [int(sys.argv[i]) for i in range(1,4)]
     NPROCESS = int(sys.argv[8])
     INDIR = sys.argv[9]
@@ -268,8 +281,8 @@ if __name__ == "__main__":
     gs = np.loadtxt(sys.argv[4], usecols=0, dtype=object, ndmin=1)
     print("\tpanmap", flush=True)
     panmap = np.loadtxt(sys.argv[5], dtype=object, ndmin=2)[:,3:].astype(int)
-    nloci, ng = panmap.shape
-    nh = 2 * ng
+    nloci, nh = panmap.shape
+    ng = nh//2
     bsize = (nloci-1) // NPROCESS + 1
     print("\tbed's", flush=True, end="")
     beds = loadbeds(panmap)

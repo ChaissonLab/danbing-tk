@@ -41,7 +41,7 @@ def get_ctg(fa, hd):
     L, s, w = fai[i]
     e = s + (L-1)//w + L
     fa.seek(s, 0)
-    return fa.read(e-s).decode("utf-8").replace("\n","").upper(), L, s, e
+    return fa.read(e-s).decode("utf-8").replace("\n",""), L, s, e
 
 def get_seq_pos(fa, bed, fac, idx, ibeg):
     seq, pos = None, None
