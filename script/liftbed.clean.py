@@ -57,7 +57,7 @@ def cleanbed():
                         r2a[r].strand.append(f6)
                     else:
                         r2a[r].valid = False
-                else:
+                else: # either share high similarity w/ another locus OR at the breakpoints of two contigs
                     r2a[r].valid = False
                     
     a2ch = defaultdict(lambda: defaultdict(int))
@@ -67,13 +67,13 @@ def cleanbed():
 
     a2mc = {} # asm to major chrom
     for k0, v0 in a2ch.items():
-        tc, mc, mr = 0, 0, ""
+        tc, mc = 0, 0
         for k1, v1 in v0.items():
             tc += v1
             if v1 > mc:
                 mch = k1
                 mc = v1
-        if mc/tc >= 0.8: # check major mapped chrom freq
+        if mc/tc >= 0.6: # check major mapped chrom freq
             a2mc[k0] = mch
                     
     # write clean bed
