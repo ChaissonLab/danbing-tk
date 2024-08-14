@@ -5,12 +5,10 @@ srcdir = "/project/mchaisso_100/cmb-16/tsungyul/work/vntr/danbing-tk/script/"
 sys.path.insert(0, srcdir)
 import numpy as np
 import pandas as pd
-import vntrutils as vu
+from vntrutils import read2kmers, decodeNumericString, getRCkmer
 from bubblecalling import e2ce, k2ck, Edge, decode_edges, es2bigf, check_bubble_root_edge
 import pickle
 from sklearn import svm
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
 
 
 def load_tr_kmc(fn, index):
@@ -57,7 +55,7 @@ def load_bubbles(fn):
 def seq2h(seq, k=1):
     n = 2**(2*k)
     npb = np.zeros(n)
-    for km in vu.read2kmers(seq, k, canonical=False):
+    for km in read2kmers(seq, k, canonical=False):
         npb[km] += 1
     npb /= len(seq)
     h = 0
@@ -137,7 +135,7 @@ def find_TR_snarls(qcfilter, tri2trks, tri2ntrks, bub_tr2k2c, tr_kmc, TH_CNE=10,
                 e_ = edge.e
                 if edge.a:
                     cee -= cne
-                    seq = vu.decodeNumericString(e_, 22)
+                    seq = decodeNumericString(e_, 22)
                     ncb += 1
                     br.crt.append(crt)
                     br.cne.append(cne)
@@ -246,7 +244,7 @@ def filter_bubble_edges(vbis, br, TH1, TH2, TH3, verbose=False):
         ct_ar = ct_ar[mask]
         e2c = {}
         for e_f, c in zip(es_ar, ct_ar):
-            for e in [e_f, vu.getRCkmer(e_f, 22)]:
+            for e in [e_f, getRCkmer(e_f, 22)]:
                 if e in e2c:
                     assert e2c[e] == c
                 else:
@@ -276,7 +274,7 @@ def get_bubble_path_features(tri2ves, tri2trks, tri2ntrks, verbose=False):
     def fill_bubble_path_bidirectionality(es, bres, bdf):
         j = -len(bres)
         for i in range(len(bres)):
-            bdf[j][7] = vu.getRCkmer(bres[i],22) in es
+            bdf[j][7] = getRCkmer(bres[i],22) in es
             j += 1
 
     tribes = []
@@ -343,7 +341,7 @@ def get_valid_bubble_edges(tribes, bdf, fn):
             tri2vbes[tri][1].append(bes)
     ne = 0
     for tri, (vbes, _) in tri2vbes.items():
-        rves = set([vu.getRCkmer(e, 22) for e in vbes])
+        rves = set([getRCkmer(e, 22) for e in vbes])
         tri2vbes[tri][0] |= rves
         ne += len(tri2vbes[tri][0])
     print(f"Final callset: {ne} edges")

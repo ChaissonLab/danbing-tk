@@ -1,17 +1,17 @@
 import sys
 srcdir = "/project/mchaisso_100/cmb-16/tsungyul/work/vntr/danbing-tk/script/"
 sys.path.insert(0, srcdir)
-import vntrutils as vu
+from vntrutils import getRCkmer
 
 import numpy as np
 import pandas as pd
 
 def e2ce(e):
-    er = vu.getRCkmer(e,22)
+    er = getRCkmer(e,22)
     return min(e, er)
 
 def k2ck(k):
-    kr = vu.getRCkmer(k,21)
+    kr = getRCkmer(k,21)
     return min(k, kr)
 
 class Edge:
@@ -218,7 +218,7 @@ def es2bigf(es, k=22, bi=True):
             gf[pa] |= 2**nt
         # make it bidirectional
         if bi:
-            er = vu.getRCkmer(e, k)
+            er = getRCkmer(e, k)
             par = er >> 2
             ntr = er % 4
             if par not in gf:
