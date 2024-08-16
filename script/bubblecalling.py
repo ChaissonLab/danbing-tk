@@ -43,6 +43,14 @@ def getRCkmer(kmer, k):
         rckmer += (byteRC[kmer] >> ((4-k)<<1))
     return rckmer
 
+def encodeString(string):
+    """Direct encoding. Use string2CaKmer() for canonical encoding"""
+    numericString = 0
+    for i in range(len(string)):
+        numericString = (numericString << 2) + base2num[string[i]]
+
+    return numericString
+
 def getNextKmer(beg, seq, k):
     if beg + k >= len(seq):
         return (len(seq), 0)
