@@ -5,8 +5,7 @@ srcdir = "/project/mchaisso_100/cmb-16/tsungyul/work/vntr/danbing-tk/script/"
 sys.path.insert(0, srcdir)
 import numpy as np
 import pandas as pd
-from vntrutils import read2kmers, decodeNumericString, getRCkmer
-from bubblecalling import e2ce, k2ck, Edge, decode_edges, es2bigf, check_bubble_root_edge
+from bubblecalling import read2kmers, decodeNumericString, getRCkmer, e2ce, k2ck, Edge, decode_edges, es2bigf, check_bubble_root_edge
 import pickle
 from sklearn import svm
 

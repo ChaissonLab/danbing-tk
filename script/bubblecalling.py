@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 
+num2base = ['A', 'C', 'G', 'T']
+base2num = {'A':0, 'C':1,  'G':2,  'T':3}
 byteRC = [
  255, 191, 127,  63, 239, 175, 111,  47, 223, 159,
   95,  31, 207, 143,  79,  15, 251, 187, 123,  59,
@@ -40,6 +42,64 @@ def getRCkmer(kmer, k):
         rckmer <<= (k<<1)
         rckmer += (byteRC[kmer] >> ((4-k)<<1))
     return rckmer
+
+def getNextKmer(beg, seq, k):
+    if beg + k >= len(seq):
+        return (len(seq), 0)
+
+    validlen = 0
+    while validlen != k:
+        if beg + k >= len(seq):
+            return (len(seq), 0)
+        if seq[(beg + validlen)] not in num2base:
+            beg = beg + validlen + 1
+            validlen = 0
+        else:
+            validlen += 1
+
+    return (beg, encodeString(seq[beg:beg + k]))
+
+def read2kmers(read, k, leftflank=0, rightflank=0, dtype='uint64', canonical=True):
+    """
+    CAUTION:
+      - this function should be avoided and only used for certain visualization
+      - the output kmers vector shifts index if a tract of kmers at the beginning contains N
+    will return max_val_of_uint64 (-1) if there's 'N' within kmer
+    """
+    rlen = len(read)
+    if rlen - k - leftflank - rightflank + 1 <= 0: return np.array([])
+
+    mask = (1 << 2*(k-1)) - 1
+    kmers = np.zeros(rlen-k-leftflank-rightflank+1, dtype=dtype) - 1
+
+    beg, kmer = getNextKmer(leftflank, read, k)
+    if beg == rlen: return kmers
+    rckmer = getRCkmer(kmer, k)
+
+    it = iter(range(beg, rlen-k-rightflank+1))
+    for i in it:
+        canonicalkmer = rckmer if kmer > rckmer else kmer
+        kmers[i-beg] = canonicalkmer if canonical else kmer
+
+        if i + k >= rlen: return kmers
+        if read[i + k] not in num2base:
+            nbeg, kmer = getNextKmer(i+k+1, read, k)
+            rckmer = getRCkmer(kmer, k)
+            for j in range(nbeg-i-1):
+                next(it, None)
+        else:
+            kmer = ((kmer & mask) << 2) + base2num[read[i + k]]
+            rckmer = (rckmer >> 2) + (3-base2num[read[i+k]] << 2*(k-1))
+
+    return kmers
+
+def decodeNumericString(num, k):
+    string = ''
+    for i in range(k):
+        string = num2base[(num % 4)] + string
+        num >>= 2
+
+    return string
 
 def e2ce(e):
     er = getRCkmer(e,22)
