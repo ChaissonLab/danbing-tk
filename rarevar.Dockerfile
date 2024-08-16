@@ -7,5 +7,5 @@ RUN apt-get update && \
 
 WORKDIR /opt
 
-COPY script/danbing.call.py script/bubblecalling.py script/vntrutils.py /usr/bin/
+COPY script/danbing.call.py script/bubblecalling.py script/kmerutils.py /usr/bin/
 
