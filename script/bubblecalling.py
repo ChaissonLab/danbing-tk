@@ -1,6 +1,4 @@
 from kmerutils import getRCkmer, read2kmers, decodeNumericString
-#import numpy as np
-import pandas as pd
 
 def e2ce(e):
     er = getRCkmer(e,22)
