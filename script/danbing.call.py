@@ -346,7 +346,24 @@ def get_valid_bubble_edges(tribes, bdf, fn):
 
 
 
-
+if len(sys.argv) == 1 or sys.argv[1] == "--help" or sys.argv[1] == "-h":
+    print("Usage: ./danbing.call.py <METADATA> <GT_DIR> <GN> <TRINDEX> <OUTDIR> <BR_SVM> <BP_SVM> <NTR> <NTR_AUTOSOME> <SEX> <TH> <TH1> <TH2> <TH3> <GRAPHSIZELIMIT>")
+    print("  METADATA        : file name of qcfilter.tri2trks.tri2ntrks.pickle")
+    print("  GT_DIR          : path to GN.tr.kmers and GN.bub output by danbing-tk.aln")
+    print("  GN              : genome name, ie the prefix of *.tr.kmers and *.bub")
+    print("  TRINDEX         : pan.tr.reindex.kmers file for reading *.tr.kmers")
+    print("  OUTDIR          : output dir")
+    print("  BR_SVM          : bubble root SVM model")
+    print("  BP_SVM          : bubble path SVM model")
+    print("  NTR             : number of TRs in RPGG")
+    print("  NTR_AUTOSOME    : number of autosome TRs in RPGG")
+    print("  SEX             : male=1, female=2. Used to skip calling X chrom rare variants from male samples")
+    print("  TH              : min coverage of bubble root edge")
+    print("  TH1             : heuristic filtering param1")
+    print("  TH2             : heuristic filtering param2")
+    print("  TH3             : heuristic filtering param3")
+    print("  GRAPHSIZELIMIT  : upper bound of graph size (num of unique edges in *.bub) to be considered for rare variant calling")
+    exit()
 
 
 METADATA = sys.argv[1]
