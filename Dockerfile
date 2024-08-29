@@ -20,7 +20,7 @@ RUN bunzip2 samtools-1.17.tar.bz2 && \
   cd .. && rm -r samtools-1.17*
 
 RUN cd danbing-tk && mkdir -p bin && \
-  g++ -std=c++11 -pthread -I ./cereal/include -I ./Eigen -O3 -o bin/danbing-tk src/aQueryFasta_thread.cpp && \
+  g++ -std=c++11 -pthread -I ./cereal/include -I ./Eigen -O2 -o bin/danbing-tk src/aQueryFasta_thread.cpp && \
   cp bin/* /usr/local/bin/ && \
   cd .. && rm -rf danbing-tk
 
