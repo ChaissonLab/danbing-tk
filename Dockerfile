@@ -7,17 +7,17 @@ RUN apt-get update && \
 
 WORKDIR /opt
 
-COPY danbing-tk ./danbing-tk
-
 COPY samtools-1.17.tar.bz2 .
-
-COPY danbing-tk/script/danbing.call.py danbing-tk/script/bubblecalling.py danbing-tk/script/kmerutils.py /usr/local/bin/
 
 RUN bunzip2 samtools-1.17.tar.bz2 && \
   tar xvf samtools-1.17.tar && \
   cd samtools-1.17 && \
   ./configure && make -j 8 && make install && \
   cd .. && rm -r samtools-1.17*
+
+COPY danbing-tk/script/danbing.call.py danbing-tk/script/bubblecalling.py danbing-tk/script/kmerutils.py /usr/local/bin/
+
+COPY danbing-tk ./danbing-tk
 
 RUN cd danbing-tk && mkdir -p bin && \
   g++ -std=c++11 -pthread -I ./cereal/include -I ./Eigen -O2 -o bin/danbing-tk src/aQueryFasta_thread.cpp && \
