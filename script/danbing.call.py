@@ -29,12 +29,15 @@ def load_tr_kmc(fn, index):
 
 def load_bubbles(fn):
     bub_kmc = {}
+    n = 0
     with open(fn) as f:
         tri = -1
         for line in f:
             if line[0] == ">":
                 if tri >= 0:
-                    bub_kmc[tri] = k2c
+                    if k2c:
+                        bub_kmc[tri] = k2c
+                        n += len(k2c)
                 tri += 1
                 if tri >= NTR_AUTOSOME and SEX == 1: break
                 k2c = {}
@@ -46,7 +49,10 @@ def load_bubbles(fn):
                 else:
                     k2c[ce] = ct
         else:
-            bub_kmc[tri] = k2c
+            if k2c:
+                bub_kmc[tri] = k2c
+                n += len(k2c)
+    print(f"{n} novel edges across {len(bub_kmc)} loci")
     return bub_kmc
 
 def seq2h(seq, k=1):
@@ -193,6 +199,8 @@ def cov_norm_br_svm(br, fn, TH):
     br.cts = np.array(br.cts) #* FC
 
     m0 = (df["c_nv_e"] > TH).to_numpy()
+    if not np.any(m0): return pd.DataFrame(), np.array([])
+
     X = df[m0]
     bis = np.nonzero(m0)[0] # bubble indices
     with open(fn, "rb") as f:
@@ -228,15 +236,16 @@ def filter_bubble_edges(vbis, br, TH1, TH2, TH3, verbose=False):
                 fcmax = max(fcmax, c)
         if not valid_locus: # all bubbles are removed by SVM
             continue
+        assert len(set(es_ar.tolist())) == es_ar.size
 
         # heuristic cov filtering
         if tcmin-fcmax > TH3:
             TH = max(TH2, fcmax)
         else:
             TH = max(TH2, tcmin-TH1)
-
-        assert len(set(es_ar.tolist())) == es_ar.size
         mask = ct_ar > TH
+        if not np.any(mask): continue
+
         es_ar = es_ar[mask]
         ct_ar = ct_ar[mask]
         e2c = {}
@@ -246,8 +255,8 @@ def filter_bubble_edges(vbis, br, TH1, TH2, TH3, verbose=False):
                     assert e2c[e] == c
                 else:
                     e2c[e] = c
-
         tri2ves[tri] = (es_ar, e2c, fcmax)
+
     if verbose: print(np.sum([v[0].size for v in tri2ves.values()]), "edges")
     return tri2ves
 
@@ -344,6 +353,12 @@ def get_valid_bubble_edges(tribes, bdf, fn):
     print(f"Final callset: {ne} edges")
     return tri2vbes
 
+def write_output_and_exit(OUTDIR, GN, tri2vbes):
+    print("no valid bubble edge found")
+    with open(f"{OUTDIR}/{GN}.rarevar.pickle", "wb") as f:
+        pickle.dump(tri2vbes, f)
+    exit()
+
 
 
 if len(sys.argv) == 1 or sys.argv[1] == "--help" or sys.argv[1] == "-h":
@@ -393,16 +408,25 @@ tr_kmc = load_tr_kmc(fn, TRINDEX)
 fn = f"{GT_DIR}/{GN}.bub"
 print(f"Loading bub_kmc {fn}", flush=True)
 bub_kmc = load_bubbles(fn)
+tri2vbes = {}
+if not bub_kmc:
+    write_output_and_exit(OUTDIR, GN, tri2vbes)
 
 print("1st snarl finding", flush=True)
 br = find_TR_snarls(qcfilter, tri2trks, tri2ntrks, bub_kmc, tr_kmc, TH_CNE=TH, verbose=True)
+if not br:
+    write_output_and_exit(OUTDIR, GN, tri2vbes)
 
 print("Bubble root SVM filtering", flush=True)
 feature_mat, vbis = cov_norm_br_svm(br, BR_SVM, TH)
 #feature_mat.to_csv(f"{OUTDIR}/{GN}.br_mat.csv", sep="\t")
+if vbis.size == 0:
+    write_output_and_exit(OUTDIR, GN, tri2vbes)
 
 print("Heuristic filtering", flush=True)
 tri2ves = filter_bubble_edges(vbis, br, TH1=TH1, TH2=TH2, TH3=TH3)
+if not tri2ves:
+    write_output_and_exit(OUTDIR, GN, tri2vbes)
 
 print("2nd snarl finding", flush=True)
 tribes, bdf = get_bubble_path_features(tri2ves, tri2trks, tri2ntrks)
