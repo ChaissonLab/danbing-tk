@@ -24,8 +24,8 @@ sem_t *semreader;
 sem_t *semcount;
 sem_t *semwriter;
 bool testmode;
-uint64_t rmask;
 uint64_t ksize = 21;
+uint64_t rmask = (1ULL << 2*(ksize-1)) - 1;
 uint64_t N_FILTER = 4; // number of subsampled kmers
 uint64_t NM_FILTER = 1; // minimal number of hits
 uint64_t maxncorrection = 4;
@@ -1778,9 +1778,7 @@ int main(int argc, char* argv[]) {
 		}
 		else if (args[argi] == "-au") { aug = true; }
 		else if (args[argi] == "-g" or args[argi] == "-gc" or args[argi] == "-gcc") {
-			if (args[argi] == "-gc" or args[argi] == "-gcc") { correction = true; }
 			if (args[argi] == "-gcc") { tc = true; }
-			threading = true;
 			thread_cth = stoi(args[++argi]);
 			if (args[argi+1][0] != '-') { maxncorrection = stoi(args[++argi]); }
 		}
@@ -1827,7 +1825,6 @@ int main(int argc, char* argv[]) {
 		else if (args[argi] == "-p") { nproc = stoi(args[++argi]); }
 		else if (args[argi] == "-cth") { 
 			Cthreshold = stoi(args[++argi]);
-			skip1 = false;
 		}
 		else { 
 			cerr << "invalid option: " << args[argi] << endl;
