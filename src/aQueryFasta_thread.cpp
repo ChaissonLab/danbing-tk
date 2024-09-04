@@ -1385,6 +1385,7 @@ public:
 	uint16_t Cthreshold, thread_cth;
 	uint64_t *nReads, *nThreadingReads, *nFeasibleReads, *nSubFiltered, *nKmerFiltered;
 	uint64_t nloci;
+	float readsPerBatchFactor;
 	unordered_map<string, string>* readDB;
 	kmerIndex_uint32_umap* kmerDBi;
 	vector<uint32_t>* kmerDBi_vv;
@@ -1431,8 +1432,9 @@ void CountWords(void *data) {
 	uint64_t& nKmerFiltered = *((Counts*)data)->nKmerFiltered;
 	uint16_t Cthreshold = ((Counts*)data)->Cthreshold;
 	uint16_t thread_cth = ((Counts*)data)->thread_cth;
+	float readsPerBatchFactor = ((Counts*)data)->readsPerBatchFactor;
 	const uint64_t nloci = ((Counts*)data)->nloci;
-	const uint64_t readsPerBatch = 3000000;
+	const uint64_t readsPerBatch = 300000 * readsPerBatchFactor;
 	const uint64_t minReadSize = Cthreshold + ksize - 1;
 	ifstream *in = ((Counts*)data)->in;
 	unordered_map<string, string>& readDB = *((Counts*)data)->readDB;
@@ -1717,7 +1719,7 @@ int main(int argc, char* argv[]) {
 
 	if (argc < 2) {
 		cerr << endl
-		     << "Usage: danbing-tk [-v] [-e] [-bu] [-g|-gc|-gcc] [-a|-ae] [-kf] [-cth] [-k] [-p] <-o|-on> <-fa|-fai> -qs" << endl
+		     << "Usage: danbing-tk [-v] [-e] [-bu] [-g|-gc|-gcc] [-a|-ae] [-kf] [-cth] [-r] [-k] [-p] <-o|-on> <-fa|-fai> -qs" << endl
 		     << "Options:" << endl
 		     << "  -v <INT>            Verbosity: 0-3. Default: 0." << endl
 		     << "  -e <INT>            Write mapped reads to STDOUT in fasta format." << endl
@@ -1737,6 +1739,7 @@ int main(int argc, char* argv[]) {
 		     << "                      2nd param: minimal # of matches. Default: 1." << endl
 		     << "  -cth <INT>          Discard both pe reads if maxhit of one pe read is below this threshold. Default: 45" << endl
 		     << "                      Will skip read filtering and run threading directly if not specified." << endl
+		     << "  -r <FLOAT>          scaling factor for readsPerBatch. Default: 1. Can affect multiprocess efficiency." << endl
 		     << "  -k <INT>            Kmer size" << endl
 		     << "  -p <INT>            Use n threads. Default: 1." << endl << endl
 		     << "  -o <STR>            Output prefix" << endl
@@ -1756,6 +1759,7 @@ int main(int argc, char* argv[]) {
 	bool bait = false, aug = false, threading = true, correction = true, tc = false, aln = false, aln_minimal=false, g2pan = false, skip1 = false, writeKmerName = false, outputBubbles = false, interleaved;
 	int simmode = 0, extractFasta = 0;
 	uint64_t argi = 1, trim = 0, thread_cth = 100, Cthreshold = 45, nproc = 1;
+	float readsPerBatchFactor = 1;
 	string trPrefix, trFname, fastxFname, outPrefix;
 	ifstream fastxFile, trFile, augFile, baitFile, mapFile;
 	ofstream outfile, baitOut;
@@ -1788,6 +1792,7 @@ int main(int argc, char* argv[]) {
 			N_FILTER = stoi(args[++argi]);
 			NM_FILTER = stoi(args[++argi]);
 		}
+		else if (args[argi] == "-r") { readsPerBatchFactor = stof(args[++argi]); }
 		else if (args[argi] == "-k") { 
 			ksize = stoi(args[++argi]);
 			rmask = (1ULL << 2*(ksize-1)) - 1;
@@ -1926,6 +1931,7 @@ int main(int argc, char* argv[]) {
 
 		counts.Cthreshold = Cthreshold;
 		counts.thread_cth = thread_cth;
+		counts.readsPerBatchFactor = readsPerBatchFactor;
 	}
 
 	const int idLen=10;
