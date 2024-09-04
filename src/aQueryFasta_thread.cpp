@@ -1432,7 +1432,7 @@ void CountWords(void *data) {
 	uint16_t Cthreshold = ((Counts*)data)->Cthreshold;
 	uint16_t thread_cth = ((Counts*)data)->thread_cth;
 	const uint64_t nloci = ((Counts*)data)->nloci;
-	const uint64_t readsPerBatch = 300000;
+	const uint64_t readsPerBatch = 3000000;
 	const uint64_t minReadSize = Cthreshold + ksize - 1;
 	ifstream *in = ((Counts*)data)->in;
 	unordered_map<string, string>& readDB = *((Counts*)data)->readDB;
