@@ -28,7 +28,7 @@
 using namespace std;
 
 //typedef unordered_set<size_t> kmer_set;
-typedef unordered_map<size_t, uint32_t> kmerCount_umap; // assume count < (2^16 -1)
+typedef unordered_map<size_t, uint32_t> kmerCount_umap; // assume count < (2^32 -1)
 typedef unordered_map<size_t, atomic_size_t> kmer_aCount_umap;
 typedef unordered_map<size_t, uint8_t> GraphType;
 typedef unordered_map<size_t, unordered_set<uint32_t>> kmeruIndex_umap; // assume number of loci < (2^32 -1)
@@ -40,6 +40,7 @@ typedef unordered_map<string, unordered_map<string, vector<uint16_t>>> adjAttr_d
 typedef unordered_map<size_t, unordered_map<size_t, uint16_t>> nuAdj_dict;
 typedef unordered_map<size_t, unordered_map<size_t, vector<uint16_t>>> nuAdjAttr_dict;
 typedef vector<kmerCount_umap> bubble_db_t;
+typedef vector<unordered_set<uint64_t>> bait_db_t;
 
 //const unordered_map<char, size_t> base( {{'A', 0}, {'C', 1}, {'G', 2}, {'T', 3}});
 //const char baseinv[] = {'A', 'C', 'G', 'T'};
@@ -276,6 +277,18 @@ void noncaVec2CaUmap(vector<size_t>& kmers, kmerCount_umap& out, size_t ksize) {
     }
 }
 
+// non-canonical kmer to canonical kmer
+void nonckmer2ckmer(vector<size_t>& kmers, vector<size_t>& ckmers, size_t ksize) {
+	ckmers.resize(kmers.size());
+    size_t RCkmer;
+	for (int i = 0; i < kmers.size(); ++i) {
+		size_t kmer = kmers[i];
+		if (kmer == -1ULL) { continue; }
+        RCkmer = getNuRC(kmer, ksize);
+		ckmers[i] = (kmer <= RCkmer ? kmer : RCkmer);
+	}
+}
+
 size_t countLoci(string fname) {
     ifstream inf(fname);
     assert(inf);
@@ -303,6 +316,20 @@ size_t countBedLoci(string fname) {
 
 }
 
+template <typename T>
+void readiKmers(T& db, string& pref) {
+	ifstream f(pref + ".inv.kmers");
+	assert(f);
+	cerr << "reading invariant kmers from " << pref << ".inv.kmers" << endl;
+	string line;
+	size_t tri = -1;
+	while (getline(f, line)) {
+		if (line[0] == '>') { ++tri; }
+		else { db[tri][stoul(line)] += 0; }
+	}
+	f.close();
+}
+
 // record kmerDB only
 template <typename T>
 void readKmers(T& kmerDB, string fname) {
@@ -314,6 +341,20 @@ void readKmers(T& kmerDB, string fname) {
 	while (getline(f, line)) {
 		if (line[0] == '>') { ++idx; }
 		else { kmerDB[idx][stoul(line)] += 0; }
+	}
+	f.close();
+}
+
+template <typename T>
+void readKmerSet(T& kmerDB, string fname) { // vector<unordered_set>
+    ifstream f(fname);
+    assert(f);
+    cerr <<"reading kmers from " << fname << endl;
+    string line;
+	size_t idx;
+	while (getline(f, line)) {
+		if (line[0] == '>') { idx = stoul(line.substr(1)); }
+		else { kmerDB[idx].insert(stoul(line)); }
 	}
 	f.close();
 }
@@ -691,6 +732,17 @@ void writeKmers(string outfpref, vector<kmerAttr_dict>& kmerAttrDB) {
     }
     fout.close();
 }
+
+template <typename S, typename T>
+void writeTRKmerSummary(string fn, vector<S>& kmc, vector<T>& nmapread) {
+    ofstream fout(fn);
+    assert(fout);
+    for (size_t i = 0; i < kmc.size(); ++i) {
+		fout << nmapread[i] << '\t' << kmc[i] << '\n';
+    }
+    fout.close();
+}
+
 
 void writeBubbles(string fn, bubble_db_t& bubbleDB) {
     ofstream fout(fn);
