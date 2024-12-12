@@ -84,5 +84,6 @@ int main(int argc, char* argv[]) {
 			cerr << nread << " reads processed" << endl;
 		}
 	}
+	cerr << readDB.size() << " unpaired reads discarded" << endl;
 	return 0;
 }
