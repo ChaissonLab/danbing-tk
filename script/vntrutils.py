@@ -518,7 +518,7 @@ class Fasta:
     def close(self):
         self.fa.close()
 
-def ids2trseqs(gs, indir, gids, verbose=False, FS=500, flank=False):
+def ids2trseqs(gs, indir, gids, verbose=False, FS=500, keepflank=False):
     def get_nxt_i(si, ids):
         if si >= len(ids):
             return -2, si
@@ -549,7 +549,7 @@ def ids2trseqs(gs, indir, gids, verbose=False, FS=500, flank=False):
                         if j < i:
                             continue
                         elif j == i:
-                            if flank:
+                            if keepflank:
                                 trseqs[si,hi] = line[:-1]
                             else:
                                 assert len(line) > 2*FS

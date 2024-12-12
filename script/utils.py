@@ -2,6 +2,7 @@ import numpy as np
 import statsmodels.api as sm
 import matplotlib
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 matplotlib.rc('font', size=7)
 matplotlib.rc('axes', titlesize=7)
@@ -13,6 +14,17 @@ def zscore(x):
 
 def nanzscore(x):
     return (x - np.nanmean(x)) / np.nanstd(x)
+
+def box(df, xlab=None, ylab=None, hue=None, title=None, dpi=150, palette=["m","g"], lw=0.3, fs=0.5, figsize=(4,3), **kwargs):
+    plt.figure(figsize=figsize, dpi=dpi)
+    if xlab is None:
+        xlab = df.columns[0]
+    if ylab is None:
+        ylab = df.columns[1]
+    sns.boxplot(x=xlab, y=ylab, palette=["m", "g"], data=df, linewidth=lw, fliersize=fs, width=0.3)
+    if title:
+        plt.title(title)
+    plt.show(); plt.close()
 
 def hist(x, xlab=None, ylab=None, title=None, dpi=150, alpha=1, color='gray', bins=100, figsize=(2,1.8), get_ax=False, **kwargs):
     fig, ax = plt.subplots(1, 1, dpi=dpi, figsize=figsize)
