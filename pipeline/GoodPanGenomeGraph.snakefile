@@ -33,9 +33,9 @@ copts = config["clusterOpts"]
 
 rule all:
     input:
-        faAln = expand(outdir + "{genome}.{hap}.aln.foo", genome=genomes, hap=haps),
+        faAln = expand(outdir + "r2a/checkpoint/{genome}.{hap}.aln.foo", genome=genomes, hap=haps),
         lift = expand(outdir + "{genome}/lift.foo", genome=genomes),
-        TRfa = expand(outdir + "{genome}.{hap}.tr.fasta", genome=genomes, hap=haps),
+        TRfa = expand(outdir + "trfa/checkpoint/{genome}.{hap}.foo", genome=genomes, hap=haps),
         #PBkmers = expand(outdir + "{genome}.PB.{kmerType}.kmers", genome=genomes, kmerType=kmerTypes),
         #rawPred = expand(outdir + "{genome}.rawLR.pred", genome=genomes),
         panKmers = expand(outdir + "pan.{kmerType}.kmers", kmerType=kmerTypes),
@@ -52,19 +52,19 @@ def getMem():
     else:
         return 35
 
-rule MapAsm2Ref:
+rule MapRef2Asm:
     input:
         fa = indir + "{genome}.{hap}.fa",
     output:
-        faAln = outdir + "{genome}.{hap}.aln.foo",
+        faAln = outdir + "r2a/checkpoint/{genome}.{hap}.aln.foo",
     resources:
         cores = 4,
         mem = lambda wildcards, attempt: getMem() + 15*(attempt-1),
     params:
-        name = "MapAsm2Ref",
+        name = "MapRef2Asm",
         logfile = "slurm.%j.%x.log",
-        faBam = outdir + "{genome}.{hap}.srt.bam",
-        faPaf = outdir + "{genome}.{hap}.r2a.paf",
+        faBam = outdir + "r2a/{genome}.{hap}.srt.bam",
+        faPaf = outdir + "r2a/{genome}.{hap}.r2a.paf",
         od = outdir,
         copts = copts,
         ref = config["ref"],
@@ -72,14 +72,15 @@ rule MapAsm2Ref:
     shell:"""
 ulimit -c 20000
 set -eu
-cd {params.od}
+mkdir -p {params.od}/r2a/checkpoint
+cd {params.od}/r2a
 
 if [[ {params.aligner} == "lra" ]]; then
 	lra align -t $(({resources.cores}-1)) -CONTIG {params.ref} {input.fa} -p s | samtools sort >{params.faBam} &&
 	samtools index -@3 {params.faBam}
 	touch {output.faAln}
 elif [[ {params.aligner} == "minimap2" ]]; then
-	minimap2 {input.fa} {params.ref} -t {resources.cores} -x asm5 -L -c --cs=long -o {params.faPaf}
+	minimap2 {input.fa} {params.ref} -t {resources.cores} -x asm5 -L -c --cs=long -z200000,10000 -o {params.faPaf}
 	touch {output.faAln}
 else
 	echo "Invalid AsmAligner: {params.aligner}"
@@ -90,7 +91,7 @@ fi
 
 rule LiftTR:
     input:
-        faAln = expand(outdir + "{{genome}}.{hap}.aln.foo", hap=haps)
+        faAln = expand(outdir + "r2a/checkpoint/{{genome}}.{hap}.aln.foo", hap=haps)
     output:
         lift = outdir + "{genome}/lift.foo"
     resources:
@@ -104,9 +105,10 @@ rule LiftTR:
         od = outdir,
         refTR = config["refTR"],
         aligner = aligner,
-        faBam = expand(outdir + "{{genome}}.{hap}.srt.bam", hap=haps),
-        faPaf = expand(outdir + "{{genome}}.{hap}.r2a.paf", hap=haps),
-        LB = LB
+        faBam = expand(outdir + "r2a/{{genome}}.{hap}.srt.bam", hap=haps),
+        faPaf = expand(outdir + "r2a/{{genome}}.{hap}.r2a.paf", hap=haps),
+        ML = config["liftover_min_len"],
+        LB = LB,
     shell:"""
 set -eu
 ulimit -c 20000
@@ -120,6 +122,7 @@ bams=( {params.faBam} )
 pafs=( {params.faPaf} )
 cut -f 1-3 {params.refTR} > ref.bed
 if [[ {params.aligner} == "lra" ]]; then
+    echo "Alinger option lra is obsolete. minimap2 is recommended."
 	for hap in 0 1; do
 		{params.sd}/bin/samLiftover <(samtools view ${{bams[$hap]}}) ref.bed /dev/stdout --dir 1 --printNA |
 		awk 'BEGIN {{OFS="\t"}} {{
@@ -131,7 +134,7 @@ if [[ {params.aligner} == "lra" ]]; then
 else
 	cp ref.bed tmp0.m.bed
 	for hap in 0 1; do
-		paftools.js liftover -l 50 ${{pafs[$hap]}} ref.bed | sort -k1,1 -k2,2n -k3,3n > tmp0.l"$hap".bed
+		paftools.js liftover -l {params.ML} ${{pafs[$hap]}} ref.bed | sort -k1,1 -k2,2n -k3,3n > tmp0.l"$hap".bed
 		{params.sd}/script/liftbed.clean.py tmp0.l"$hap".bed |
         sort -k1,1 -k2,2n -k3,3n |
         bedtools merge -c 1,4,5,6,7 -o count,collapse,collapse,collapse,collapse |
@@ -141,10 +144,10 @@ else
                 -b <(awk 'BEGIN {{OFS="\t"}} {{print $4,$5,$6,$1":"$2":"$3,$7}}' tmp0.$hap.bed | sort -k1,1 -k2,2n -k3,3n ) > tmp0.m.bed.tmp &&
 		mv tmp0.m.bed.tmp tmp0.m.bed
 	done
-	awk '$4 != "." && $6 != "." && $4 !~ /,/ && $6 !~ /,/' tmp0.m.bed > tmp0.mc.bed
+	awk '($4 != "." || $6 != ".") && $4 !~ /,/ && $6 !~ /,/' tmp0.m.bed > tmp0.mc.bed
 	for hap in 0 1; do 
 		cut -f 1,2,3,$(($hap*2+4)),$(($hap*2+5)) tmp0.mc.bed |
-        tr ':' '\t' | awk 'BEGIN {{OFS="\t"}} {{print $4,$5,$6,$1,$2,$3,$7}}' > tmp1.$hap.bed
+        tr ':' '\t' | awk 'BEGIN {{OFS="\t"}} {{if (NF==7) {{print $4,$5,$6,$1,$2,$3,$7}} else {{print ".",".",".",$1,$2,$3,"."}}}}' > tmp1.$hap.bed
 	done
     touch lift.foo
 fi
@@ -156,7 +159,7 @@ rule JointTRAnnotation:
         lift = expand(outdir + "{genome}/lift.foo", genome=genomes)
     output:
         mapping = outdir + "OrthoMap.v2.tsv",
-        TRfa = expand(outdir + "{genome}.{hap}.tr.fasta", genome=genomes, hap=haps),
+        TRfa = expand(outdir + "trfa/checkpoint/{genome}.{hap}.foo", genome=genomes, hap=haps),
     resources:
         cores = 12,
         mem = lambda wildcards, attempt: 110
@@ -182,17 +185,20 @@ rule JointTRAnnotation:
 set -eu
 ulimit -c 20000
 cd {params.od}
+mkdir -p {params.od}/trfa/checkpoint
 
 printf "Generating panbed"
 cut -f 1-3 {params.refTR} >pan.tr.mbe.v0.bed
 for g in {params.genomes}; do 
-    printf "."
-    bedtools map -c 1 -o count -a pan.tr.mbe.v0.bed -b <(cut -f 4-6 $g/tmp1.0.bed) >pan.tr.mbe.v0.bed.tmp && 
-    mv pan.tr.mbe.v0.bed.tmp pan.tr.mbe.v0.bed
+    for h in 0 1; do
+        printf "."
+        bedtools map -c 1 -o count -a pan.tr.mbe.v0.bed -b <(awk '$1 != "."' $g/tmp1.$h.bed | cut -f 4-6) >pan.tr.mbe.v0.bed.tmp && 
+        mv pan.tr.mbe.v0.bed.tmp pan.tr.mbe.v0.bed
+    done
 done
 echo ""
 mkdir -p MBE
-{params.sd}/script/multiBoundaryExpansion.parallel.py {params.ksize} {params.dist_scan} {params.TRwindow} {params.pairs} pan.tr.mbe.v0.bed {params.th1} {params.th2} {resources.cores} {params.indir}
+{params.sd}/script/multiBoundaryExpansion.parallel.py {params.ksize} {params.dist_scan} {params.TRwindow} {params.pairs} pan.tr.mbe.v0.bed {params.th1} {params.th2} {resources.cores} {params.indir} --ignore-case
 hi=0
 for g in {params.genomes}; do
     for h in 0 1; do
@@ -212,7 +218,8 @@ rm tmp.bed
 {params.sd}/script/mergeMBEbed.py {params.pairs} {params.th2}
 
 ### write fasta
-echo "Fetching TR+flank" $(date)
+echo "Fetching TR+flank"
+date
 hi=0
 for g in {params.genomes}; do
     for h in 0 1; do
@@ -223,8 +230,8 @@ for g in {params.genomes}; do
             $3=$3+{params.FS}
             print $0
         }}' |
-        {params.sd}/script/SelectRegions.py /dev/stdin {params.indir}/"$g"."$h".fa /dev/stdout | 
-        awk '{{if ($1 ~ />/) {{print}} else {{print toupper($0)}} }}' >"$g"."$h".tr.fasta
+        {params.sd}/script/SelectRegions.py /dev/stdin {params.indir}/"$g"."$h".fa /dev/stdout >trfa/"$g"."$h".tr.fasta
+        touch trfa/checkpoint/"$g"."$h".foo
         ((++hi))
     done
 done
@@ -233,7 +240,7 @@ done
 
 rule GenRawGenomeGraph:
     input:
-        TRfa = expand(outdir + "{{genome}}.{hap}.tr.fasta", hap=haps),
+        TRfa = expand(outdir + "trfa/checkpoint/{{genome}}.{hap}.foo", hap=haps),
         ILbam = lambda wildcards: [bams[wildcards.genome]] if prune else [],
         mapping = outdir + "OrthoMap.v2.tsv",
     output:
@@ -255,7 +262,8 @@ rule GenRawGenomeGraph:
         rstring = rstring,
         thcth = thcth,
         hi = lambda wildcards: 2*genomes.index(wildcards.genome),
-        prune = int(prune)
+        prune = int(prune),
+        fin = lambda wildcards: " ".join([f"{outdir}/trfa/{wildcards.genome}.{hap}.tr.fasta" for hap in [0, 1]]),
     shell:"""
 set -eu
 ulimit -c 20000
@@ -265,7 +273,7 @@ if [ $val == 0 ]; then
     module load gcc
 fi
 
-{params.sd}/bin/vntr2kmers_thread -g -m <(cut -f $(({params.hi}+1)),$(({params.hi}+2)) {input.mapping}) -k {params.ksize} -fs {params.FS} -ntr {params.FS} -on {wildcards.genome}.rawPB -fa 2 {input.TRfa}
+{params.sd}/bin/vntr2kmers_thread -g -m <(cut -f $(({params.hi}+1)),$(({params.hi}+2)) {input.mapping}) -k {params.ksize} -fs {params.FS} -ntr {params.FS} -on {wildcards.genome}.rawPB -fa 2 {params.fin}
 
 if [ {params.prune} == "1"  ]; then
     samtools fasta -@2 -n {input.ILbam} |
@@ -302,7 +310,7 @@ cd {params.od}
 rule GenPrunedGenomeGraph:
     input:
         rawILkmers = outdir + "{genome}.rawIL.tr.kmers",
-        TRfa = expand(outdir + "{{genome}}.{hap}.tr.fasta", hap=haps),
+        TRfa = expand(outdir + "trfa/checkpoint/{{genome}}.{hap}.foo", hap=haps),
         mapping = outdir + "OrthoMap.v2.tsv",
     output:
         PBkmers = expand(outdir + "{{genome}}.PB.{kmerType}.kmers", kmerType=kmerTypes)
@@ -317,13 +325,14 @@ rule GenPrunedGenomeGraph:
         od = outdir,
         ksize = ksize,
         FS = FS,
-        hi = lambda wildcards: 2*genomes.index(wildcards.genome)
+        hi = lambda wildcards: 2*genomes.index(wildcards.genome),
+        fin = lambda wildcards: " ".join([f"{outdir}/trfa/{wildcards.genome}.{hap}.tr.fasta" for hap in [0, 1]]),
     shell:"""
 cd {params.od}
 ulimit -c 20000
 
 awk '$1 ~ />/ || $2 == 0' {input.rawILkmers} |
-{params.sd}/bin/vntr2kmers_thread -g -p /dev/stdin -m <(cut -f $(({params.hi}+1)),$(({params.hi}+2)) {input.mapping}) -k {params.ksize} -fs {params.FS} -ntr {params.FS} -on {wildcards.genome}.PB -fa 2 {input.TRfa}
+{params.sd}/bin/vntr2kmers_thread -g -p /dev/stdin -m <(cut -f $(({params.hi}+1)),$(({params.hi}+2)) {input.mapping}) -k {params.ksize} -fs {params.FS} -ntr {params.FS} -on {wildcards.genome}.PB -fa 2 {params.fin}
 """
 
 def getRPGGin():
