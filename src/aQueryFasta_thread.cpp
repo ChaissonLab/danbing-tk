@@ -1342,6 +1342,21 @@ void bfilter_any(unordered_set<uint64_t>& baitdb, vector<uint64_t>& kmers, int& 
 	for (auto km : kmers) { if (baitdb.count(km)) { bf = 1; return; } }
 }
 
+void bfilter_FPS(unordered_map<uint64_t, uint16_t>& baitdb, vector<uint64_t>& kmers, int& bf) {
+	kc8_t kc;
+	for (auto km : kmers) { ++kc[km]; }
+	for (auto& p : kc) {
+		auto it = baitdb.find(p.first);
+		if (it != baitdb.end()) {
+			uint16_t th = it->second;
+			uint8_t mi, ma;
+			mi = th >> 8;
+			ma = th & 0xff;
+			if (p.second < mi or p.second > ma) { bf = 1; return; }
+		}
+	}
+}
+
 //void assignTRkmc(vector<uint64_t>& kmers, kmer_aCount_umap& trKmers, GraphType& g, vector<int>& as, int& si, int& ei, int& nt, int& bs, int& ti, int& af, int& rm) {
 void assignTRkmc(vector<uint64_t>& kmers, kmer_aCount_umap& trKmers, GraphType& g, km_asgn_read_t& r, int& af, int& rm) {
 	int nk = kmers.size();
@@ -1627,7 +1642,8 @@ public:
 	vector<atomic_uint32_t>* nmapread;
 	vector<atomic_uint64_t>* kmc;
 	bubble_db_t* bubbleDB;
-	bait_db_t* baitDB;
+	//bait_db_t* baitDB;
+	bait_fps_db_t* baitDB;
 	ifstream *in;
 	// simmode only
 	int simmode;
@@ -1687,7 +1703,8 @@ void CountWords(void *data) {
 	vector<atomic_uint32_t>& nmapread = *((Counts*)data)->nmapread;
 	vector<atomic_uint64_t>& kmc = *((Counts*)data)->kmc;
 	bubble_db_t& bubbleDB = *((Counts*)data)->bubbleDB;
-	bait_db_t& baitDB = *((Counts*)data)->baitDB;
+	//bait_db_t& baitDB = *((Counts*)data)->baitDB;
+	bait_fps_db_t& baitDB = *((Counts*)data)->baitDB;
 	vector<msa_umap>& msaStats = *((Counts*)data)->msaStats;
 	err_umap& errdb = *((Counts*)data)->errdb;
 	err_umap err;
@@ -1911,8 +1928,10 @@ void CountWords(void *data) {
 						if (not threading) {
 							if (bait) {
 								auto& baitdb = baitDB[destLocus];
-								bfilter_any(baitdb, kmers1, bf1);
-								bfilter_any(baitdb, kmers2, bf2);
+								//bfilter_any(baitdb, kmers1, bf1);
+								//bfilter_any(baitdb, kmers2, bf2);
+								bfilter_FPS(baitdb, kmers1, bf1);
+								bfilter_FPS(baitdb, kmers2, bf2);
 								if (bf1 or bf2) {
 									nBaitFiltered_ += 2;
 									rm1 = 1;
@@ -1943,15 +1962,15 @@ void CountWords(void *data) {
 							}
 						}
 						else {
-							if (bait) {
-                                auto& baitdb = baitDB[destLocus];
-                                if (not rm1) { bfilter(baitdb, akmers0, nm1, bf1); }
-                                if (not rm2) { bfilter(baitdb, akmers1, nm2, bf2); }
-								if (bf1 and bf2) {
-									nBaitFiltered_ += 2;
-									continue;
-								}
-                            }
+							//if (bait) {
+                            //    auto& baitdb = baitDB[destLocus];
+                            //    if (not rm1) { bfilter(baitdb, akmers0, nm1, bf1); }
+                            //    if (not rm2) { bfilter(baitdb, akmers1, nm2, bf2); }
+							//	if (bf1 and bf2) {
+							//		nBaitFiltered_ += 2;
+							//		continue;
+							//	}
+                            //}
 
 							if (invkmer) {
 								for (auto& p : cakmers) {
@@ -2060,9 +2079,10 @@ int main(int argc, char* argv[]) {
 
 	if (argc < 2) {
 		cerr << '\n'
-		     << "Usage: danbing-tk [-v] [-e] [-bu] [-g|-gc|-gcc] [-a|-ae] [-kf] [-cth] [-r] [-c] [-k] [-ik] [-p] <-o|-on> <-fa|-fai> -qs\n"
+		     << "Usage: danbing-tk [-v] [-b] [-e] [-bu] [-g|-gc|-gcc] [-a|-ae] [-kf] [-cth] [-r] [-c] [-k] [-ik] [-p] <-o|-on> <-fa|-fai> -qs\n"
 		     << "Options:\n"
 		     << "  -v <INT>              Verbosity: 0-3. [0]\n"
+			 << "  -b <STR>              read FP-specific kmers from file STR to remove FP reads.\n"
 		     << "  -e <INT>              Write mapped reads to STDOUT in fasta format.\n"
 		     << "                        Specify 1 for keeping original read names. Will not write .kmers output.\n"
 		     << "                        Specify 2 for appending assigned locus to each read name. Used to skip step1 for later queries.\n"
@@ -2242,7 +2262,8 @@ int main(int argc, char* argv[]) {
 	vector<GraphType> graphDB(nloci);
 	kmerIndex_uint32_umap kmerDBi;
 	vector<uint32_t> kmerDBi_vv;
-	bait_db_t baitDB(nloci);
+	//bait_db_t baitDB(nloci);
+	bait_fps_db_t baitDB(nloci);
 
 	vector<atomic_uint32_t> nmapread(nloci);
 	vector<atomic_uint64_t> kmc(nloci);
@@ -2265,7 +2286,8 @@ int main(int argc, char* argv[]) {
 		readBinaryGraph(graphDB, trPrefix);
 		readKmers(trKmerDB, trFname);
 		if (invkmer) { readiKmers(ikmerDB, trPrefix); }
-		if (bait) { readKmerSet(baitDB, baitFname); }
+		//if (bait) { readKmerSet(baitDB, baitFname); }
+		if (bait) { readFPSKmersV2(baitDB, baitFname); }
 		cerr << baitDB.size() << " bait loci in baitDB" << endl;
 		cerr << "deserialized graph/index and read tr.kmers in " << (time(nullptr) - time1) << " sec." << endl;
 		cerr << "# unique kmers in kmerDBi: " << kmerDBi.size() << endl;

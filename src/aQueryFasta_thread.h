@@ -41,6 +41,8 @@ typedef unordered_map<size_t, unordered_map<size_t, uint16_t>> nuAdj_dict;
 typedef unordered_map<size_t, unordered_map<size_t, vector<uint16_t>>> nuAdjAttr_dict;
 typedef vector<kmerCount_umap> bubble_db_t;
 typedef vector<unordered_set<uint64_t>> bait_db_t;
+typedef vector<unordered_map<uint64_t, uint16_t>> bait_fps_db_t;
+typedef unordered_map<uint64_t, uint8_t> kc8_t; // Kmer Count. Max <= numeric_limits<uint8_t>::max
 
 //const unordered_map<char, size_t> base( {{'A', 0}, {'C', 1}, {'G', 2}, {'T', 3}});
 //const char baseinv[] = {'A', 'C', 'G', 'T'};
@@ -335,7 +337,7 @@ template <typename T>
 void readKmers(T& kmerDB, string fname) {
     ifstream f(fname);
     assert(f);
-    cerr <<"reading kmers from " << fname << endl;
+    cerr << "reading kmers from " << fname << endl;
     string line;
 	size_t idx = -1;
 	while (getline(f, line)) {
@@ -349,7 +351,7 @@ template <typename T>
 void readKmerSet(T& kmerDB, string fname) { // vector<unordered_set>
     ifstream f(fname);
     assert(f);
-    cerr <<"reading kmers from " << fname << endl;
+    cerr << "reading kmers from " << fname << endl;
     string line;
 	size_t idx;
 	while (getline(f, line)) {
@@ -360,10 +362,56 @@ void readKmerSet(T& kmerDB, string fname) { // vector<unordered_set>
 }
 
 template <typename T>
+void readFPSKmersV1(T& kmerDB, string fname) {
+	ifstream f(fname);
+	assert(f);
+	cerr << "reading kmers from " << fname << endl;
+	string line;
+	getline(f, line);
+	while (getline(f, line)) {
+		stringstream ss(line);
+		size_t tri, km;
+		int mi, ma, mi0, ma0;
+		float t0;
+		string mi1, ma1;
+		ss >> tri >> km >> t0 >> t0 >> mi >> ma >> mi1 >> ma1;
+		if (mi1 != "None") {
+			mi0 = stoi(mi1);
+			ma0 = stoi(ma1);
+			if      (mi0 > ma) { kmerDB[tri][km] = -mi0; } // FP kmc > mi0
+			else if (ma0 < mi) { kmerDB[tri][km] = ma0; } // FP kmc < ma0
+		}
+		else {
+			kmerDB[tri][km] = 0; // FP kmc > 0, i.e. any occurrence is FP
+		}
+	}
+}
+
+template <typename T>
+void readFPSKmersV2(T& kmerDB, string fname) {
+	size_t tri;
+	string line;
+	ifstream f;
+
+	f.open(fname);
+	assert(f);
+	cerr << "reading kmers from " << fname << endl;
+	while (getline(f, line)) {
+		if (line[0] == '>') { tri = stoul(line.substr(1)); continue; }
+
+		stringstream ss(line);
+		size_t km, mi, ma;
+		ss >> km >> mi >> ma;
+		kmerDB[tri][km] = (mi<<8) + ma;
+		//cout << km << '\t' << ((mi<<8) + ma) << endl;
+	}
+}
+
+template <typename T>
 void readGraphKmers(T& kmerDB, string fname) {
     ifstream f(fname);
     assert(f);
-    cerr <<"reading kmers from " << fname << endl;
+    cerr << "reading kmers from " << fname << endl;
 	size_t idx = 0;
     string line;
     getline(f, line);
@@ -393,7 +441,7 @@ void readKmersFile2DB(T& kmerDB, string fname, bool graph=false, bool count=true
     assert(f);
     string line;
     getline(f, line);
-    cerr <<"reading kmers from " << fname << endl;
+    cerr << "reading kmers from " << fname << endl;
     while (true) {
         if (f.peek() == EOF or f.peek() == '>') {
             ++startInd;
@@ -431,7 +479,7 @@ void mapKmersFile2DB(T& kmerDB, string fname, vector<bool>& omap, bool count=tru
     assert(f);
     string line;
     getline(f, line);
-    cerr <<"reading kmers from " << fname << endl;
+    cerr << "reading kmers from " << fname << endl;
 	int idx = -1;
     while (true) {
         if (f.peek() == EOF or f.peek() == '>') {
