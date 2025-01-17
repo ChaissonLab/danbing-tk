@@ -89,18 +89,27 @@ ti: 1st transition nucleotide index in read
 as: assignment state, 0/1/2 = mismatch/flank/TR
 */
 struct km_asgn_read_t {
-	int si = -1, ei = -1, nt = 0, bs = 0, ti = -1;
+	int kf = 0, hf = 0, bf = 0, af = 0, rm = 0, si = -1, ei = -1, nt = 0, bs = 0, ti = -1;
 	vector<int> as;
+
+	void assign(int kf_, int hf_, int bf_, int af_, int rm_) {
+		kf = kf_;
+		hf = hf_;
+		bf = bf_;
+		af = af_;
+		rm = rm_;
+	}
 };
 
 struct km_asgn_t {
+	int src, dst, dst0;
 	km_asgn_read_t r1;
 	km_asgn_read_t r2;
-	int src, dst;
 
-	void assign(int src_, int dst_) {
+	void assign(int src_, int dst_, int dst0_) {
 		src = src_;
 		dst = dst_;
+		dst0 = (dst_ != dst0_) ? dst0_ : -1;
 	}
 
 	void annot2str_(vector<int>& as, string& s) {
@@ -406,8 +415,8 @@ void find_matching_locus(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_u
 	}
 }
 
-uint64_t countHit(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_umap::iterator>& its1, vector<kmerIndex_uint32_umap::iterator>& its2, vector<uint32_t>& hits1, vector<uint32_t>& hits2, vector<PE_KMC>& dup, uint64_t nloci, uint16_t Cthreshold, log_t& log, int& nmatch1, int& nmatch2, int& hf1, int& hf2, int& rm1, int& rm2) {
-	uint64_t tri = nloci;
+uint64_t countHit(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_umap::iterator>& its1, vector<kmerIndex_uint32_umap::iterator>& its2, vector<uint32_t>& hits1, vector<uint32_t>& hits2, vector<PE_KMC>& dup, uint64_t nloci, uint16_t Cthreshold, log_t& log, uint64_t& tri0, int& nmatch1, int& nmatch2, int& hf1, int& hf2, int& rm1, int& rm2) {
+	uint64_t tri;
 	// pre-processing: sort kmer by # mapped loci XXX alternative: sort by frequncy in read
 	vector<uint64_t> remain;
 	fillstats(kmerDBi_vv, its1, its2, dup, remain);
@@ -418,19 +427,21 @@ uint64_t countHit(vector<uint32_t>& kmerDBi_vv, vector<kmerIndex_uint32_umap::it
 	std::fill(hits1.begin(), hits1.end(), 0);
 	std::fill(hits2.begin(), hits2.end(), 0);
 	find_matching_locus(kmerDBi_vv, its1, hits1, hits2, dup, remain, top, second, Cthreshold);
-	if ((top.fc >= Cthreshold or top.rc >= Cthreshold) and top.idx != NAN32) { // TODO no need to check top.idx, it's guaranteed to != NAN32
+	tri0 = top.idx;
+	nmatch1 = top.fc;
+	nmatch2 = top.rc;
+	bool test1 = (top.fc >= Cthreshold and top.rc >= Cthreshold);
+	bool test2 = (top.fc + top.rc) >= 2*Cthreshold;
+	if ((test1 or test2) and top.idx != NAN32) { // TODO no need to check top.idx, it's guaranteed to != NAN32
 		if (verbosity >= 2) { log.m << "Read pair assigned to locus " << top.idx << '\n'; }
 		tri = top.idx;
 	}
-	if (not rm1) {
-		nmatch1 = top.fc;
-		hf1 = top.fc < Cthreshold;
-		rm1 |= hf1;
-	}
-	if (not rm2) {
-		nmatch2 = top.rc;
-		hf2 = top.rc < Cthreshold;
-		rm2 |= hf2;
+	else {
+		tri = nloci;
+		hf1 = 1 & !rm1;
+		hf2 = 1 & !rm2;
+		rm1 = 1;
+		rm2 = 1;
 	}
 	return tri;
 }
@@ -1377,6 +1388,7 @@ void assignTRkmc(vector<uint64_t>& kmers, kmer_aCount_umap& trKmers, GraphType& 
 		r.as[i] = tr + db;
 		ntr += tr;
 	}
+	if (rm) { return; }
 
 	for (int i=0; i<nk; ++i) {
 		s = r.as[i];
@@ -1509,16 +1521,22 @@ void writeExtractedReads(int extractFasta, vector<string>& seqs, vector<string>&
 void writeKmerAssignments(vector<string>& seqs, vector<string>& titles, vector<uint64_t>& destLoci, vector<uint64_t>& alnindices, vector<km_asgn_t>& kams) {
 	string NA = {"."};
 	for (uint64_t i = 0; i < kams.size(); ++i) {
-		auto kam = kams[i];
+		auto& kam = kams[i];
+		auto& r1 = kam.r1;
+		auto& r2 = kam.r2;
 		string as1{'*'}, as2 = {'*'};
 		kam.annot2str(as1, as2);
-		cout << (kam.src == -1ULL ? NA : to_string(kam.src)) << '\t'
+		string src = kam.src == -1ULL ? NA : to_string(kam.src);
+		string si1 = r1.si==-1 ? NA : to_string(r1.si);
+		string si2 = r2.si==-1 ? NA : to_string(r2.si);
+		cout << src << '\t'
 			 << kam.dst << '\t'
-			 << (kam.r2.ei - kam.r2.si) << '\t'
-			 << (kam.r1.ei - kam.r1.si) << '\t' 
-			 << "si:nt:bs:ti\t" 
-			 << (kam.r2.si==-1 ? NA : to_string(kam.r2.si)) << ':' << kam.r2.nt << ':' << kam.r2.bs << ":" << kam.r2.ti << '\t'
-			 << (kam.r1.si==-1 ? NA : to_string(kam.r1.si)) << ':' << kam.r1.nt << ":" << kam.r1.bs << ":" << kam.r1.ti << '\t'
+			 << kam.dst0 << '\t'
+			 << (r2.ei - r2.si) << '\t'
+			 << (r1.ei - r1.si) << '\t' 
+			 << "kf:hf:bf:af:rm:si:nt:bs:ti\t" 
+			 << r2.kf <<':'<< r2.hf <<':'<< r2.bf <<':'<< r2.af <<':'<< r2.rm <<':'<< si2 <<':'<< r2.nt <<':'<< r2.bs <<':'<< r2.ti << '\t'
+			 << r1.kf <<':'<< r1.hf <<':'<< r1.bf <<':'<< r1.af <<':'<< r1.rm <<':'<< si1 <<':'<< r1.nt <<':'<< r1.bs <<':'<< r1.ti << '\t'
 			 << as2 << '\t'
 			 << as1 << '\t'
 			 << titles[--alnindices[i]].substr(1) << '\t'
@@ -1806,7 +1824,7 @@ void CountWords(void *data) {
 		nReads += nReads_;
 
 		if (simmode == 1) { locusReadi.push_back(nReads_); }
-		if (skip1) { parseReadNames(titles, destLoci, nReads_); }
+		if (skip1) { parseReadNames(titles, destLoci, nReads_); } // XXX obsolete
 
 		cerr << "Buffered reading " << nReads_ << '\t' << nReads << '\t' << readDB.size() << endl;
 
@@ -1818,7 +1836,7 @@ void CountWords(void *data) {
 		time_t time2 = time(nullptr);
 		uint64_t seqi = 0;
 		uint64_t nhash0 = 0, nhash1 = 0;
-		uint64_t destLocus;
+		uint64_t destLocus, destLocus0; // filtered/raw destLocus
 		bubbles_t bubbles;
 		// aln only
 		vector<sam_t> sams;
@@ -1839,7 +1857,7 @@ void CountWords(void *data) {
 			int hf1 = 0, hf2 = 0; // 1 = removed by countHit
 			int bf1 = 0, bf2 = 0; // 1 = removed by bfilter
 			int af1 = 0, af2 = 0; // 1 = removed by assignTRkmc
-			int nm1, nm2; // num of exact kmer matches at assigned locus
+			int nm1, nm2; // num of exact kmer matches at assigned locus BEFORE early stopping
 
 			if (simmode == 1) {
 				if (seqi >= locusReadi[simi]) {
@@ -1874,167 +1892,168 @@ void CountWords(void *data) {
 				nKmerFiltered_ += kf1 + kf2;
 				if (rm1 and rm2) { continue; }
 
-				destLoci[seqi/2 - 1] = countHit(kmerDBi_vv, its1, its2, hits1, hits2, dup, nloci, Cthreshold, log, nm1, nm2, hf1, hf2, rm1, rm2);
+				destLoci[seqi/2 - 1] = countHit(kmerDBi_vv, its1, its2, hits1, hits2, dup, nloci, Cthreshold, log, destLocus0, nm1, nm2, hf1, hf2, rm1, rm2);
 				nLocusAssignFiltered_ += hf1 + hf2;
 			}
+
 			destLocus = destLoci[seqi/2 - 1];
-
 			if (destLocus == nloci) { continue; }
-			else {
-				bool alned = false;
-				int alned0 = 0, alned1 = 0;
-				kmerCount_umap cakmers;
-				sam_t sam;
-				km_asgn_t kam;
-				vector<uint64_t> noncakmers0, noncakmers1;
-				vector<uint64_t> akmers0, akmers1; // aligned kmers
-				GraphType& gf = graphDB[destLocus];
-				nThreadingReads_ += 2;
 
-				if (threading) {
-					sam.init1(seq);
-					alned0 = isThreadFeasible(gf, seq, noncakmers0, akmers0, thread_cth, correction, sam.r1, trResults[destLocus], log);
-					sam.init2(seq1);
-					alned1 = isThreadFeasible(gf, seq1, noncakmers1, akmers1, thread_cth, correction, sam.r2, trResults[destLocus], log);
-					if (tc) {
-						if (alned0) { threadCheck(gf, seq, akmers0, sam.r1, log); }
-						if (alned1) { threadCheck(gf, seq1, akmers1, sam.r2, log); }
-					}
-					if (verbosity >= 1) { log.m << "Reads passed threading? " << alned0 << alned1 << '\n'; }
-					if (alned0 or alned1) {
-						alned = true;
-						noncaVec2CaUmap(noncakmers0, cakmers, ksize);
-						noncaVec2CaUmap(noncakmers1, cakmers, ksize);
-					}
-					else { destLocus = nloci; } // removed by threading
+			bool alned = false;
+			int alned0 = 0, alned1 = 0;
+			kmerCount_umap cakmers;
+			sam_t sam;
+			km_asgn_t kam;
+			vector<uint64_t> noncakmers0, noncakmers1;
+			vector<uint64_t> akmers0, akmers1; // aligned kmers
+			GraphType& gf = graphDB[destLocus];
+			nThreadingReads_ += 2;
+
+			if (threading) {
+				sam.init1(seq);
+				alned0 = isThreadFeasible(gf, seq, noncakmers0, akmers0, thread_cth, correction, sam.r1, trResults[destLocus], log);
+				sam.init2(seq1);
+				alned1 = isThreadFeasible(gf, seq1, noncakmers1, akmers1, thread_cth, correction, sam.r2, trResults[destLocus], log);
+				if (tc) {
+					if (alned0) { threadCheck(gf, seq, akmers0, sam.r1, log); }
+					if (alned1) { threadCheck(gf, seq1, akmers1, sam.r2, log); }
 				}
+				if (verbosity >= 1) { log.m << "Reads passed threading? " << alned0 << alned1 << '\n'; }
+				if (alned0 or alned1) {
+					alned = true;
+					noncaVec2CaUmap(noncakmers0, cakmers, ksize);
+					noncaVec2CaUmap(noncakmers1, cakmers, ksize);
+				}
+				else { destLocus = nloci; } // removed by threading
+			}
 
-				if ((threading and alned) or not threading) {
-					kmer_aCount_umap &trKmers = trResults[destLocus];
-					kmer_aCount_umap &ikmers = ikmerDB[destLocus];
-					nFeasibleReads_ += 2;
-					nmapread[destLocus] += 2;
+			if ((threading and alned) or not threading) {
+				kmer_aCount_umap &trKmers = trResults[destLocus];
+				kmer_aCount_umap &ikmers = ikmerDB[destLocus];
+				nFeasibleReads_ += 2;
+				nmapread[destLocus] += 2;
 
-					if (extractFasta) {
-						// points to the next read pair 
-						// i.e. to_be_extract_forward (seqi-2), to_be_extract_reverse (seqi-1)
-						extractindices.push_back(seqi); 
-						if (extractFasta == 2) {
-							assignedloci.push_back(destLocus);
+				if (extractFasta) {
+					// points to the next read pair 
+					// i.e. to_be_extract_forward (seqi-2), to_be_extract_reverse (seqi-1)
+					extractindices.push_back(seqi); 
+					if (extractFasta == 2) {
+						assignedloci.push_back(destLocus);
+					}
+				}
+				else {
+					// accumulate trKmers for output
+					if (not threading) {
+						if (bait) {
+							auto& baitdb = baitDB[destLocus];
+							//bfilter_any(baitdb, kmers1, bf1);
+							//bfilter_any(baitdb, kmers2, bf2);
+							bfilter_FPS(baitdb, kmers1, bf1);
+							bfilter_FPS(baitdb, kmers2, bf2);
+							if (bf1 or bf2) {
+								nBaitFiltered_ += (bf1 & !rm1) + (bf2 & !rm2);
+								rm1 = 1;
+								rm2 = 1;
+							}
+						}
+
+						//for (uint64_t i = 0; i < its1.size(); ++i) {
+						//	auto it = trKmers.find(its1[i]->first);
+						//	if (it != trKmers.end()) { it->second += (dup[i].first + dup[i].second); }
+						//}
+							
+						if (countMode == 2) { // asgn
+							int npass = 2 - rm1 - rm2;
+							if (not rm1) { assignTRkmc(kmers1, trKmers, gf, kam.r1, af1, rm1); }
+							if (not rm2) { assignTRkmc(kmers2, trKmers, gf, kam.r2, af2, rm2); }
+							if (rm1 and rm2) { destLocus = nloci; } // removed by TR_kmer_assignment
+							else {
+								nAsgnReads_ += npass - af1 - af2;
+								nmapread[destLocus] += (npass - af1 - af2);
+								kmc[destLocus] += (kam.r1.ei - kam.r1.si) + (kam.r2.ei - kam.r2.si);
+							}
+							if ((srcLocus != nloci and srcLocus != -1ULL) or destLocus != nloci) {
+								kam.assign(srcLocus, destLocus, destLocus0);
+								kam.r1.assign(kf1, hf1, bf1, af1, rm1);
+								kam.r2.assign(kf2, hf2, bf2, af2, rm2);
+								kams.push_back(kam);
+								alnindices.push_back(seqi);
+							}
 						}
 					}
 					else {
-						// accumulate trKmers for output
-						if (not threading) {
-							if (bait) {
-								auto& baitdb = baitDB[destLocus];
-								//bfilter_any(baitdb, kmers1, bf1);
-								//bfilter_any(baitdb, kmers2, bf2);
-								bfilter_FPS(baitdb, kmers1, bf1);
-								bfilter_FPS(baitdb, kmers2, bf2);
-								if (bf1 or bf2) {
-									nBaitFiltered_ += 2;
-									rm1 = 1;
-									rm2 = 1;
-								}
-							}
+						//if (bait) {
+						//    auto& baitdb = baitDB[destLocus];
+						//    if (not rm1) { bfilter(baitdb, akmers0, nm1, bf1); }
+						//    if (not rm2) { bfilter(baitdb, akmers1, nm2, bf2); }
+						//	if (bf1 and bf2) {
+						//		nBaitFiltered_ += 2;
+						//		continue;
+						//	}
+						//}
 
-							//for (uint64_t i = 0; i < its1.size(); ++i) {
-							//	auto it = trKmers.find(its1[i]->first);
-							//	if (it != trKmers.end()) { it->second += (dup[i].first + dup[i].second); }
-							//}
-								
-							if (countMode == 2) { // asgn
-								int npass = 2 - rm1 - rm2;
-								if (not rm1) { assignTRkmc(kmers1, trKmers, gf, kam.r1, af1, rm1); }
-								if (not rm2) { assignTRkmc(kmers2, trKmers, gf, kam.r2, af2, rm2); }
-								if (rm1 and rm2) { destLocus = nloci; } // removed by TR_kmer_assignment
-								else {
-									nAsgnReads_ += npass - af1 - af2;
-									nmapread[destLocus] += (npass - af1 - af2);
-									kmc[destLocus] += (kam.r1.ei - kam.r1.si) + (kam.r2.ei - kam.r2.si);
-								}
-								if ((srcLocus != nloci and srcLocus != -1ULL) or destLocus != nloci) {
-									kam.assign(srcLocus, destLocus);
-									alnindices.push_back(seqi);
-									kams.push_back(kam);
-								}
+						if (invkmer) {
+							for (auto& p : cakmers) {
+								auto it = ikmers.find(p.first);
+								if (it != ikmers.end()) { it->second += p.second; }
 							}
 						}
-						else {
-							//if (bait) {
-                            //    auto& baitdb = baitDB[destLocus];
-                            //    if (not rm1) { bfilter(baitdb, akmers0, nm1, bf1); }
-                            //    if (not rm2) { bfilter(baitdb, akmers1, nm2, bf2); }
-							//	if (bf1 and bf2) {
-							//		nBaitFiltered_ += 2;
-							//		continue;
-							//	}
-                            //}
-
-							if (invkmer) {
-								for (auto& p : cakmers) {
-									auto it = ikmers.find(p.first);
-									if (it != ikmers.end()) { it->second += p.second; }
-								}
+						if (countMode == 0) { // exact
+							for (auto& p : cakmers) {
+								auto it = trKmers.find(p.first);
+								if (it != trKmers.end()) { it->second += p.second; }
 							}
-							if (countMode == 0) { // exact
+						}
+						else { // aln or asgn
+							if (countMode == 1) { // aln
+								noncaVec2CaUmap(akmers0, cakmers, ksize);
+								noncaVec2CaUmap(akmers1, cakmers, ksize);
 								for (auto& p : cakmers) {
 									auto it = trKmers.find(p.first);
 									if (it != trKmers.end()) { it->second += p.second; }
 								}
 							}
-							else { // aln or asgn
-								if (countMode == 1) { // aln
-									noncaVec2CaUmap(akmers0, cakmers, ksize);
-									noncaVec2CaUmap(akmers1, cakmers, ksize);
-									for (auto& p : cakmers) {
-										auto it = trKmers.find(p.first);
-										if (it != trKmers.end()) { it->second += p.second; }
-									}
-								}
-								//else { // asgn XXX not supported yet
-								//	vector<uint64_t> cakmers1, cakmers2;
-								//	nonckmer2ckmer(akmers0, cakmers1, ksize);
-								//	nonckmer2ckmer(akmers1, cakmers1, ksize);
+							//else { // asgn XXX not supported yet
+							//	vector<uint64_t> cakmers1, cakmers2;
+							//	nonckmer2ckmer(akmers0, cakmers1, ksize);
+							//	nonckmer2ckmer(akmers1, cakmers1, ksize);
 
-								//	if (not bf1) { assignTRkmc(cakmers1, trKmers, gf, kam.r1, af1, rm1); }
-								//	if (not bf2) { assignTRkmc(cakmers2, trKmers, gf, kam.r2, af2, rm2); }
-								//	nAsgnReads_ += 2 - af1 - af2;
-								//	nmapread[destLocus] += (2 - af1 - af2);
-								//	kmc[destLocus] += (kam.r1.ei - kam.r1.si) + (kam.r2.ei - kam.r2.si);
-								//	if (rm1 and rm2) { destLocus = nloci; } // removed by TR_kmer_assignment
-								//	if ((srcLocus != nloci and srcLocus != -1ULL) or destLocus != nloci) {
-								//		kam.assign(srcLocus, destLocus);
-								//		alnindices.push_back(seqi);
-								//		kams.push_back(kam);
-								//	}
-								//}
-							}
-						}
-
-						if (outputBubbles) {
-							countNovelEdges(noncakmers0, graphDB[destLocus], bubbles[destLocus]);
-							countNovelEdges(noncakmers1, graphDB[destLocus], bubbles[destLocus]);
+							//	if (not bf1) { assignTRkmc(cakmers1, trKmers, gf, kam.r1, af1, rm1); }
+							//	if (not bf2) { assignTRkmc(cakmers2, trKmers, gf, kam.r2, af2, rm2); }
+							//	nAsgnReads_ += 2 - af1 - af2;
+							//	nmapread[destLocus] += (2 - af1 - af2);
+							//	kmc[destLocus] += (kam.r1.ei - kam.r1.si) + (kam.r2.ei - kam.r2.si);
+							//	if (rm1 and rm2) { destLocus = nloci; } // removed by TR_kmer_assignment
+							//	if ((srcLocus != nloci and srcLocus != -1ULL) or destLocus != nloci) {
+							//		kam.assign(srcLocus, destLocus);
+							//		alnindices.push_back(seqi);
+							//		kams.push_back(kam);
+							//	}
+							//}
 						}
 					}
-				}
 
-				if (aln and threading) {
-					if (not simmode) {
-						if ((aln_minimal and destLocus != nloci) or (not aln_minimal)) {
-							alnindices.push_back(seqi); // work the same as extractindices
-							sam.src = srcLocus;
-							sam.dst = destLocus;
-							sams.push_back(sam);
-						}
-					} else { // simmode
-						if ((aln_minimal and (srcLocus != nloci or destLocus != nloci)) or (not aln_minimal)) {
-							alnindices.push_back(seqi); // work the same as extractindices
-							sam.src = srcLocus;
-							sam.dst = destLocus;
-							sams.push_back(sam);
-						}
+					if (outputBubbles) {
+						countNovelEdges(noncakmers0, graphDB[destLocus], bubbles[destLocus]);
+						countNovelEdges(noncakmers1, graphDB[destLocus], bubbles[destLocus]);
+					}
+				}
+			}
+
+			if (aln and threading) {
+				if (not simmode) {
+					if ((aln_minimal and destLocus != nloci) or (not aln_minimal)) {
+						alnindices.push_back(seqi); // work the same as extractindices
+						sam.src = srcLocus;
+						sam.dst = destLocus;
+						sams.push_back(sam);
+					}
+				} else { // simmode
+					if ((aln_minimal and (srcLocus != nloci or destLocus != nloci)) or (not aln_minimal)) {
+						alnindices.push_back(seqi); // work the same as extractindices
+						sam.src = srcLocus;
+						sam.dst = destLocus;
+						sams.push_back(sam);
 					}
 				}
 			}
