@@ -112,7 +112,7 @@ int main(int argc, char* argv[]) {
 		     << "  -c INT     Simulate reads from each seqeunce at THIS coverage. [15]" << endl
 		     << "  -fs INT    Fragment size. [500]" << endl
 		     << "  -rlen INT  Read length. [150]" << endl
-		     << "  -ml INT    Reads shorter than MIN_CTG_LEN are ignored. [50000]" << endl
+		     << "  -ml INT    Contigs shorter than MIN_CTG_LEN are ignored. [50000]" << endl
 			 << "  -uni       Sample read position from a uniform distribution" << endl
 			 << "  -bed       Output in bed format as chr, start, end, read1, read2" << endl
 			 << "  -split     split output by chromosome/contig. Requires -o"  << endl
