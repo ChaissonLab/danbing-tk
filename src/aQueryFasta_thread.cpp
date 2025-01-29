@@ -25,6 +25,7 @@ sem_t *semcount;
 sem_t *semwriter;
 bool testmode;
 uint64_t ksize = 21;
+uint64_t qth = 20;
 uint64_t rmask = (1ULL << 2*(ksize-1)) - 1;
 uint64_t N_FILTER = 4; // number of subsampled kmers
 uint64_t NM_FILTER = 1; // minimal number of hits
@@ -1368,6 +1369,25 @@ void bfilter_FPS(unordered_map<uint64_t, uint16_t>& baitdb, vector<uint64_t>& km
 	}
 }
 
+void bfilter_FPSv1(unordered_map<uint64_t, uint16_t>& baitdb, string& seq, string& qual, int& bf, int qth=20) {
+    kc8_t kc;
+	vector<size_t> ks;
+	vector<int> qs;
+	qString2qScore(qual, qs);
+	read2kmers_qfilter(ks, seq, ksize, qs, qth);
+    for (auto km : ks) { ++kc[km]; }
+    for (auto& p : kc) {
+        auto it = baitdb.find(p.first);
+        if (it != baitdb.end()) {
+            uint16_t th = it->second;
+            uint8_t mi, ma;
+            mi = th >> 8;
+            ma = th & 0xff;
+            if (p.second < mi or p.second > ma) { bf = 1; return; }
+        }
+    }
+}
+
 //void assignTRkmc(vector<uint64_t>& kmers, kmer_aCount_umap& trKmers, GraphType& g, vector<int>& as, int& si, int& ei, int& nt, int& bs, int& ti, int& af, int& rm) {
 void assignTRkmc(vector<uint64_t>& kmers, kmer_aCount_umap& trKmers, GraphType& g, km_asgn_read_t& r, int& af, int& rm) {
 	int nk = kmers.size();
@@ -1506,13 +1526,29 @@ void accumBubbles(bubbles_t& bubbles, bubble_db_t& bubbleDB) {
 	}
 }
 
-void writeExtractedReads(int extractFasta, vector<string>& seqs, vector<string>& titles, vector<uint64_t>& extractindices, vector<uint64_t>& assignedloci) {
+void writeExtractedReads(int extractFastX, vector<string>& seqs, vector<string>& quals, vector<string>& titles, vector<uint64_t>& extractindices, vector<uint64_t>& assignedloci) {
 	for (uint64_t i = 0; i < extractindices.size(); ++i) {
-		if (extractFasta == 1) { cout << titles[--extractindices[i]] << '\n'; } 
+		if (extractFastX == 1) { cout << titles[--extractindices[i]] << '\n'; } 
+		else { cout << titles[--extractindices[i]] << ":" << assignedloci[i] << '\n'; }
+		cout << seqs[extractindices[i]] << '\n';
+		cout << "+\n";
+		cout << quals[extractindices[i]] << '\n';
+
+		if (extractFastX == 1) { cout << titles[--extractindices[i]] << '\n'; } 
+		else { cout << titles[--extractindices[i]] << ":" << assignedloci[i] << '\n'; }
+		cout << seqs[extractindices[i]] << '\n';
+		cout << "+\n";
+		cout << quals[extractindices[i]] << '\n';
+	}
+}
+
+void writeExtractedReads(int extractFastX, vector<string>& seqs, vector<string>& titles, vector<uint64_t>& extractindices, vector<uint64_t>& assignedloci) {
+	for (uint64_t i = 0; i < extractindices.size(); ++i) {
+		if (extractFastX == 1) { cout << titles[--extractindices[i]] << '\n'; } 
 		else { cout << titles[--extractindices[i]] << ":" << assignedloci[i] << '\n'; }
 		cout << seqs[extractindices[i]] << '\n';
 
-		if (extractFasta == 1) { cout << titles[--extractindices[i]] << '\n'; } 
+		if (extractFastX == 1) { cout << titles[--extractindices[i]] << '\n'; } 
 		else { cout << titles[--extractindices[i]] << ":" << assignedloci[i] << '\n'; }
 		cout << seqs[extractindices[i]] << '\n';
 	}
@@ -1645,13 +1681,14 @@ void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<uint64
 
 class Counts {
 public:
-	bool interleaved, outputBubbles, bait, threading, correction, tc, aln, aln_minimal, g2pan, skip1, invkmer;
+	bool isFastq, outputBubbles, bait, threading, correction, tc, aln, aln_minimal, g2pan, skip1, invkmer;
 	uint16_t Cthreshold, thread_cth;
 	uint64_t *nReads, *nThreadingReads, *nFeasibleReads, *nAsgnReads, *nSubFiltered, *nKmerFiltered, *nBaitFiltered, *nLocusAssignFiltered;
 	uint64_t nloci;
 	int countMode;
 	float readsPerBatchFactor;
 	unordered_map<string, string>* readDB;
+	unordered_map<string, std::pair<string,string>>* fqDB;
 	kmerIndex_uint32_umap* kmerDBi;
 	vector<uint32_t>* kmerDBi_vv;
 	vector<GraphType>* graphDB;
@@ -1660,7 +1697,6 @@ public:
 	vector<atomic_uint32_t>* nmapread;
 	vector<atomic_uint64_t>* kmc;
 	bubble_db_t* bubbleDB;
-	//bait_db_t* baitDB;
 	bait_fps_db_t* baitDB;
 	ifstream *in;
 	// simmode only
@@ -1668,8 +1704,8 @@ public:
 	vector<msa_umap>* msaStats;
 	err_umap* errdb;
 	vector<uint64_t>* locusmap;
-	// extractFasta only
-	int extractFasta;
+	// extractFastX only
+	int extractFastX;
 
 	Counts(uint64_t nloci_) : nloci(nloci_) {}
 };
@@ -1682,7 +1718,7 @@ public:
 
 template <typename ValueType>
 void CountWords(void *data) {
-	bool interleaved = ((Counts*)data)->interleaved;
+	bool isFastq = ((Counts*)data)->isFastq;
 	bool outputBubbles = ((Counts*)data)->outputBubbles;
 	bool bait = ((Counts*)data)->bait;
 	bool threading = ((Counts*)data)->threading;
@@ -1695,7 +1731,7 @@ void CountWords(void *data) {
 	bool invkmer = ((Counts*)data)->invkmer;
 	int simmode = ((Counts*)data)->simmode;
 	int countMode = ((Counts*)data)->countMode;
-	int extractFasta = ((Counts*)data)->extractFasta;
+	int extractFastX = ((Counts*)data)->extractFastX;
 	uint64_t nReads_ = 0, nShort_ = 0, nThreadingReads_ = 0, nFeasibleReads_ = 0, nAsgnReads_ = 0, nSubFiltered_ = 0, nKmerFiltered_ = 0, nBaitFiltered_ = 0, nLocusAssignFiltered_ = 0;
 	uint64_t& nReads = *((Counts*)data)->nReads;
 	uint64_t& nThreadingReads = *((Counts*)data)->nThreadingReads;
@@ -1713,6 +1749,7 @@ void CountWords(void *data) {
 	const uint64_t minReadSize = Cthreshold + ksize - 1;
 	ifstream *in = ((Counts*)data)->in;
 	unordered_map<string, string>& readDB = *((Counts*)data)->readDB;
+	unordered_map<string, std::pair<string,string>>& fqDB = *((Counts*)data)->fqDB;
 	kmerIndex_uint32_umap& kmerDBi = *((Counts*)data)->kmerDBi;
 	vector<uint32_t>& kmerDBi_vv = *((Counts*)data)->kmerDBi_vv;
 	vector<GraphType>& graphDB = *((Counts*)data)->graphDB;
@@ -1729,25 +1766,25 @@ void CountWords(void *data) {
 	vector<uint64_t>& locusmap = *((Counts*)data)->locusmap;
 	vector<string> seqs(readsPerBatch);
 	vector<uint32_t> hits1(nloci+1,0), hits2(nloci+1,0);
-	// extractFasta only
 	vector<string> titles(readsPerBatch);
+	vector<string> quals(readsPerBatch);
+	// extractFastX only
 	vector<uint64_t> destLoci(readsPerBatch/2);
 	// simmode only
 	// loci: loci that are processed in this batch
 	vector<ValueType> srcLoci;
 	vector<uint64_t> poss;
 	unordered_map<uint64_t, msa_umap> msa;
-	bool keeptitle = true; //extractFasta or aln or (not threading and simmode);
 
 	while (true) {
 
-		string title, title1, seq, seq1;
+		string title, title1, seq, seq1, qtitle, qtitle1, qual, qual1;
 		// for simmode only
 		// locusReadi: map locus to nReads_. 0th item = number of reads for 0th item in loci; last item = nReads_; has same length as loci
 		uint64_t startpos;
 		vector<uint64_t> locusReadi;
 		vector<std::pair<int, uint64_t>> meta;
-		// extractFasta only
+		// extractFastX only
 		vector<uint64_t> extractindices, assignedloci;
 		// aln only
 		vector<uint64_t> alnindices;
@@ -1785,11 +1822,37 @@ void CountWords(void *data) {
 		}
 
 		while (nReads_ < readsPerBatch and in->peek() != EOF) {
-			if (interleaved) {
-				getline(*in, title);
-				getline(*in, seq);
-				getline(*in, title1);
-				getline(*in, seq1);
+			if (isFastq) {
+				bool se = true; // single end
+				while (se) {
+					getline(*in, title);
+					getline(*in, seq);
+					getline(*in, qtitle);
+					getline(*in, qual);
+					prunePEinfo(title);
+					auto it = fqDB.find(title);
+					if (it != fqDB.end()) {
+						if (seq.size() < minReadSize or it->second.first.size() < minReadSize) { fqDB.erase(title); continue; }
+						title1 = title;
+						seq1 = it->second.first;
+						qual1 = it->second.second;
+						fqDB.erase(title);
+						se = false;
+						break;
+					} else {
+						fqDB[title] = std::pair<string,string>(seq,qual);
+					}
+					if (in->peek() == EOF) { break; }
+				}
+				if (simmode == 1) { parseReadName(title, nReads_, srcLoci, locusReadi); }
+				else if (simmode == 2) { parseReadName(title, meta, nloci); }
+
+				titles[nReads_] = title;
+				seqs[nReads_] = seq;
+				quals[nReads_++] = qual;
+				titles[nReads_] = title1; // XXX TODO redundant. only title is enough
+				seqs[nReads_] = seq1;
+				quals[nReads_++] = qual1;
 			}
 			else {
 				bool se = true; // single end
@@ -1811,22 +1874,22 @@ void CountWords(void *data) {
 					if (in->peek() == EOF) { break; }
 				}
 				if (se and in->peek() == EOF) { break; }
-			}
-			
-			if (simmode == 1) { parseReadName(title, nReads_, srcLoci, locusReadi); }
-			else if (simmode == 2) { parseReadName(title, meta, nloci); }
 
-			titles[nReads_] = title;
-			seqs[nReads_++] = seq;
-			titles[nReads_] = title1;
-			seqs[nReads_++] = seq1;
+				if (simmode == 1) { parseReadName(title, nReads_, srcLoci, locusReadi); }
+				else if (simmode == 2) { parseReadName(title, meta, nloci); }
+
+				titles[nReads_] = title;
+				seqs[nReads_++] = seq;
+				titles[nReads_] = title1; // XXX TODO redundant. only title is enough
+				seqs[nReads_++] = seq1;
+			}
 		} 
 		nReads += nReads_;
 
 		if (simmode == 1) { locusReadi.push_back(nReads_); }
 		if (skip1) { parseReadNames(titles, destLoci, nReads_); } // XXX obsolete
 
-		cerr << "Buffered reading " << nReads_ << '\t' << nReads << '\t' << readDB.size() << endl;
+		cerr << "Buffered reading " << nReads_ << '\t' << nReads << '\t' << readDB.size()+fqDB.size() << endl;
 
 		//
 		// All done reading, release the thread lock.
@@ -1867,8 +1930,10 @@ void CountWords(void *data) {
 			}
 			else if (simmode == 2) { mapLocus(g2pan, meta, locusmap, seqi, simi, nloci, srcLocus); }
 
-			string& seq = seqs[seqi++];
-			string& seq1 = seqs[seqi++];
+			string& seq = seqs[seqi];
+			string& qual = quals[seqi++];
+			string& seq1 = seqs[seqi];
+			string& qual1 = quals[seqi++];
 
 			if (not skip1) {
 				read2kmers(kmers1, seq, ksize); // stores numeric canonical kmers
@@ -1933,11 +1998,11 @@ void CountWords(void *data) {
 				nFeasibleReads_ += 2;
 				nmapread[destLocus] += 2;
 
-				if (extractFasta) {
+				if (extractFastX) {
 					// points to the next read pair 
 					// i.e. to_be_extract_forward (seqi-2), to_be_extract_reverse (seqi-1)
 					extractindices.push_back(seqi); 
-					if (extractFasta == 2) {
+					if (extractFastX == 2) {
 						assignedloci.push_back(destLocus);
 					}
 				}
@@ -1946,10 +2011,8 @@ void CountWords(void *data) {
 					if (not threading) {
 						if (bait) {
 							auto& baitdb = baitDB[destLocus];
-							//bfilter_any(baitdb, kmers1, bf1);
-							//bfilter_any(baitdb, kmers2, bf2);
-							bfilter_FPS(baitdb, kmers1, bf1);
-							bfilter_FPS(baitdb, kmers2, bf2);
+							bfilter_FPSv1(baitdb, seq, qual, bf1, qth);
+							bfilter_FPSv1(baitdb, seq1, qual1, bf2, qth);
 							if (bf1 or bf2) {
 								nBaitFiltered_ += (bf1 & !rm1) + (bf2 & !rm2);
 								rm1 = 1;
@@ -1957,11 +2020,6 @@ void CountWords(void *data) {
 							}
 						}
 
-						//for (uint64_t i = 0; i < its1.size(); ++i) {
-						//	auto it = trKmers.find(its1[i]->first);
-						//	if (it != trKmers.end()) { it->second += (dup[i].first + dup[i].second); }
-						//}
-							
 						if (countMode == 2) { // asgn
 							int npass = 2 - rm1 - rm2;
 							if (not rm1) { assignTRkmc(kmers1, trKmers, gf, kam.r1, af1, rm1); }
@@ -2064,9 +2122,10 @@ void CountWords(void *data) {
 		sem_wait(semwriter); 
 
 		writeKmerAssignments(seqs, titles, destLoci, alnindices, kams);
-		if (extractFasta or aln) {
-			if (extractFasta) {
-				writeExtractedReads(extractFasta, seqs, titles, extractindices, assignedloci);
+		if (extractFastX or aln) {
+			if (extractFastX) {
+				if (isFastq) { writeExtractedReads(extractFastX, seqs, quals, titles, extractindices, assignedloci); }
+				else         { writeExtractedReads(extractFastX, seqs, titles, extractindices, assignedloci); }
 			}
 			else if (aln) {
 				if (skip1) { writeAlignments(seqs, titles, alnindices, sams); }
@@ -2098,7 +2157,7 @@ int main(int argc, char* argv[]) {
 
 	if (argc < 2) {
 		cerr << '\n'
-		     << "Usage: danbing-tk [-v] [-b] [-e] [-bu] [-g|-gc|-gcc] [-a|-ae] [-kf] [-cth] [-r] [-c] [-k] [-ik] [-p] <-o|-on> <-fa|-fai> -qs\n"
+		     << "Usage: danbing-tk [-v] [-b] [-e] [-bu] [-g|-gc|-gcc] [-a|-ae] [-kf] [-cth] [-r] [-c] [-k] [-ik] [-p] <-o|-on> <-fa|-fq> -qs\n"
 		     << "Options:\n"
 		     << "  -v <INT>              Verbosity: 0-3. [0]\n"
 			 << "  -b <STR>              read FP-specific kmers from file STR to remove FP reads.\n"
@@ -2120,6 +2179,7 @@ int main(int argc, char* argv[]) {
 		     << "                        INT2 = minimal # of matches. [1]\n"
 		     << "  -cth <INT>            Discard both pe reads if maxhit of one pe read is below this threshold. [45]\n"
 		     << "                        Will skip read filtering and run threading directly if not specified.\n"
+			 << "  -qth <INT>            At baiting step, only consider kmers of which overlapping bases have qual score >= INT. [20]\n"
 		     << "  -r <FLOAT>            scaling factor for readsPerBatch. Can affect multiprocess efficiency. [1]\n"
 		     << "  -c <STR>              Alternative kmer counting mode for .tr.kmers output: \"aln\" or \"asgn\"\n"
 		     << "                        Default counts exact kmer matches\n"
@@ -2132,8 +2192,8 @@ int main(int argc, char* argv[]) {
 		     << "  -p <INT>              Use n threads. [1]\n"
 		     << "  -o <STR>              Output prefix\n"
 		     << "  -on <STR>             Same as the -o option, but write locus and kmer name as well\n"
-		     << "  -fai <STR>            Interleaved pair-end fasta file\n"
 		     << "  -fa <STR>             Fasta file e.g. generated by samtools fasta -n\n"
+		     << "  -fq <STR>             Fastq file e.g. generated by samtools fastq -n\n"
 		     << "  -qs <STR>             Prefix for *.tr.kmers, *.ntr.kmers, *.graph.kmers files\n"
 		     << "                        Reads will be paired on the fly\n"
 
@@ -2143,8 +2203,8 @@ int main(int argc, char* argv[]) {
 	}
 
 	vector<string> args(argv, argv+argc);
-	bool bait = false, aug = false, threading = true, correction = true, tc = false, aln = false, aln_minimal=false, g2pan = false, skip1 = false, writeKmerName = false, outputBubbles = false, invkmer = false, interleaved;
-	int simmode = 0, extractFasta = 0, countMode = 0;
+	bool bait = false, aug = false, threading = true, correction = true, tc = false, aln = false, aln_minimal=false, g2pan = false, skip1 = false, writeKmerName = false, outputBubbles = false, invkmer = false, isFastq = false;
+	int simmode = 0, extractFastX = 0, countMode = 0;
 	uint64_t argi = 1, trim = 0, thread_cth = 100, Cthreshold = 45, nproc = 1;
 	float readsPerBatchFactor = 1;
 	string trPrefix, trFname, fastxFname, outPrefix, baitFname;
@@ -2159,7 +2219,7 @@ int main(int argc, char* argv[]) {
 			baitFile.close();
 		}
 		else if (args[argi] == "-v") { verbosity = stoi(args[++argi]); }
-		else if (args[argi] == "-e") { extractFasta = stoi(args[++argi]); threading = false; }
+		else if (args[argi] == "-e") { extractFastX = stoi(args[++argi]); threading = false; }
 		else if (args[argi] == "-bu") { outputBubbles = true; }
 		else if (args[argi] == "-t") { trim = stoi(args[++argi]); }
 		else if (args[argi] == "-s") { simmode = stoi(args[++argi]); }
@@ -2214,8 +2274,8 @@ int main(int argc, char* argv[]) {
 				augFile.close();
 			}
 		}
-		else if (args[argi] == "-fa" or args[argi] == "-fai") {
-			interleaved = args[argi] == "-fai";
+		else if (args[argi] == "-fa" or args[argi] == "-fq") {
+			isFastq = args[argi] == "-fq";
 			fastxFname = args[++argi];
 			fastxFile.open(fastxFname);
 			assert(fastxFile);
@@ -2233,9 +2293,8 @@ int main(int argc, char* argv[]) {
 			//}
 		}
 		else if (args[argi] == "-p") { nproc = stoi(args[++argi]); }
-		else if (args[argi] == "-cth") { 
-			Cthreshold = stoi(args[++argi]);
-		}
+		else if (args[argi] == "-cth") { Cthreshold = stoi(args[++argi]); }
+		else if (args[argi] == "-qth") { qth = stoi(args[++argi]); }
 		else { 
 			cerr << "invalid option: " << args[argi] << endl;
 			throw;
@@ -2245,9 +2304,9 @@ int main(int argc, char* argv[]) {
 
 	// report parameters
 	cerr << "use baitDB: " << bait << endl
-	     << "extract fasta: " << extractFasta << endl
+	     << "extract fastX: " << extractFastX << endl
 	     << "output bubbles: " << outputBubbles << endl
-	     << "interleaved: " << interleaved << endl
+	     << "is Fastq: " << isFastq << endl
 	     << "sim mode: " << simmode << endl
 	     << "trim mode: " << trim << endl
 	     << "augmentation mode: " << aug << endl
@@ -2287,12 +2346,13 @@ int main(int argc, char* argv[]) {
 	vector<atomic_uint32_t> nmapread(nloci);
 	vector<atomic_uint64_t> kmc(nloci);
 	unordered_map<string, string> readDB;
+	unordered_map<string, std::pair<string,string>> fastqDB;
 	bubble_db_t bubbleDB(nloci);
 	vector<msa_umap> msaStats;
 	err_umap errdb;
 	vector<uint64_t> locusmap;
 
-	if (extractFasta) { // step 1
+	if (extractFastX) { // step 1
 		readBinaryIndex(kmerDBi, kmerDBi_vv, trPrefix);
 		cerr << "deserialized index in " << (time(nullptr) - time1) << " sec." << endl;
 		cerr << "# unique kmers in kmerDBi: " << kmerDBi.size() << endl;
@@ -2322,6 +2382,7 @@ int main(int argc, char* argv[]) {
 
 		counts.in = &fastxFile;
 		counts.readDB = &readDB;
+		counts.fqDB = &fastqDB;
 		counts.trResults = &trKmerDB;
 		counts.nmapread = &nmapread;
 		counts.kmc = &kmc;
@@ -2343,8 +2404,8 @@ int main(int argc, char* argv[]) {
 		counts.errdb = &errdb;
 		counts.locusmap = &locusmap;
 
-		counts.interleaved = interleaved;
-		counts.extractFasta = extractFasta;
+		counts.isFastq = isFastq;
+		counts.extractFastX = extractFastX;
 		counts.outputBubbles = outputBubbles;
 		counts.bait = bait;
 		counts.simmode = simmode;
@@ -2425,7 +2486,7 @@ int main(int argc, char* argv[]) {
 	fastxFile.close();
 
 	// write outputs
-	if (not extractFasta) {
+	if (not extractFastX) {
 		cerr << "writing kmers..." << endl;
 		if (writeKmerName) {
 			writeKmersWithName(outPrefix+".tr", trKmerDB);

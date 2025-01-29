@@ -268,6 +268,54 @@ void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank 
     }
 }
 
+size_t getNextKmer_qfilter(size_t& kmer, size_t beg, string& read, size_t k, vector<int>& qs, int qth) {
+    size_t rlen = read.size();
+    if (beg + k > rlen) {
+        return rlen;
+    }
+    size_t validlen = 0;
+    while (validlen != k) {
+        if (beg + k > rlen) {
+            return rlen;
+        }
+        if (find(alphabet, alphabet+4, read[beg + validlen]) == alphabet+4 or qs[beg+validlen] < qth) {
+            beg = beg + validlen + 1;
+            validlen = 0;
+        } else {
+            validlen += 1;
+        }
+    }
+    kmer = encodeSeq(read, beg, k);
+    return beg;
+}
+
+// For bfilter_FPSv1, ignore kmers overlapping low qual score bases
+// canonical only, keepN=false
+void read2kmers_qfilter(vector<size_t>& kmers, string& read, size_t k, vector<int>& qs, int qth) {
+    const size_t rlen = read.size();
+    const size_t mask = (1ULL << 2*(k-1)) - 1;
+    size_t beg, nbeg, canonicalkmer, kmer, rckmer;
+
+    beg = getNextKmer_qfilter(kmer, 0, read, k, qs, qth);
+    if (beg == rlen) { return; }
+    rckmer = getNuRC(kmer, k);
+
+    for (size_t i = beg; i < rlen - k + 1; ++i) {
+        canonicalkmer = (kmer > rckmer ? rckmer : kmer);
+        kmers.push_back(canonicalkmer);
+
+        if (std::find(alphabet, alphabet+4, read[i+k]) == alphabet+4 or qs[i+k] < qth) {
+            nbeg = getNextKmer_qfilter(kmer, i+k+1, read, k, qs, qth);
+            if (nbeg == rlen) { return; }
+            rckmer = getNuRC(kmer, k);
+            i = nbeg - 1;
+        } else {
+            kmer = ( (kmer & mask) << 2 ) + baseNumConversion[static_cast<unsigned char>(read[i + k])];
+            rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[static_cast<unsigned char>(read[i + k])]] & mask) << (2*(k-1)));
+        }
+    }
+}
+
 // Applied to a read pair to accumulate counts.
 // Assuming maximal kmer counts from a VNTR read pair does not exceed 32 bits
 void noncaVec2CaUmap(vector<size_t>& kmers, kmerCount_umap& out, size_t ksize) {
@@ -821,6 +869,12 @@ void readOrthoMap(string& mapf, vector<vector<bool>>& omap, size_t nhap) {
         ++idx;
     }
     fin.close();
+}
+
+void qString2qScore(string& qual, vector<int>& qscore) {
+	qscore.resize(qual.size());
+	int i = 0;
+	for (char c : qual) { qscore[i++] = int(c) - 33; }
 }
 
 tuple<adj_dict, size_t> buildAdjDict(kmerCount_umap& kmers, size_t k) {
