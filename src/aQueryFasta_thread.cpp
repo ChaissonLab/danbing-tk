@@ -6,7 +6,6 @@
 #include <string>
 #include <iostream>
 #include <sstream>
-//#include <fstream>
 #include <numeric>
 #include <pthread.h>
 #include <semaphore.h>
@@ -90,15 +89,19 @@ ti: 1st transition nucleotide index in read
 as: assignment state, 0/1/2 = mismatch/flank/TR
 */
 struct km_asgn_read_t {
-	int kf = 0, hf = 0, bf = 0, af = 0, rm = 0, si = -1, ei = -1, nt = 0, bs = 0, ti = -1;
+	int kf, hf, bf, qf, af, rm, qn, qm;
+	int si = -1, ei = -1, nt = 0, bs = 0, ti = -1;
 	vector<int> as;
 
-	void assign(int kf_, int hf_, int bf_, int af_, int rm_) {
+	void assign(int kf_, int hf_, int bf_, int qf_, int af_, int rm_, int qn_, int qm_) {
 		kf = kf_;
 		hf = hf_;
 		bf = bf_;
 		af = af_;
+		qf = qf_;
 		rm = rm_;
+		qn = qn_;
+		qm = qm_;
 	}
 };
 
@@ -1369,12 +1372,8 @@ void bfilter_FPS(unordered_map<uint64_t, uint16_t>& baitdb, vector<uint64_t>& km
 	}
 }
 
-void bfilter_FPSv1(unordered_map<uint64_t, uint16_t>& baitdb, string& seq, string& qual, int& bf, int qth=20) {
+void bfilter_FPSv1(unordered_map<uint64_t, uint16_t>& baitdb, vector<size_t>& ks, int& bf) {
     kc8_t kc;
-	vector<size_t> ks;
-	vector<int> qs;
-	qString2qScore(qual, qs);
-	read2kmers_qfilter(ks, seq, ksize, qs, qth);
     for (auto km : ks) { ++kc[km]; }
     for (auto& p : kc) {
         auto it = baitdb.find(p.first);
@@ -1386,6 +1385,33 @@ void bfilter_FPSv1(unordered_map<uint64_t, uint16_t>& baitdb, string& seq, strin
             if (p.second < mi or p.second > ma) { bf = 1; return; }
         }
     }
+}
+
+void qfilter(vector<size_t>& ks, GraphType& gf, int& qf, int& qn, int& qm) {
+	int i0 = 0, i1 = 0;
+	while (i0 < ks.size()) {
+		// find segment head
+		while (i0 < ks.size()) {
+			if (ks[i0] == NAN64) { ++i0; }
+			else { break; }
+		}
+		if (i0 == ks.size()) { break; }
+		// find segment end
+		i1 = i0 + 1;
+		while (i1 < ks.size()) {
+			if (ks[i1] == NAN64) { break; }
+			else { ++i1; }
+		}
+		qn += i1 - i0;
+		// check % match
+		for (int i = i0; i < i1; ++i) {
+			qm += gf.count(ks[i]);
+		}
+		i0 = i1 + 1;
+	}
+	//cout << qm << '/' << qn << '\n';
+	if (not qn) { return; }
+	if (float(qm) / qn < 0.5) { qf = 1; }
 }
 
 //void assignTRkmc(vector<uint64_t>& kmers, kmer_aCount_umap& trKmers, GraphType& g, vector<int>& as, int& si, int& ei, int& nt, int& bs, int& ti, int& af, int& rm) {
@@ -1408,7 +1434,12 @@ void assignTRkmc(vector<uint64_t>& kmers, kmer_aCount_umap& trKmers, GraphType& 
 		r.as[i] = tr + db;
 		ntr += tr;
 	}
-	if (rm) { return; }
+	if (rm) {
+		r.nt = -1;
+		r.bs = -1;
+		r.ti = -1;
+		return;
+	}
 
 	for (int i=0; i<nk; ++i) {
 		s = r.as[i];
@@ -1554,7 +1585,7 @@ void writeExtractedReads(int extractFastX, vector<string>& seqs, vector<string>&
 	}
 }
 
-void writeKmerAssignments(vector<string>& seqs, vector<string>& titles, vector<uint64_t>& destLoci, vector<uint64_t>& alnindices, vector<km_asgn_t>& kams) {
+void writeKmerAssignments(vector<string>& seqs, vector<string>& titles, vector<string>& quals, vector<uint64_t>& destLoci, vector<uint64_t>& alnindices, vector<km_asgn_t>& kams) {
 	string NA = {"."};
 	for (uint64_t i = 0; i < kams.size(); ++i) {
 		auto& kam = kams[i];
@@ -1565,19 +1596,29 @@ void writeKmerAssignments(vector<string>& seqs, vector<string>& titles, vector<u
 		string src = kam.src == -1ULL ? NA : to_string(kam.src);
 		string si1 = r1.si==-1 ? NA : to_string(r1.si);
 		string si2 = r2.si==-1 ? NA : to_string(r2.si);
+		string nt1 = r1.nt==-1 ? NA : to_string(r1.nt);
+		string nt2 = r2.nt==-1 ? NA : to_string(r2.nt);
+		string bs1 = r1.bs==-1 ? NA : to_string(r1.bs);
+		string bs2 = r2.bs==-1 ? NA : to_string(r2.bs);
+		string ti1 = r1.ti==-1 ? NA : to_string(r1.ti);
+		string ti2 = r2.ti==-1 ? NA : to_string(r2.ti);
 		cout << src << '\t'
 			 << kam.dst << '\t'
 			 << kam.dst0 << '\t'
 			 << (r2.ei - r2.si) << '\t'
 			 << (r1.ei - r1.si) << '\t' 
-			 << "kf:hf:bf:af:rm:si:nt:bs:ti\t" 
-			 << r2.kf <<':'<< r2.hf <<':'<< r2.bf <<':'<< r2.af <<':'<< r2.rm <<':'<< si2 <<':'<< r2.nt <<':'<< r2.bs <<':'<< r2.ti << '\t'
-			 << r1.kf <<':'<< r1.hf <<':'<< r1.bf <<':'<< r1.af <<':'<< r1.rm <<':'<< si1 <<':'<< r1.nt <<':'<< r1.bs <<':'<< r1.ti << '\t'
+			 << "kf:hf:bf:qf:af:rm:qn:qm:si:nt:bs:ti\t" 
+			 << r2.kf <<':'<< r2.hf <<':'<< r2.bf <<':'<< r2.qf <<':'<< r2.af <<':'<< r2.rm <<':'<<
+			    r2.qn <<':'<< r2.qm <<':'<< si2 <<':'<< nt2 <<':'<< bs2 <<':'<< ti2 << '\t'
+			 << r1.kf <<':'<< r1.hf <<':'<< r1.bf <<':'<< r1.qf <<':'<< r1.af <<':'<< r1.rm <<':'<<
+			    r1.qn <<':'<< r1.qm <<':'<< si1 <<':'<< nt1 <<':'<< bs1 <<':'<< ti1 << '\t'
 			 << as2 << '\t'
 			 << as1 << '\t'
 			 << titles[--alnindices[i]].substr(1) << '\t'
 			 << seqs[alnindices[i]] << '\t'
-			 << seqs[--alnindices[i]] << '\n';
+			 << quals[alnindices[i]] << '\t'
+			 << seqs[--alnindices[i]] << '\t'
+			 << quals[alnindices[i]] << '\n';
 	}
 }
 
@@ -1683,7 +1724,7 @@ class Counts {
 public:
 	bool isFastq, outputBubbles, bait, threading, correction, tc, aln, aln_minimal, g2pan, skip1, invkmer;
 	uint16_t Cthreshold, thread_cth;
-	uint64_t *nReads, *nThreadingReads, *nFeasibleReads, *nAsgnReads, *nSubFiltered, *nKmerFiltered, *nBaitFiltered, *nLocusAssignFiltered;
+	uint64_t *nReads, *nThreadingReads, *nFeasibleReads, *nAsgnReads, *nSubFiltered, *nKmerFiltered, *nBaitFiltered, *nQualFiltered, *nLocusAssignFiltered;
 	uint64_t nloci;
 	int countMode;
 	float readsPerBatchFactor;
@@ -1732,7 +1773,7 @@ void CountWords(void *data) {
 	int simmode = ((Counts*)data)->simmode;
 	int countMode = ((Counts*)data)->countMode;
 	int extractFastX = ((Counts*)data)->extractFastX;
-	uint64_t nReads_ = 0, nShort_ = 0, nThreadingReads_ = 0, nFeasibleReads_ = 0, nAsgnReads_ = 0, nSubFiltered_ = 0, nKmerFiltered_ = 0, nBaitFiltered_ = 0, nLocusAssignFiltered_ = 0;
+	uint64_t nReads_ = 0, nShort_ = 0, nThreadingReads_ = 0, nFeasibleReads_ = 0, nAsgnReads_ = 0, nSubFiltered_ = 0, nKmerFiltered_ = 0, nQualFiltered_ = 0, nBaitFiltered_ = 0, nLocusAssignFiltered_ = 0;
 	uint64_t& nReads = *((Counts*)data)->nReads;
 	uint64_t& nThreadingReads = *((Counts*)data)->nThreadingReads;
 	uint64_t& nFeasibleReads = *((Counts*)data)->nFeasibleReads;
@@ -1740,6 +1781,7 @@ void CountWords(void *data) {
 	uint64_t& nSubFiltered = *((Counts*)data)->nSubFiltered;
 	uint64_t& nKmerFiltered = *((Counts*)data)->nKmerFiltered;
 	uint64_t& nBaitFiltered = *((Counts*)data)->nBaitFiltered;
+	uint64_t& nQualFiltered = *((Counts*)data)->nQualFiltered;
 	uint64_t& nLocusAssignFiltered = *((Counts*)data)->nLocusAssignFiltered;
 	uint16_t Cthreshold = ((Counts*)data)->Cthreshold;
 	uint16_t thread_cth = ((Counts*)data)->thread_cth;
@@ -1800,6 +1842,7 @@ void CountWords(void *data) {
 		nSubFiltered += nSubFiltered_;
 		nKmerFiltered += nKmerFiltered_;
 		nBaitFiltered += nBaitFiltered_;
+		nQualFiltered += nQualFiltered_;
 		nLocusAssignFiltered += nLocusAssignFiltered_;
 		nThreadingReads_ = 0;
 		nFeasibleReads_ = 0;
@@ -1807,6 +1850,7 @@ void CountWords(void *data) {
 		nSubFiltered_ = 0;
 		nKmerFiltered_ = 0;
 		nBaitFiltered_ = 0;
+		nQualFiltered_ = 0;
 		nLocusAssignFiltered_ = 0;
 		nReads_ = 0;
 		nShort_ = 0;
@@ -1919,7 +1963,10 @@ void CountWords(void *data) {
 			int kf1 = 0, kf2 = 0; // 1 = removed by kfilter
 			int hf1 = 0, hf2 = 0; // 1 = removed by countHit
 			int bf1 = 0, bf2 = 0; // 1 = removed by bfilter
+			int qf1 = 0, qf2 = 0; // 1 = removed by qfilter
 			int af1 = 0, af2 = 0; // 1 = removed by assignTRkmc
+			int qn1 = 0, qn2 = 0; // qn: # of valid kmers considered in qfilter
+			int qm1 = 0, qm2 = 0; // qm: # of kmer matches among qn kmers in qfilter
 			int nm1, nm2; // num of exact kmer matches at assigned locus BEFORE early stopping
 
 			if (simmode == 1) {
@@ -2007,12 +2054,19 @@ void CountWords(void *data) {
 					}
 				}
 				else {
+					vector<int> qs1, qs2;
+					vector<size_t> qks1, qks2;
+					qString2qScore(qual, qs1);
+					qString2qScore(qual1, qs2);
+					read2kmers_qfilter(qks1, seq, ksize, qs1, qth);
+					read2kmers_qfilter(qks2, seq1, ksize, qs2, qth);
+
 					// accumulate trKmers for output
 					if (not threading) {
 						if (bait) {
 							auto& baitdb = baitDB[destLocus];
-							bfilter_FPSv1(baitdb, seq, qual, bf1, qth);
-							bfilter_FPSv1(baitdb, seq1, qual1, bf2, qth);
+							bfilter_FPSv1(baitdb, qks1, bf1);
+							bfilter_FPSv1(baitdb, qks2, bf2);
 							if (bf1 or bf2) {
 								nBaitFiltered_ += (bf1 & !rm1) + (bf2 & !rm2);
 								rm1 = 1;
@@ -2020,10 +2074,19 @@ void CountWords(void *data) {
 							}
 						}
 
+						// q-score based stringent kmer matching
+						qfilter(qks1, gf, qf1, qm1, qn1);
+						qfilter(qks2, gf, qf2, qm2, qn2);
+						if (qf1 or qf2) {
+							nQualFiltered_ += (qf1 & !rm1) + (qf2 & !rm2);
+							rm1 = 1;
+							rm2 = 1;
+						}
+
 						if (countMode == 2) { // asgn
 							int npass = 2 - rm1 - rm2;
-							if (not rm1) { assignTRkmc(kmers1, trKmers, gf, kam.r1, af1, rm1); }
-							if (not rm2) { assignTRkmc(kmers2, trKmers, gf, kam.r2, af2, rm2); }
+							assignTRkmc(kmers1, trKmers, gf, kam.r1, af1, rm1);
+							assignTRkmc(kmers2, trKmers, gf, kam.r2, af2, rm2);
 							if (rm1 and rm2) { destLocus = nloci; } // removed by TR_kmer_assignment
 							else {
 								nAsgnReads_ += npass - af1 - af2;
@@ -2032,8 +2095,8 @@ void CountWords(void *data) {
 							}
 							if ((srcLocus != nloci and srcLocus != -1ULL) or destLocus != nloci) {
 								kam.assign(srcLocus, destLocus, destLocus0);
-								kam.r1.assign(kf1, hf1, bf1, af1, rm1);
-								kam.r2.assign(kf2, hf2, bf2, af2, rm2);
+								kam.r1.assign(kf1, hf1, bf1, qf1, af1, rm1, qm1, qn1);
+								kam.r2.assign(kf2, hf2, bf2, qf2, af2, rm2, qm2, qn2);
 								kams.push_back(kam);
 								alnindices.push_back(seqi);
 							}
@@ -2121,7 +2184,7 @@ void CountWords(void *data) {
 		// begin thread lock
 		sem_wait(semwriter); 
 
-		writeKmerAssignments(seqs, titles, destLoci, alnindices, kams);
+		writeKmerAssignments(seqs, titles, quals, destLoci, alnindices, kams);
 		if (extractFastX or aln) {
 			if (extractFastX) {
 				if (isFastq) { writeExtractedReads(extractFastX, seqs, quals, titles, extractindices, assignedloci); }
@@ -2376,7 +2439,7 @@ int main(int argc, char* argv[]) {
 	cerr << "creating data for each process..." << endl;
 	time1 = time(nullptr);
 	Threads threaddata(nproc, nloci);
-	uint64_t nReads = 0, nThreadingReads = 0, nFeasibleReads = 0, nAsgnReads = 0, nSubFiltered = 0, nKmerFiltered = 0, nBaitFiltered = 0, nLocusAssignFiltered = 0;
+	uint64_t nReads = 0, nThreadingReads = 0, nFeasibleReads = 0, nAsgnReads = 0, nSubFiltered = 0, nKmerFiltered = 0, nBaitFiltered = 0, nQualFiltered = 0, nLocusAssignFiltered = 0;
 	for (uint64_t i = 0; i < nproc; ++i) {
 		Counts &counts = threaddata.counts[i];
 
@@ -2399,6 +2462,7 @@ int main(int argc, char* argv[]) {
 		counts.nSubFiltered = &nSubFiltered;
 		counts.nKmerFiltered = &nKmerFiltered;
 		counts.nBaitFiltered = &nBaitFiltered;
+		counts.nQualFiltered = &nQualFiltered;
 		counts.nLocusAssignFiltered = &nLocusAssignFiltered;
 		counts.msaStats = &msaStats;
 		counts.errdb = &errdb;
@@ -2478,6 +2542,7 @@ int main(int argc, char* argv[]) {
 	     << nSubFiltered << " reads removed by subsampled kmer-filter.\n"
 	     << nKmerFiltered << " reads removed by kmer-filter.\n"
 	     << nBaitFiltered << " reads removed by bait locus.\n"
+		 << nQualFiltered << " reads removed by qual filter.\n"
 		 << nLocusAssignFiltered << " reads removed during locus assignment.\n"
 	     << nThreadingReads << " reads entered threading step.\n"
 	     << nFeasibleReads << " reads passsed threading.\n"

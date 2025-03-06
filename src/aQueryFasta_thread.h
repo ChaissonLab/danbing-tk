@@ -290,19 +290,19 @@ size_t getNextKmer_qfilter(size_t& kmer, size_t beg, string& read, size_t k, vec
 }
 
 // For bfilter_FPSv1, ignore kmers overlapping low qual score bases
-// canonical only, keepN=false
+// canonical only, keepN=true
 void read2kmers_qfilter(vector<size_t>& kmers, string& read, size_t k, vector<int>& qs, int qth) {
     const size_t rlen = read.size();
     const size_t mask = (1ULL << 2*(k-1)) - 1;
-    size_t beg, nbeg, canonicalkmer, kmer, rckmer;
+    size_t beg, nbeg, kmer, rckmer;
 
     beg = getNextKmer_qfilter(kmer, 0, read, k, qs, qth);
     if (beg == rlen) { return; }
+	kmers.resize(rlen-k+1, -1);
     rckmer = getNuRC(kmer, k);
 
     for (size_t i = beg; i < rlen - k + 1; ++i) {
-        canonicalkmer = (kmer > rckmer ? rckmer : kmer);
-        kmers.push_back(canonicalkmer);
+		kmers[i] = (kmer > rckmer ? rckmer : kmer);
 
         if (std::find(alphabet, alphabet+4, read[i+k]) == alphabet+4 or qs[i+k] < qth) {
             nbeg = getNextKmer_qfilter(kmer, i+k+1, read, k, qs, qth);
