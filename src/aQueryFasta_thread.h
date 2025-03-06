@@ -456,6 +456,15 @@ void readFPSKmersV2(T& kmerDB, string fname) {
 }
 
 template <typename T>
+void readBinaryBaitDB(T& kmerDB, string& fname) {
+    cerr << "deserializing bt.vumap" << endl;
+    ifstream fin(fname, ios::binary);
+    assert(fin);
+    cereal::BinaryInputArchive iarchive(fin);
+    iarchive(kmerDB);
+}
+
+template <typename T>
 void readGraphKmers(T& kmerDB, string fname) {
     ifstream f(fname);
     assert(f);

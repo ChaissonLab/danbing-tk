@@ -25,10 +25,11 @@ int main (int argc, const char * argv[]) {
 		cerr << "Usage: ktools <commands> [options]" << endl << endl
 
 		     << "Commands:" << endl
-			 << "  ksi         generate ksi index for ktools sum" << endl
-		     << "  sum         acculumate kmer counts for each locus" << endl
-		     << "  extract     extract locus-RPGG from RPGG" << endl
-		     << "  serialize   generate kmer index using pan.(graph|ntr|tr).kmers" << endl << endl;
+			 << "  ksi           generate ksi index for ktools sum" << endl
+		     << "  sum           acculumate kmer counts for each locus" << endl
+		     << "  extract       extract locus-RPGG from RPGG" << endl
+		     << "  serialize     generate kmer index using pan.(graph|ntr|tr).kmers" << endl 
+			 << "  serialize-bt  generate serialized bait.kmers" << endl << endl;
 		return 0;
 	}
 
@@ -332,6 +333,54 @@ int main (int argc, const char * argv[]) {
 		//cerr << "# unique kmers in kmerDBi: " << kmerDBi.size() << '\n';
 		//cerr << "# unique kmers in kmerDBi: " << kmerDBi.size() << '\n';
 		//cerr << "read *.kmers file in " << (time(nullptr) - time1) << " sec." << endl;
+	}
+	else if (args[1] == "serialize-bt") {
+		if (argc == 2) {
+			cerr << "Usage: ktools serialize-bt <bait> <nloci> <outPref>" << endl << endl
+
+			     << "  bait     Path to bait kmers. " << endl
+				 << "           File format (tab delimited):" << endl
+				 << "             >locus_index" << endl
+				 << "             kmer	c0	c1" << endl
+				 << "           c0/c1: min/max observed kmer count in TP reads. If kmer not present in any TP read, c0/c1=255/0" << endl
+				 << "  nloci    # of loci in RPGG" << endl
+				 << "  outPref  output file name = $ourPref.bt.vumap" << endl << endl;
+			return 0;
+		}
+		size_t nloci = stoul(args[3]);
+		bait_fps_db_t baitDB(nloci);
+		readFPSKmersV2(baitDB, args[2]);
+
+        {
+            ofstream fout(args[4]+".bt.vumap", ios::binary);
+            assert(fout);
+            cereal::BinaryOutputArchive oarchive(fout);
+            oarchive(baitDB);
+        }
+
+		bait_fps_db_t baitDB_copy;
+		{
+			cerr << "deserializing bt.vumap" << endl;
+			ifstream fin(args[4]+".bt.vumap", ios::binary);
+			assert(fin);
+			cereal::BinaryInputArchive iarchive(fin);
+			iarchive(baitDB_copy);
+		}
+
+		cerr << "validating bait.vumap" << endl;
+		for (int i=0; i<nloci; ++i) {
+			auto& db0 = baitDB[i];
+			auto& db1 = baitDB_copy[i];
+			assert(db0.size() == db1.size());
+			if (not db0.size()) { continue; }
+
+			for (auto& p : db0) {
+				auto it = db1.find(p.first);
+				assert(it != db1.end());
+				assert(p.second == it->second);
+			}
+		}
+		cerr << "Done!" << endl;
 	}
 	else {
 		cerr << "Unrecognized command " << args[1] << endl;
