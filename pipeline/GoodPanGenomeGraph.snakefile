@@ -268,10 +268,10 @@ rule GenRawGenomeGraph:
 set -eu
 ulimit -c 20000
 cd {params.od}
-{{ type module &>/dev/null ; val="$?"; }} || true
-if [ $val == 0 ]; then
-    module load gcc
-fi
+#{{ type module &>/dev/null ; val="$?"; }} || true
+#if [ $val == 0 ]; then
+#    module load gcc
+#fi
 
 {params.sd}/bin/vntr2kmers_thread -g -m <(cut -f $(({params.hi}+1)),$(({params.hi}+2)) {input.mapping}) -k {params.ksize} -fs {params.FS} -ntr {params.FS} -on {wildcards.genome}.rawPB -fa 2 {params.fin}
 
@@ -359,7 +359,7 @@ rule GenPanGenomeGraph:
     shell:"""
 cd {params.od}
 ulimit -c 20000
-module load gcc
+#module load gcc
 
 {params.sd}/bin/genPanKmers -o pan -m - -k {params.kmerpref}
 {params.sd}/bin/genPanKmers -tr -o pan.reindex -m - -k pan
@@ -383,7 +383,7 @@ rule GenSerializedGraphAndIndex:
     shell:"""
 cd {params.od}
 ulimit -c 20000
-module load gcc
+#module load gcc
 
 {params.sd}/bin/ktools serialize {params.pref}
 {params.sd}/bin/ktools ksi pan.tr.kmers >{params.pref}.tr.ksi
