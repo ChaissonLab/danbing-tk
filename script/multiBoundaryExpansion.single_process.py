@@ -297,7 +297,7 @@ if __name__ == "__main__":
     idx2exp = {}
     stat = [0,0,0] # ncase, nexp, nfail
     results = gwMBE(0, stat)
-    for k, v in results.items():
+    for k, v in results:
         idx2exp[k] = v
 
     print("Dumping results", flush=True)
