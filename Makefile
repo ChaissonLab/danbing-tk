@@ -1,17 +1,26 @@
-PREFIX = /home/cmb-16/mjc/tsungyul/work/vntr/danbing-tk
+PREFIX ?=.
 TARGETS = bin/danbing-tk bin/vntr2kmers_thread bin/genPanKmers bin/ktools bin/danbing-tk-pred
 TARGETSg = bin/danbing-tk_g bin/vntr2kmers_thread_g bin/genPanKmers_g bin/ktools_g bin/danbing-tk-pred_g
-#TARGETS = aQueryFasta amphQueryFasta vntr2kmers kmer2dot seq2num num2seq rvseq bam2pe
+#TARGETS = seq2num num2seq rvseq bam2pe
 
 CXX = g++ -std=c++11
 LDLIBS = -pthread
 dir_guard = @mkdir -p $(@D)
-CPPFLAGS = -I ./cereal/include -I ./Eigen
+CPPFLAGS = -I $(PREFIX)/include
+INC=$(PREFIX)/include
+INCFILES = $(INC)/cereal $(INC)/Eigen
 
-all: $(TARGETS)
-allg: $(TARGETS) $(TARGETSg)
+
+all: $(INCFILES) $(TARGETS)
+allg: $(INCFILES) $(TARGETS) $(TARGETSg)
 
 
+# copy INCLUDE files to ./include
+$(INCFILES):
+	mkdir -p $(INC)
+	cp -r cereal/include/cereal  $(INC)
+	cp -r Eigen/Eigen  $(INC)
+	
 # dependencies between programs and .o files
 bin/danbing-tk:	src/aQueryFasta_thread.cpp
 	$(dir_guard)
@@ -77,9 +86,9 @@ bin/bam2pe:		src/bam2pe.cpp
 #	$(CXX) $^ -o $@
 
 #.PHONY: install
-#install: $(TARGETS)
-#	mkdir -p $(PREFIX)/bin
-#	cp $^ $(PREFIX)/bin/.
+install: $(TARGETS)
+	mkdir -p $(PREFIX)/bin
+	cp $^ $(PREFIX)/bin/.
 
 #uninstall: $(TARGETS)
 #	for TARGET in $(TARGETS); do \
