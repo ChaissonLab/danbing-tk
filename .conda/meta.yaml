@@ -3,7 +3,7 @@ package:
   version: "1.3.3"
 
 source:
-  path: ../
+  path: ./danbing-tk
 
 requirements:
   build:
