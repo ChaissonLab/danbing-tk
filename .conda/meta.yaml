@@ -1,0 +1,17 @@
+package:
+  name: danbing-tk
+  version: "1.3.3"
+
+source:
+  path: ../
+
+requirements:
+  build:
+    - make
+    - {{ compiler('cxx') }}
+  host:
+    - libstdcxx-ng
+    - libgcc-ng
+  run:
+    - libgcc-ng
+    - libstdcxx-ng
