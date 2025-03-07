@@ -43,7 +43,7 @@ int main(int argc, const char * argv[]) {
 
     if (argc < 2){
         cerr << endl
-             << "usage: vntr2kmers_thread [-th] [-g] [-p] [-m] -k -fs -ntr [-o|-on] -fa \n"
+             << "Usage: vntr2kmers_thread [-th] [-g] [-p] [-m] -k -fs -ntr [-o|-on] -fa \n"
              << "  -th <INT>        Filter out kmers w/ count below this threshold. Default: 0, i.e. no filtering\n"
              << "  -g               output *graph.kmers for threading-based kmer query.\n"
              << "  -p <FILE>        Prune tr/graph kmers with the given kmers file.\n"
