@@ -6,9 +6,9 @@ TARGETSg = bin/danbing-tk_g bin/vntr2kmers_thread_g bin/genPanKmers_g bin/ktools
 CXX = g++ -std=c++11
 LDLIBS = -pthread
 dir_guard = @mkdir -p $(@D)
-CPPFLAGS = -I $(PREFIX)/include
 INC=$(PREFIX)/include
-INCFILES = $(INC)/cereal $(INC)/Eigen
+CPPFLAGS = -I $(INC) -I $(INC)/eigen3
+INCFILES = $(INC)/cereal $(INC)/eigen3
 
 
 all: $(INCFILES) $(TARGETS)
@@ -18,8 +18,9 @@ allg: $(INCFILES) $(TARGETS) $(TARGETSg)
 # copy INCLUDE files to ./include
 $(INCFILES):
 	mkdir -p $(INC)
-	cp -r cereal/include/cereal  $(INC)
-	cp -r Eigen/Eigen  $(INC)
+	if [ ! -f $(INC)/cereal ]; then cp -r cereal/include/cereal $(INC); fi
+	mkdir -p $(INC)/eigen3
+	if [ ! -f $(INC)/eigen3 ]; then cp -r Eigen/Eigen  $(INC)/eigen3; fi
 	
 # dependencies between programs and .o files
 bin/danbing-tk:	src/aQueryFasta_thread.cpp

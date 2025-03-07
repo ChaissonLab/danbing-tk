@@ -72,7 +72,7 @@ void getgmap(vector<vector<bool>>& omap, vector<bool>& gmap, vector<size_t> his)
 int main(int argc, const char * argv[]) {
 
     if (argc < 2) {
-        cerr << "usage: program  [-tr]  -o <output_prefix>  -m <mapping>  -k <kmer_file_prefixes>\n"
+        cerr << "Usage: program  [-tr]  -o <output_prefix>  -m <mapping>  -k <kmer_file_prefixes>\n"
 		     << "  -tr      precess *.tr.kmers only, skipping ntr and graph\n"
              << "  -m       if is '-', the program assumes no missing loci\n"
              << "           full path name for <mapping> is required in any case\n"
