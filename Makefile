@@ -3,11 +3,11 @@ TARGETS = bin/danbing-tk bin/vntr2kmers_thread bin/genPanKmers bin/ktools bin/da
 TARGETSg = bin/danbing-tk_g bin/vntr2kmers_thread_g bin/genPanKmers_g bin/ktools_g bin/danbing-tk-pred_g
 #TARGETS = seq2num num2seq rvseq bam2pe
 
-CXX = g++ -std=c++11
+CXX ?= g++
 LDLIBS = -pthread
 dir_guard = @mkdir -p $(@D)
 INC=$(PREFIX)/include
-CPPFLAGS = -I $(INC) -I $(INC)/eigen3
+CPPFLAGS = -std=c++11 -I $(INC) -I $(INC)/eigen3
 INCFILES = $(INC)/cereal $(INC)/eigen3
 
 
