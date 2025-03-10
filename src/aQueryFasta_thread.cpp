@@ -1722,7 +1722,7 @@ void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<uint64
 
 class Counts {
 public:
-	bool isFastq, outputBubbles, bait, threading, correction, tc, aln, aln_minimal, g2pan, skip1, invkmer;
+	bool isFastq, outputBubbles, bait, threading, correction, tc, aln, aln_minimal, okam, g2pan, skip1, invkmer;
 	uint16_t Cthreshold, thread_cth;
 	uint64_t *nReads, *nThreadingReads, *nFeasibleReads, *nAsgnReads, *nSubFiltered, *nKmerFiltered, *nBaitFiltered, *nQualFiltered, *nLocusAssignFiltered;
 	uint64_t nloci;
@@ -1767,6 +1767,7 @@ void CountWords(void *data) {
 	bool tc = ((Counts*)data)->tc;
 	bool aln = ((Counts*)data)->aln;
 	bool aln_minimal = ((Counts*)data)->aln_minimal;
+	bool okam = ((Counts*)data)->okam;
 	bool g2pan = ((Counts*)data)->g2pan;
 	bool skip1 = ((Counts*)data)->skip1; // TODO new functionality: allow skipping step1 by reading assigned locus info from extracted reads
 	bool invkmer = ((Counts*)data)->invkmer;
@@ -2043,7 +2044,6 @@ void CountWords(void *data) {
 				kmer_aCount_umap &trKmers = trResults[destLocus];
 				kmer_aCount_umap &ikmers = ikmerDB[destLocus];
 				nFeasibleReads_ += 2;
-				nmapread[destLocus] += 2;
 
 				if (extractFastX) {
 					// points to the next read pair 
@@ -2087,13 +2087,24 @@ void CountWords(void *data) {
 							int npass = 2 - rm1 - rm2;
 							assignTRkmc(kmers1, trKmers, gf, kam.r1, af1, rm1);
 							assignTRkmc(kmers2, trKmers, gf, kam.r2, af2, rm2);
+							nmapread[destLocus] += 2 - rm1 - rm2;
 							if (rm1 and rm2) { destLocus = nloci; } // removed by TR_kmer_assignment
 							else {
 								nAsgnReads_ += npass - af1 - af2;
-								nmapread[destLocus] += (npass - af1 - af2);
 								kmc[destLocus] += (kam.r1.ei - kam.r1.si) + (kam.r2.ei - kam.r2.si);
+								if (outputBubbles) {
+									if (not rm1) {
+										read2kmers(noncakmers0, seq, ksize, 0, 0, false, true);
+										countNovelEdges(noncakmers0, graphDB[destLocus], bubbles[destLocus]);
+									}
+									if (not rm2) {
+										read2kmers(noncakmers1, seq1, ksize, 0, 0, false, true);
+										countNovelEdges(noncakmers1, graphDB[destLocus], bubbles[destLocus]);
+									}
+								}
 							}
-							if ((srcLocus != nloci and srcLocus != -1ULL) or destLocus != nloci) {
+
+							if (okam and ((srcLocus != nloci and srcLocus != -1ULL) or destLocus != nloci)) {
 								kam.assign(srcLocus, destLocus, destLocus0);
 								kam.r1.assign(kf1, hf1, bf1, qf1, af1, rm1, qm1, qn1);
 								kam.r2.assign(kf2, hf2, bf2, qf2, af2, rm2, qm2, qn2);
@@ -2102,62 +2113,58 @@ void CountWords(void *data) {
 							}
 						}
 					}
-					else {
-						//if (bait) {
-						//    auto& baitdb = baitDB[destLocus];
-						//    if (not rm1) { bfilter(baitdb, akmers0, nm1, bf1); }
-						//    if (not rm2) { bfilter(baitdb, akmers1, nm2, bf2); }
-						//	if (bf1 and bf2) {
-						//		nBaitFiltered_ += 2;
-						//		continue;
-						//	}
-						//}
+					// threading disabled
+					//else {
+					//	//if (bait) {
+					//	//    auto& baitdb = baitDB[destLocus];
+					//	//    if (not rm1) { bfilter(baitdb, akmers0, nm1, bf1); }
+					//	//    if (not rm2) { bfilter(baitdb, akmers1, nm2, bf2); }
+					//	//	if (bf1 and bf2) {
+					//	//		nBaitFiltered_ += 2;
+					//	//		continue;
+					//	//	}
+					//	//}
 
-						if (invkmer) {
-							for (auto& p : cakmers) {
-								auto it = ikmers.find(p.first);
-								if (it != ikmers.end()) { it->second += p.second; }
-							}
-						}
-						if (countMode == 0) { // exact
-							for (auto& p : cakmers) {
-								auto it = trKmers.find(p.first);
-								if (it != trKmers.end()) { it->second += p.second; }
-							}
-						}
-						else { // aln or asgn
-							if (countMode == 1) { // aln
-								noncaVec2CaUmap(akmers0, cakmers, ksize);
-								noncaVec2CaUmap(akmers1, cakmers, ksize);
-								for (auto& p : cakmers) {
-									auto it = trKmers.find(p.first);
-									if (it != trKmers.end()) { it->second += p.second; }
-								}
-							}
-							//else { // asgn XXX not supported yet
-							//	vector<uint64_t> cakmers1, cakmers2;
-							//	nonckmer2ckmer(akmers0, cakmers1, ksize);
-							//	nonckmer2ckmer(akmers1, cakmers1, ksize);
+					//	if (invkmer) {
+					//		for (auto& p : cakmers) {
+					//			auto it = ikmers.find(p.first);
+					//			if (it != ikmers.end()) { it->second += p.second; }
+					//		}
+					//	}
+					//	if (countMode == 0) { // exact
+					//		for (auto& p : cakmers) {
+					//			auto it = trKmers.find(p.first);
+					//			if (it != trKmers.end()) { it->second += p.second; }
+					//		}
+					//	}
+					//	else { // aln or asgn
+					//		if (countMode == 1) { // aln
+					//			noncaVec2CaUmap(akmers0, cakmers, ksize);
+					//			noncaVec2CaUmap(akmers1, cakmers, ksize);
+					//			for (auto& p : cakmers) {
+					//				auto it = trKmers.find(p.first);
+					//				if (it != trKmers.end()) { it->second += p.second; }
+					//			}
+					//		}
+					//		//else { // asgn XXX not supported yet
+					//		//	vector<uint64_t> cakmers1, cakmers2;
+					//		//	nonckmer2ckmer(akmers0, cakmers1, ksize);
+					//		//	nonckmer2ckmer(akmers1, cakmers1, ksize);
 
-							//	if (not bf1) { assignTRkmc(cakmers1, trKmers, gf, kam.r1, af1, rm1); }
-							//	if (not bf2) { assignTRkmc(cakmers2, trKmers, gf, kam.r2, af2, rm2); }
-							//	nAsgnReads_ += 2 - af1 - af2;
-							//	nmapread[destLocus] += (2 - af1 - af2);
-							//	kmc[destLocus] += (kam.r1.ei - kam.r1.si) + (kam.r2.ei - kam.r2.si);
-							//	if (rm1 and rm2) { destLocus = nloci; } // removed by TR_kmer_assignment
-							//	if ((srcLocus != nloci and srcLocus != -1ULL) or destLocus != nloci) {
-							//		kam.assign(srcLocus, destLocus);
-							//		alnindices.push_back(seqi);
-							//		kams.push_back(kam);
-							//	}
-							//}
-						}
-					}
-
-					if (outputBubbles) {
-						countNovelEdges(noncakmers0, graphDB[destLocus], bubbles[destLocus]);
-						countNovelEdges(noncakmers1, graphDB[destLocus], bubbles[destLocus]);
-					}
+					//		//	if (not bf1) { assignTRkmc(cakmers1, trKmers, gf, kam.r1, af1, rm1); }
+					//		//	if (not bf2) { assignTRkmc(cakmers2, trKmers, gf, kam.r2, af2, rm2); }
+					//		//	nAsgnReads_ += 2 - af1 - af2;
+					//		//	nmapread[destLocus] += (2 - af1 - af2);
+					//		//	kmc[destLocus] += (kam.r1.ei - kam.r1.si) + (kam.r2.ei - kam.r2.si);
+					//		//	if (rm1 and rm2) { destLocus = nloci; } // removed by TR_kmer_assignment
+					//		//	if ((srcLocus != nloci and srcLocus != -1ULL) or destLocus != nloci) {
+					//		//		kam.assign(srcLocus, destLocus);
+					//		//		alnindices.push_back(seqi);
+					//		//		kams.push_back(kam);
+					//		//	}
+					//		//}
+					//	}
+					//}
 				}
 			}
 
@@ -2184,7 +2191,7 @@ void CountWords(void *data) {
 		// begin thread lock
 		sem_wait(semwriter); 
 
-		writeKmerAssignments(seqs, titles, quals, destLoci, alnindices, kams);
+		if (okam) { writeKmerAssignments(seqs, titles, quals, destLoci, alnindices, kams); }
 		if (extractFastX or aln) {
 			if (extractFastX) {
 				if (isFastq) { writeExtractedReads(extractFastX, seqs, quals, titles, extractindices, assignedloci); }
@@ -2220,11 +2227,11 @@ int main(int argc, char* argv[]) {
 
 	if (argc < 2) {
 		cerr << '\n'
-		     << "Usage: danbing-tk [-v] [-b] [-e] [-bu] [-g|-gc|-gcc] [-a|-ae] [-kf] [-cth] [-r] [-c] [-k] [-ik] [-p] <-o|-on> <-fa|-fq> -qs\n"
+		     << "Usage: danbing-tk [-v] [-b] [-e] [-bu] [-g|-gc|-gcc] [-a|-ae] [-ka] [-kf] [-cth] [-r] [-c] [-k] [-ik] [-p] <-o|-on> <-fa|-fq> -qs\n"
 		     << "Options:\n"
 		     << "  -v <INT>              Verbosity: 0-3. [0]\n"
 			 << "  -b [STR]              read FP-specific kmers from file STR to remove FP reads.\n"
-			 << "                        Specify file name STR if having a different prefix than the one for graph/index.\n"
+			 << "                        Specify file name STR if having a different prefix than the one for graph/index. [$PREF.bt.vumap]\n"
 		     << "  -e <INT>              Write mapped reads to STDOUT in fasta format.\n"
 		     << "                        Specify 1 for keeping original read names. Will not write .kmers output.\n"
 		     << "                        Specify 2 for appending assigned locus to each read name. Used to skip step1 for later queries.\n"
@@ -2237,6 +2244,7 @@ int main(int argc, char* argv[]) {
 		     << "  -gcc <INT1> [INT2]    Same as above, except also running sanity check\n"
 		     << "  -a                    Output alignments for all reads entering threading. Only work with -g or -gc.\n"
 		     << "  -ae                   Same as the -a option, but excluding unaligned reads in threading.\n"
+			 << "  -ka                   Turn off kmer assignment output. [on]\n"
 		     << "  -kf <INT1> <INT2>     Parameters for kmer-based pre-filtering,\n"
 		     << "                        optimized for 150bp paired-end reads.\n"
 		     << "                        INT1 = # of sub-sampled kmers. [4]\n"
@@ -2266,7 +2274,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	vector<string> args(argv, argv+argc);
-	bool bait = false, aug = false, threading = true, correction = true, tc = false, aln = false, aln_minimal=false, g2pan = false, skip1 = false, writeKmerName = false, outputBubbles = false, invkmer = false, isFastq = false;
+	bool bait = false, aug = false, threading = true, correction = true, tc = false, aln = false, aln_minimal=false, okam = true, g2pan = false, skip1 = false, writeKmerName = false, outputBubbles = false, invkmer = false, isFastq = false;
 	int simmode = 0, extractFastX = 0, countMode = 0;
 	uint64_t argi = 1, trim = 0, thread_cth = 100, Cthreshold = 45, nproc = 1;
 	float readsPerBatchFactor = 1;
@@ -2298,6 +2306,7 @@ int main(int argc, char* argv[]) {
 		}
 		else if (args[argi] == "-a") { aln = true; }
 		else if (args[argi] == "-ae") { aln = true; aln_minimal = true; }
+		else if (args[argi] == "-ka") { okam = false; }
 		else if (args[argi] == "-kf") {
 			N_FILTER = stoi(args[++argi]);
 			NM_FILTER = stoi(args[++argi]);
@@ -2380,6 +2389,7 @@ int main(int argc, char* argv[]) {
 	     << "graph threading mode: " << threading << endl
 	     << "output alignment: " << aln << endl
 	     << "output successfully aligned reads only: " << aln_minimal << endl
+		 << "output kmer assignment (kam): " << okam << endl
 	     << "kmer counting mode (exact=0,aln=1,asgn=2): " << countMode << endl
 	     << "write invariant kmer counts: " << invkmer << endl
 	     << "k: " << ksize << endl
@@ -2481,6 +2491,7 @@ int main(int argc, char* argv[]) {
 		counts.tc = tc;
 		counts.aln = aln;
 		counts.aln_minimal = aln_minimal;
+		counts.okam = okam;
 		counts.g2pan = g2pan;
 		counts.skip1 = skip1;
 		counts.countMode = countMode;
