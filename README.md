@@ -1,3 +1,5 @@
+![Static Badge](https://img.shields.io/badge/install_with-bioconda-green)
+
 # danbing-tk
 A toolkit for variable number tandem repeats (VNTRs) analysis, which enables:
 1. building repeat-pan genome graphs (RPGG) given haplotype-resolved assemblies for genome-wide profiling or simply VNTR alleles for targeted genotyping (referred to as `danbing-tk build`),
