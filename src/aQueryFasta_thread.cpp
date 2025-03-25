@@ -2090,17 +2090,28 @@ void CountWords(void *data) {
 							nmapread[destLocus] += 2 - rm1 - rm2;
 							if (rm1 and rm2) { destLocus = nloci; } // removed by TR_kmer_assignment
 							else {
+								// accumulate locus-level estimates
 								nAsgnReads_ += npass - af1 - af2;
 								kmc[destLocus] += (kam.r1.ei - kam.r1.si) + (kam.r2.ei - kam.r2.si);
-								if (outputBubbles) {
-									if (not rm1) {
-										read2kmers(noncakmers0, seq, ksize, 0, 0, false, true);
-										countNovelEdges(noncakmers0, graphDB[destLocus], bubbles[destLocus]);
-									}
-									if (not rm2) {
-										read2kmers(noncakmers1, seq1, ksize, 0, 0, false, true);
-										countNovelEdges(noncakmers1, graphDB[destLocus], bubbles[destLocus]);
-									}
+
+								// accumulate kmer-level estimates
+								if (not rm1) {
+									read2kmers(noncakmers0, seq, ksize, 0, 0, false, true);
+									noncaVec2CaUmap(noncakmers0, cakmers, ksize);
+								}
+								if (not rm2) {
+									read2kmers(noncakmers1, seq1, ksize, 0, 0, false, true);
+									noncaVec2CaUmap(noncakmers1, cakmers, ksize);
+								}
+								for (auto& p : cakmers) {
+									auto it = trKmers.find(p.first);
+									if (it != trKmers.end()) { it->second += p.second; }
+								}
+
+								// accumulate bubbles
+								if (outputBubbles) { // TODO only consider assigned regions
+									if (not rm1) { countNovelEdges(noncakmers0, graphDB[destLocus], bubbles[destLocus]); }
+									if (not rm2) { countNovelEdges(noncakmers1, graphDB[destLocus], bubbles[destLocus]); }
 								}
 							}
 
