@@ -9,21 +9,23 @@
 #include <iostream>
 #include <fstream>
 #include <cassert>
+#include <ctime>
 
 using std::string;
 using std::vector;
 using std::ifstream;
 using std::ofstream;
+using std::stringstream;
 using std::ios;
 using std::cout;
 using std::cerr;
 using std::endl;
 using std::flush;
-using std::stod;
+using std::stof;
 
 struct gt_meta {
-	uint64_t n0; // number of samples
-	uint64_t n1; // number of kmers
+	uint64_t ns; // number of samples
+	uint64_t nk; // number of kmers
 	uint64_t n_tr; // number of TR loci
 	vector<string> fns; // *.tr.kmers of each sample
 	vector<double> rds; // read depth of each sample
@@ -32,8 +34,8 @@ struct gt_meta {
 struct ikmer_meta {
 	vector<uint32_t> nik; // cummulative count of ikmers util the i-th locus
 	vector<uint32_t> nk; // cummulative count of kmers until the i-th locus
-	Eigen::ArrayXd iki; // indices of ikmers in the `nk` vector
-	Eigen::ArrayXd ikmc; // count of ikmers in `iki`
+	Eigen::ArrayXi iki; // indices of ikmers in the `nk` vector
+	Eigen::ArrayXf ikmc; // count of ikmers in `iki`
 };
 
 void read_gt_meta(string& fn, gt_meta& gtm) {
@@ -41,9 +43,9 @@ void read_gt_meta(string& fn, gt_meta& gtm) {
 	string f1, f2;
 	while (getline(fin, f1, '\t') and getline(fin, f2)) {
 	    gtm.fns.push_back(f1);
-	    gtm.rds.push_back(stod(f2));
+	    gtm.rds.push_back(stof(f2));
 	}
-	gtm.n0 = gtm.fns.size();
+	gtm.ns = gtm.fns.size();
 }
 
 uint64_t le2uint64(char* in) {
@@ -125,6 +127,7 @@ void read_ikmer(string& fn, uint64_t& n_kmer, uint64_t& n_tr, ikmer_meta& ikmt) 
 
 template <typename T>
 void fill_gt(T& gt, vector<string>& fns) {
+	std::time_t t0 = std::time(nullptr);
 	cout << "reading gt";
 	for (int i0=0; i0<fns.size(); ++i0) {
 		ifstream fin(fns[i0]);
@@ -132,25 +135,64 @@ void fill_gt(T& gt, vector<string>& fns) {
 		string line;
 		int i1 = 0;
 		cout << "." << flush;
-		while (getline(fin, line)) { gt(i0,i1++) = stod(line); }
+		while (getline(fin, line)) { gt(i0,i1++) = stof(line); }
 		fin.close();
 	}
 	cout << endl;
+	cout << "finished in " << (std::time(nullptr) - t0) << " sec" << endl;
+}
+
+template <typename T>
+void load_gt(T& gt, string& fn) {
+	std::time_t t0 = std::time(nullptr);
+    cout << "loading gt" << endl;
+	ifstream fin(fn);
+	assert(fin);
+	string line;
+	int nrow = 14752039, ncol = 879;
+	for (int i0 = 0; i0 < nrow; ++i0) {
+		if (i0 % 100000 == 0) { cout << '.' << flush; }
+		for (int i1 = 0; i1 < ncol-1; ++i1) {
+			getline(fin, line, '\t');
+			gt(i1,i0) = stof(line);
+		}
+		getline(fin, line);
+		gt(ncol-1,i0) = stof(line);
+	}
+	fin.close();
+	cout << "finished in " << (std::time(nullptr) - t0) << " sec" << endl;
+}
+
+template <typename T>
+void load_bingt(T& gt, string& fn) {
+	std::time_t t0 = std::time(nullptr);
+    cout << "loading gt" << endl;
+	ifstream fin(fn, ios::in | ios::binary);
+	assert(fin);
+	size_t sizeof32 = 4;
+	uint32_t nrow, ncol;
+	fin.read((char*)(&nrow), sizeof32);
+	fin.read((char*)(&ncol), sizeof32);
+	cout << "size = (" << nrow << ',' << ncol << ')' << endl;
+	gt.resize(nrow, ncol);
+	fin.read((char*)(gt.data()), (size_t)nrow*(size_t)ncol*sizeof32);
+	cout << "finished in " << (std::time(nullptr) - t0) << " sec" << endl;
 }
 
 template <typename T>
 void norm_rd(T& gt, vector<double>& rd) {
 	cout << "normalizaing read depth" << endl;
-	auto n1 = gt.cols();
+	auto nk = gt.cols();
 	for (int i=0; i<rd.size(); ++i) {
-		gt.block(i,0,1,n1) /= rd[i];
+		gt.block(i,0,1,nk) /= rd[i];
 	}
 }
 
 template <typename T, typename P>
-void bias_correction(T& gt, ikmer_meta& ikmt, T& gt1, P& Bias) {
+void bias_correction(T& gt, ikmer_meta& ikmt, P& Bias) {
 	cout << "computing/correcting bias" << endl;
-	int n0 = gt.rows();
+	std::time_t t0 = std::time(nullptr);
+	int ns = gt.rows();
 	for (int tri=0; tri<ikmt.nik.size(); ++tri) {
 		auto si = tri ? ikmt.nk[tri-1] : 0;
 		auto ei = ikmt.nk[tri];
@@ -161,19 +203,38 @@ void bias_correction(T& gt, ikmer_meta& ikmt, T& gt1, P& Bias) {
 		auto gti = gt(Eigen::all, ikis);
 		auto ikmc = ikmt.ikmc.segment(isi,iei-isi).transpose();
 		auto B = gti.array().rowwise() / ikmc;
-		auto bias = B.rowwise().mean();
-		gt1.block(0,si,n0,ei-si) = gt.block(0,si,n0,ei-si).array().colwise() / bias;
+		Eigen::ArrayXf bias = B.rowwise().mean();
+		//if (bias == 0).all():
+		//else:
+		gt.block(0,si,ns,ei-si) = gt.block(0,si,ns,ei-si).array().colwise() / bias;
 		Bias(Eigen::all,tri) = bias;
 	}
+	cout << "finished in " << (std::time(nullptr) - t0) << " sec" << endl;
+}
+
+template <typename T>
+void save_matrix(string& fn, T& mat) {
+	cout << "saving matrix to " << fn << endl;
+	std::time_t t0 = std::time(nullptr);
+	size_t sizeof32 = 4;
+	//size_t sizeofscalar = sizeof(typename T::Scalar);
+	size_t nrow = mat.rows(), ncol = mat.cols();
+	ofstream fout(fn, ios::out | ios::binary);
+	fout.write(reinterpret_cast<const char*>( &nrow ), sizeof32);
+	fout.write(reinterpret_cast<const char*>( &ncol ), sizeof32);
+	fout.write(reinterpret_cast<const char*>( mat.data() ), nrow*ncol*sizeof32);
+	cout << "matrix dim: (" << nrow << ',' << ncol << ") " << "size: " << nrow*ncol*sizeof32  << " bytes" << endl;
+	cout << "finished in " << (std::time(nullptr) - t0) << " sec" << endl;
 }
 
 template <typename T>
 void save_matrix(string& fn, T& mat, Eigen::IOFormat& tsv_format) {
-	cout << "saving bias and corrected genotype" << endl;
+	cout << "saving matrix to " << fn << endl;
+	std::time_t t0 = std::time(nullptr);
 	ofstream fout(fn);
-	fout << mat.transpose().format(tsv_format);
+	fout << mat.format(tsv_format);
+	cout << "finished in " << (std::time(nullptr) - t0) << " sec" << endl;
 }
-
 
 #endif
 
