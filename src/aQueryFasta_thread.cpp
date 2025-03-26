@@ -81,16 +81,18 @@ Each kmer in a read is annotated with a state, with
 2=TR
 Data in this structure is used by the asgn counting mode to identify a segment of TR kmers
 
-si: start index for TR segment
-ei: end   index for TR segment
-nt: # of transition btwn TR/flank
-bs: begin state. 0=unknown, 1=flank, 2=TR
-ti: 1st transition nucleotide index in read
-as: assignment state, 0/1/2 = mismatch/flank/TR
+si:  start index for estimated TR segment
+ei:  end   index for estimated TR segment
+si_: start index for observed TR segment
+ei_: end   index for observed TR segment
+nt:  # of transition btwn TR/flank
+bs:  begin state. 0=unknown, 1=flank, 2=TR
+ti:  1st transition nucleotide index in read
+as:  assignment state, 0/1/2 = mismatch/flank/TR
 */
 struct km_asgn_read_t {
 	int kf, hf, bf, qf, af, rm, qn, qm;
-	int si = -1, ei = -1, nt = 0, bs = 0, ti = -1;
+	int si = -1, ei = -1, nt = 0, bs = 0, ti = -1, si_ = -1, ei_ = -1;
 	vector<int> as;
 
 	void assign(int kf_, int hf_, int bf_, int qf_, int af_, int rm_, int qn_, int qm_) {
@@ -1490,6 +1492,8 @@ void assignTRkmc(vector<uint64_t>& kmers, kmer_aCount_umap& trKmers, GraphType& 
 		else { // whole read is TR
 			r.si = 0;
 			r.ei = nk;
+			r.si_ = 0;
+			r.ei_ = nk;
 			//assert(r.si <= r.ei);
 		}
 	}
@@ -1497,11 +1501,15 @@ void assignTRkmc(vector<uint64_t>& kmers, kmer_aCount_umap& trKmers, GraphType& 
 		if (r.bs == 1) { // flank -> TR
 			r.si = si1 >= 0 ? (si1+ei1)/2 : ti1;
 			r.ei = nk;
+			r.si_ = si1 >= 0 ? ei1 : ti1; // fl-(si1)unknwon-(ei1)TR
+			r.ei_ = nk;
 			//assert(r.si <= r.ei);
 		}
 		else { // TR -> flank
 			r.si = 0;
 			r.ei = si1 >= 0 ? (si1+ei1)/2 : ti1;
+			r.si_ = 0;
+			r.ei_ = si1 >= 0 ? si1 : ti1; // TR-(si1)unknown-(ei1)fl
 			//assert(r.si <= r.ei);
 		}
 	}
@@ -1510,41 +1518,42 @@ void assignTRkmc(vector<uint64_t>& kmers, kmer_aCount_umap& trKmers, GraphType& 
 
 		r.si = (si1 >= 0 ? (si1+ei1)/2 : ti1);
 		r.ei = (si2 >= 0 ? (si2+ei2)/2 : ti2);
+		r.si_ = ei1 >= 0 ? ei1 : ti1; // fl-(si1)unknown-(ei1*)TR...
+		r.ei_ = si2 >= 0 ? si2 : ti2; // fl-unknown-TR-(si2*)unknown-(ei2)fl
 		//assert(r.si <= r.ei);
 	}
 }
 
 // bu: bubble
-void countNovelEdges(vector<uint64_t>& noncakmers, GraphType& g, kmerCount_umap& bu) {
+void countNovelEdges(vector<uint64_t>& noncakmers, km_asgn_read_t& r, GraphType& g, kmerCount_umap& bu) {
 	uint64_t km0, km1, e, n;
 	bool nnts[4];
 	GraphType::iterator it;
 	
-	km0 = noncakmers[0];
+	km0 = noncakmers[r.si_];
 	it = g.find(km0);
-	n = noncakmers.size();
-	for (int i = 1; i < n; ++i) {
+	for (int i = r.si_; i < r.ei_; ++i) {
 		km1 = noncakmers[i];
 		while (it == g.end()) {
-			if (km0 != -1ULL and km1 != -1ULL) {
-				e = (km0 << 2) + (km1 % 4);
-				++bu[e];
-			}
-			km0 = km1;
-			it = km0 != -1ULL? g.find(km0) : g.end();
-			++i;
-			if (i == n) { return; }
+		    if (km0 != -1ULL and km1 != -1ULL) {
+                e = (km0 << 2) + (km1 % 4);
+                ++bu[e];
+            }
+            km0 = km1;
+            it = km0 != -1ULL? g.find(km0) : g.end();
+            ++i;
+			if (i == r.ei_) return;
 			km1 = noncakmers[i];
 		}
-		if (km1 != -1ULL) {
-			fill_nnts(it, nnts);
-			if (not nnts[km1%4]) {
-				e = (km0 << 2) + (km1 % 4);
-				++bu[e];
-			}
-		}
-		km0 = km1;
-		it = km0 != -1ULL? g.find(km0) : g.end();
+        if (km1 != -1ULL) {
+            fill_nnts(it, nnts);
+            if (not nnts[km1%4]) {
+                e = (km0 << 2) + (km1 % 4);
+                ++bu[e];
+            }
+        }
+        km0 = km1;
+        it = km0 != -1ULL? g.find(km0) : g.end();
 	}
 }
 
@@ -2109,9 +2118,9 @@ void CountWords(void *data) {
 								}
 
 								// accumulate bubbles
-								if (outputBubbles) { // TODO only consider assigned regions
-									if (not rm1) { countNovelEdges(noncakmers0, graphDB[destLocus], bubbles[destLocus]); }
-									if (not rm2) { countNovelEdges(noncakmers1, graphDB[destLocus], bubbles[destLocus]); }
+								if (outputBubbles) {
+									if (not rm1) { countNovelEdges(noncakmers0, kam.r1, graphDB[destLocus], bubbles[destLocus]); }
+									if (not rm2) { countNovelEdges(noncakmers1, kam.r2, graphDB[destLocus], bubbles[destLocus]); }
 								}
 							}
 
