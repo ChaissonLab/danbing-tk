@@ -1375,6 +1375,8 @@ void bfilter_FPS(unordered_map<uint64_t, uint16_t>& baitdb, vector<uint64_t>& km
 }
 
 void bfilter_FPSv1(unordered_map<uint64_t, uint16_t>& baitdb, vector<size_t>& ks, int& bf) {
+	if (not ks.size()) { return; }
+
     kc8_t kc;
     for (auto km : ks) { ++kc[km]; }
     for (auto& p : kc) {
@@ -1390,6 +1392,8 @@ void bfilter_FPSv1(unordered_map<uint64_t, uint16_t>& baitdb, vector<size_t>& ks
 }
 
 void qfilter(vector<size_t>& ks, GraphType& gf, int& qf, int& qn, int& qm) {
+	if (not ks.size()) { return; }
+
 	int i0 = 0, i1 = 0;
 	while (i0 < ks.size()) {
 		// find segment head
@@ -1594,7 +1598,7 @@ void writeExtractedReads(int extractFastX, vector<string>& seqs, vector<string>&
 	}
 }
 
-void writeKmerAssignments(vector<string>& seqs, vector<string>& titles, vector<string>& quals, vector<uint64_t>& destLoci, vector<uint64_t>& alnindices, vector<km_asgn_t>& kams) {
+void writeKmerAssignments(vector<string>& seqs, vector<string>& titles, vector<string>& quals, bool isFastq, vector<uint64_t>& destLoci, vector<uint64_t>& alnindices, vector<km_asgn_t>& kams) {
 	string NA = {"."};
 	for (uint64_t i = 0; i < kams.size(); ++i) {
 		auto& kam = kams[i];
@@ -1625,9 +1629,9 @@ void writeKmerAssignments(vector<string>& seqs, vector<string>& titles, vector<s
 			 << as1 << '\t'
 			 << titles[--alnindices[i]].substr(1) << '\t'
 			 << seqs[alnindices[i]] << '\t'
-			 << quals[alnindices[i]] << '\t'
+			 << (isFastq ? quals[alnindices[i]] : ".") << '\t'
 			 << seqs[--alnindices[i]] << '\t'
-			 << quals[alnindices[i]] << '\n';
+			 << (isFastq ? quals[alnindices[i]] : ".") << '\n';
 	}
 }
 
@@ -1987,19 +1991,27 @@ void CountWords(void *data) {
 			}
 			else if (simmode == 2) { mapLocus(g2pan, meta, locusmap, seqi, simi, nloci, srcLocus); }
 
-			string& seq = seqs[seqi];
-			string& qual = quals[seqi++];
-			string& seq1 = seqs[seqi];
-			string& qual1 = quals[seqi++];
+			string *seq, *seq1, *qual, *qual1; // TODO
+			seq = &(seqs[seqi]);
+			seq1 = &(seqs[seqi+1]);
+			if (isFastq) {
+				qual = &(quals[seqi]);
+				qual1 = &(quals[seqi+1]);
+			}
+			seqi += 2;
+			//string& seq = seqs[seqi];
+			//string& qual = quals[seqi++];
+			//string& seq1 = seqs[seqi];
+			//string& qual1 = quals[seqi++];
 
 			if (not skip1) {
-				read2kmers(kmers1, seq, ksize); // stores numeric canonical kmers
-				read2kmers(kmers2, seq1, ksize);
+				read2kmers(kmers1, *seq, ksize); // stores numeric canonical kmers
+				read2kmers(kmers2, *seq1, ksize);
 				if (not kmers1.size() or not kmers2.size()) { 
 					++nShort_;
 					if (verbosity >= 3) {
-						log.m << titles[seqi-2] << ' ' << seq  << '\n'
-							  << titles[seqi-1] << ' ' << seq1 << '\n';
+						log.m << titles[seqi-2] << ' ' << *seq  << '\n'
+							  << titles[seqi-1] << ' ' << *seq1 << '\n';
 					}
 					continue; 
 				}
@@ -2031,23 +2043,23 @@ void CountWords(void *data) {
 			GraphType& gf = graphDB[destLocus];
 			nThreadingReads_ += 2;
 
-			if (threading) {
-				sam.init1(seq);
-				alned0 = isThreadFeasible(gf, seq, noncakmers0, akmers0, thread_cth, correction, sam.r1, trResults[destLocus], log);
-				sam.init2(seq1);
-				alned1 = isThreadFeasible(gf, seq1, noncakmers1, akmers1, thread_cth, correction, sam.r2, trResults[destLocus], log);
-				if (tc) {
-					if (alned0) { threadCheck(gf, seq, akmers0, sam.r1, log); }
-					if (alned1) { threadCheck(gf, seq1, akmers1, sam.r2, log); }
-				}
-				if (verbosity >= 1) { log.m << "Reads passed threading? " << alned0 << alned1 << '\n'; }
-				if (alned0 or alned1) {
-					alned = true;
-					noncaVec2CaUmap(noncakmers0, cakmers, ksize);
-					noncaVec2CaUmap(noncakmers1, cakmers, ksize);
-				}
-				else { destLocus = nloci; } // removed by threading
-			}
+			//if (threading) {
+			//	sam.init1(seq);
+			//	alned0 = isThreadFeasible(gf, seq, noncakmers0, akmers0, thread_cth, correction, sam.r1, trResults[destLocus], log);
+			//	sam.init2(seq1);
+			//	alned1 = isThreadFeasible(gf, seq1, noncakmers1, akmers1, thread_cth, correction, sam.r2, trResults[destLocus], log);
+			//	if (tc) {
+			//		if (alned0) { threadCheck(gf, seq, akmers0, sam.r1, log); }
+			//		if (alned1) { threadCheck(gf, seq1, akmers1, sam.r2, log); }
+			//	}
+			//	if (verbosity >= 1) { log.m << "Reads passed threading? " << alned0 << alned1 << '\n'; }
+			//	if (alned0 or alned1) {
+			//		alned = true;
+			//		noncaVec2CaUmap(noncakmers0, cakmers, ksize);
+			//		noncaVec2CaUmap(noncakmers1, cakmers, ksize);
+			//	}
+			//	else { destLocus = nloci; } // removed by threading
+			//}
 
 			if ((threading and alned) or not threading) {
 				kmer_aCount_umap &trKmers = trResults[destLocus];
@@ -2065,10 +2077,12 @@ void CountWords(void *data) {
 				else {
 					vector<int> qs1, qs2;
 					vector<size_t> qks1, qks2;
-					qString2qScore(qual, qs1);
-					qString2qScore(qual1, qs2);
-					read2kmers_qfilter(qks1, seq, ksize, qs1, qth);
-					read2kmers_qfilter(qks2, seq1, ksize, qs2, qth);
+					if (isFastq) {
+						qString2qScore(*qual, qs1);
+						qString2qScore(*qual1, qs2);
+						read2kmers_qfilter(qks1, *seq, ksize, qs1, qth);
+						read2kmers_qfilter(qks2, *seq1, ksize, qs2, qth);
+					}
 
 					// accumulate trKmers for output
 					if (not threading) {
@@ -2105,11 +2119,11 @@ void CountWords(void *data) {
 
 								// accumulate kmer-level estimates
 								if (not rm1) {
-									read2kmers(noncakmers0, seq, ksize, 0, 0, false, true);
+									read2kmers(noncakmers0, *seq, ksize, 0, 0, false, true);
 									noncaVec2CaUmap(noncakmers0, cakmers, ksize);
 								}
 								if (not rm2) {
-									read2kmers(noncakmers1, seq1, ksize, 0, 0, false, true);
+									read2kmers(noncakmers1, *seq1, ksize, 0, 0, false, true);
 									noncaVec2CaUmap(noncakmers1, cakmers, ksize);
 								}
 								for (auto& p : cakmers) {
@@ -2188,30 +2202,30 @@ void CountWords(void *data) {
 				}
 			}
 
-			if (aln and threading) {
-				if (not simmode) {
-					if ((aln_minimal and destLocus != nloci) or (not aln_minimal)) {
-						alnindices.push_back(seqi); // work the same as extractindices
-						sam.src = srcLocus;
-						sam.dst = destLocus;
-						sams.push_back(sam);
-					}
-				} else { // simmode
-					if ((aln_minimal and (srcLocus != nloci or destLocus != nloci)) or (not aln_minimal)) {
-						alnindices.push_back(seqi); // work the same as extractindices
-						sam.src = srcLocus;
-						sam.dst = destLocus;
-						sams.push_back(sam);
-					}
-				}
-			}
+			//if (aln and threading) {
+			//	if (not simmode) {
+			//		if ((aln_minimal and destLocus != nloci) or (not aln_minimal)) {
+			//			alnindices.push_back(seqi); // work the same as extractindices
+			//			sam.src = srcLocus;
+			//			sam.dst = destLocus;
+			//			sams.push_back(sam);
+			//		}
+			//	} else { // simmode
+			//		if ((aln_minimal and (srcLocus != nloci or destLocus != nloci)) or (not aln_minimal)) {
+			//			alnindices.push_back(seqi); // work the same as extractindices
+			//			sam.src = srcLocus;
+			//			sam.dst = destLocus;
+			//			sams.push_back(sam);
+			//		}
+			//	}
+			//}
 		}
 
 		// write reads or alignments to STDOUT
 		// begin thread lock
 		sem_wait(semwriter); 
 
-		if (okam) { writeKmerAssignments(seqs, titles, quals, destLoci, alnindices, kams); }
+		if (okam) { writeKmerAssignments(seqs, titles, quals, isFastq, destLoci, alnindices, kams); }
 		if (extractFastX or aln) {
 			if (extractFastX) {
 				if (isFastq) { writeExtractedReads(extractFastX, seqs, quals, titles, extractindices, assignedloci); }
