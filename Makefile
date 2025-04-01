@@ -1,6 +1,6 @@
 PREFIX ?=.
-TARGETS = bin/danbing-tk bin/vntr2kmers_thread bin/genPanKmers bin/ktools bin/danbing-tk-pred
-TARGETSg = bin/danbing-tk_g bin/vntr2kmers_thread_g bin/genPanKmers_g bin/ktools_g bin/danbing-tk-pred_g
+TARGETS = bin/danbing-tk bin/vntr2kmers_thread bin/genPanKmers bin/ktools bin/danbing-tk-pred bin/baitBuilder
+TARGETSg = bin/danbing-tk_g bin/vntr2kmers_thread_g bin/genPanKmers_g bin/ktools_g bin/danbing-tk-pred_g bin/baitBuilder_g
 #TARGETS = seq2num num2seq rvseq bam2pe
 
 CXX ?= g++
@@ -23,7 +23,7 @@ $(INCFILES):
 	if [ ! -f $(INC)/eigen3 ]; then cp -r Eigen/Eigen  $(INC)/eigen3; fi
 	
 # dependencies between programs and .o files
-bin/danbing-tk:	src/aQueryFasta_thread.cpp
+bin/danbing-tk:	src/aQueryFasta_thread.cpp src/aQueryFasta_thread.h
 	$(dir_guard)
 	$(CXX) $(LDLIBS) $(CPPFLAGS) -O3 -o bin/danbing-tk src/aQueryFasta_thread.cpp
 
@@ -62,6 +62,14 @@ bin/genPanKmers:	src/genPanKmers.cpp
 bin/genPanKmers_g:	src/genPanKmers.cpp
 	$(dir_guard)
 	$(CXX) $(CPPFLAGS) -g -o bin/genPanKmers_g src/genPanKmers.cpp
+
+bin/baitBuilder:	src/bait.cpp
+	$(dir_guard)
+	$(CXX) $(CPPFLAGS) -O3 -o bin/baitBuilder src/bait.cpp
+
+bin/baitBuilder_g:	src/bait.cpp
+	$(dir_guard)
+	$(CXX) $(CPPFLAGS) -g -o bin/baitBuilder_g src/bait.cpp
 
 bin/seq2num:	src/seq2num.cpp
 	$(dir_guard)

@@ -2088,8 +2088,13 @@ void CountWords(void *data) {
 					if (not threading) {
 						if (bait) {
 							auto& baitdb = baitDB[destLocus];
-							bfilter_FPSv1(baitdb, qks1, bf1);
-							bfilter_FPSv1(baitdb, qks2, bf2);
+							if (isFastq) {
+								bfilter_FPSv1(baitdb, qks1, bf1);
+								bfilter_FPSv1(baitdb, qks2, bf2);
+							} else {
+								bfilter_FPSv1(baitdb, kmers1, bf1);
+								bfilter_FPSv1(baitdb, kmers2, bf2);
+							}
 							if (bf1 or bf2) {
 								nBaitFiltered_ += (bf1 & !rm1) + (bf2 & !rm2);
 								rm1 = 1;
