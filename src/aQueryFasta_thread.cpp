@@ -1536,7 +1536,7 @@ void countNovelEdges(vector<uint64_t>& noncakmers, km_asgn_read_t& r, GraphType&
 	
 	km0 = noncakmers[r.si_];
 	it = g.find(km0);
-	for (int i = r.si_; i < r.ei_; ++i) {
+	for (int i = r.si_+1; i < r.ei_; ++i) {
 		km1 = noncakmers[i];
 		while (it == g.end()) {
 		    if (km0 != -1ULL and km1 != -1ULL) {
