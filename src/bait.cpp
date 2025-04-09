@@ -256,9 +256,12 @@ int main(int argc, char* argv[]) {
 		ksize = stoi(args[3]);
 		ofstream fout(args[4]);
 		ifstream FPpf(args[5]);
+		assert(FPpf);
 		vector<ifstream> TPpfs;
 		for (size_t i = 6; i < argc; ++i) {
-			TPpfs.push_back(ifstream{args[i]});
+			ifstream tmp(args[i]);
+			assert(tmp);
+			TPpfs.push_back(std::move(tmp));
 		}
 
 		size_t nr, tri, tri_, km, t0;
