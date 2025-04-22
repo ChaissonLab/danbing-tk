@@ -256,7 +256,7 @@ void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank 
 		if (keepN) { kmers[i] = canonical ? canonicalkmer : kmer; }
         else { kmers.push_back(canonical ? canonicalkmer : kmer); }
 
-        if (std::find(alphabet, alphabet+4, read[i + k]) == alphabet+4) { // XXX speedup
+        if (std::find(alphabet, alphabet+4, read[i + k]) == alphabet+4) {
             nbeg = getNextKmer(kmer, i+k+1, read, k);
             if (nbeg == rlen) { return; }
             rckmer = getNuRC(kmer, k);
@@ -268,44 +268,25 @@ void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank 
     }
 }
 
-size_t getNextKmer_qfilter(size_t& kmer, size_t beg, string& read, size_t k, vector<int>& qs, int qth) {
-    size_t rlen = read.size();
-    if (beg + k > rlen) {
-        return rlen;
-    }
-    size_t validlen = 0;
-    while (validlen != k) {
-        if (beg + k > rlen) {
-            return rlen;
-        }
-        if (find(alphabet, alphabet+4, read[beg + validlen]) == alphabet+4 or qs[beg+validlen] < qth) {
-            beg = beg + validlen + 1;
-            validlen = 0;
-        } else {
-            validlen += 1;
-        }
-    }
-    kmer = encodeSeq(read, beg, k);
-    return beg;
-}
-
-// For bfilter_FPSv1, ignore kmers overlapping low qual score bases
-// canonical only, keepN=true
-void read2kmers_qfilter(vector<size_t>& kmers, string& read, size_t k, vector<int>& qs, int qth) {
+// invalid kmers are kept; output both canonical and noncanonical kmeres
+void read2kmers_raw_and_canonical(vector<size_t>& ncks, vector<size_t>& caks, string& read, size_t k) {
     const size_t rlen = read.size();
     const size_t mask = (1ULL << 2*(k-1)) - 1;
-    size_t beg, nbeg, kmer, rckmer;
+    size_t beg, nbeg, canonicalkmer, kmer, rckmer;
 
-    beg = getNextKmer_qfilter(kmer, 0, read, k, qs, qth);
+    beg = getNextKmer(kmer, 0, read, k);
     if (beg == rlen) { return; }
-	kmers.resize(rlen-k+1, -1);
+	caks.resize(rlen-k+1, -1);
+	ncks.resize(rlen-k+1, -1);
     rckmer = getNuRC(kmer, k);
 
     for (size_t i = beg; i < rlen - k + 1; ++i) {
-		kmers[i] = (kmer > rckmer ? rckmer : kmer);
+        canonicalkmer = (kmer > rckmer ? rckmer : kmer);
+		caks[i] = canonicalkmer;
+		ncks[i] = kmer;
 
-        if (std::find(alphabet, alphabet+4, read[i+k]) == alphabet+4 or qs[i+k] < qth) {
-            nbeg = getNextKmer_qfilter(kmer, i+k+1, read, k, qs, qth);
+        if (std::find(alphabet, alphabet+4, read[i + k]) == alphabet+4) {
+            nbeg = getNextKmer(kmer, i+k+1, read, k);
             if (nbeg == rlen) { return; }
             rckmer = getNuRC(kmer, k);
             i = nbeg - 1;
@@ -315,6 +296,54 @@ void read2kmers_qfilter(vector<size_t>& kmers, string& read, size_t k, vector<in
         }
     }
 }
+
+//size_t getNextKmer_qfilter(size_t& kmer, size_t beg, string& read, size_t k, vector<int>& qs, int qth) {
+//    size_t rlen = read.size();
+//    if (beg + k > rlen) {
+//        return rlen;
+//    }
+//    size_t validlen = 0;
+//    while (validlen != k) {
+//        if (beg + k > rlen) {
+//            return rlen;
+//        }
+//        if (find(alphabet, alphabet+4, read[beg + validlen]) == alphabet+4 or qs[beg+validlen] < qth) {
+//            beg = beg + validlen + 1;
+//            validlen = 0;
+//        } else {
+//            validlen += 1;
+//        }
+//    }
+//    kmer = encodeSeq(read, beg, k);
+//    return beg;
+//}
+//
+//// For bfilter_FPSv1, ignore kmers overlapping low qual score bases
+//// canonical only, keepN=true
+//void read2kmers_qfilter(vector<size_t>& kmers, string& read, size_t k, vector<int>& qs, int qth) {
+//    const size_t rlen = read.size();
+//    const size_t mask = (1ULL << 2*(k-1)) - 1;
+//    size_t beg, nbeg, kmer, rckmer;
+//
+//    beg = getNextKmer_qfilter(kmer, 0, read, k, qs, qth);
+//    if (beg == rlen) { return; }
+//	kmers.resize(rlen-k+1, -1);
+//    rckmer = getNuRC(kmer, k);
+//
+//    for (size_t i = beg; i < rlen - k + 1; ++i) {
+//		kmers[i] = (kmer > rckmer ? rckmer : kmer);
+//
+//        if (std::find(alphabet, alphabet+4, read[i+k]) == alphabet+4 or qs[i+k] < qth) {
+//            nbeg = getNextKmer_qfilter(kmer, i+k+1, read, k, qs, qth);
+//            if (nbeg == rlen) { return; }
+//            rckmer = getNuRC(kmer, k);
+//            i = nbeg - 1;
+//        } else {
+//            kmer = ( (kmer & mask) << 2 ) + baseNumConversion[static_cast<unsigned char>(read[i + k])];
+//            rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[static_cast<unsigned char>(read[i + k])]] & mask) << (2*(k-1)));
+//        }
+//    }
+//}
 
 // Applied to a read pair to accumulate counts.
 // Assuming maximal kmer counts from a VNTR read pair does not exceed 32 bits
@@ -884,6 +913,41 @@ void qString2qScore(string& qual, vector<int>& qscore) {
 	qscore.resize(qual.size());
 	int i = 0;
 	for (char c : qual) { qscore[i++] = int(c) - 33; }
+}
+
+void qString2qMask(string& qual, int qth, int ksize, vector<bool>& qkm) {
+	int nq = qual.size();
+	int nk = nq - ksize + 1;
+	int qi = 0, ki = 0;
+	vector<int> qscore(nq);
+	for (char c : qual) { qscore[qi++] = int(c) - 33; }
+
+	qkm.resize(nq-ksize+1);
+	qi = 0;
+	while (qscore[qi] < qth) { ++qi; ++ki; if (qi >= nk) { return; } }
+	while (qi < nk) {
+		bool pass = true;
+		for (int qj = qi; qi < qj+ksize; ++qi) {
+			if (qscore[qi] < qth) {
+				pass = false;
+				ki = qi;
+				while (qscore[qi] < qth) { ++qi; ++ki; if (qi >= nk) { return; } }
+				break;
+			}
+		}
+		if (pass) { // qi at the end of kmer now
+			qkm[ki] = true;
+			++ki;
+			if (qi >= nk) { return; }
+			while (qscore[qi] >= qth) {
+				qkm[ki] = true;
+				++qi; ++ki;
+				if (qi >= nk) { return; }
+			}
+			ki = qi; // ki back to the start of kmer
+			while (qscore[qi] < qth) { ++qi; ++ki; if (qi >= nk) { return; } }
+		}
+	}
 }
 
 tuple<adj_dict, size_t> buildAdjDict(kmerCount_umap& kmers, size_t k) {
