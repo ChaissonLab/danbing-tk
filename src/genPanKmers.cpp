@@ -72,12 +72,13 @@ void getgmap(vector<vector<bool>>& omap, vector<bool>& gmap, vector<size_t> his)
 int main(int argc, const char * argv[]) {
 
     if (argc < 2) {
-        cerr << "Usage: program  [-tr]  -o <output_prefix>  -m <mapping>  -k <kmer_file_prefixes>\n"
-		     << "  -tr      precess *.tr.kmers only, skipping ntr and graph\n"
+        cerr << "Usage: genPanKmers  [-tr]  -o <output_prefix>  -m <mapping>  -k <kmer_file_prefixes>\n"
+		     << "  -tr      precess *.tr.kmers only, skipping tre, ntr and graph\n"
+		     << "  -tre     precess *.tre.kmers only, skipping tr, ntr and graph\n"
              << "  -m       if is '-', the program assumes no missing loci\n"
              << "           full path name for <mapping> is required in any case\n"
              << "  -k       requires PREFIX.TYPE.kmers\n"
-             << "           TYPE = tr, ntr or graph\n"
+             << "           TYPE = tr, tre, ntr or graph\n"
              << "mapping file format:\n"
              << "   N columns; each column is a genome; order should be the same as specified in -k\n"
              << "   M rows; each row is a locus in the pan-genome (pan locus)\n"
@@ -87,7 +88,7 @@ int main(int argc, const char * argv[]) {
     }
 
     vector<string> args(argv, argv+argc);
-    bool nomissing = false, TRonly = false;
+    bool nomissing = false, TRonly = false, TREonly = false;
     size_t argi = 1, ngenome, nloci;
     string indir, outpref, mapfname;
     vector<string> kmerpref;
@@ -105,6 +106,7 @@ int main(int argc, const char * argv[]) {
             break;
         }
 		else if (args[argi] == "-tr") { TRonly = true; }
+		else if (args[argi] == "-tre") { TREonly = true; }
         else {
             cerr << "Error: invalid option " << args[argi] << '\n';
             return 1;
@@ -122,9 +124,10 @@ int main(int argc, const char * argv[]) {
     cerr << "# loci in pangenome: " << nloci << endl
          << ngenome << " genomes to merge" << endl;
 
-    vector<string> filetypes = {"tr", "ntr", "graph"};
+    vector<string> filetypes = {"tr", "ntr", "graph", "tre"};
     for (string& filetype : filetypes) {
 		if (TRonly and filetype != "tr") { continue; }
+		if (TREonly and filetype != "tre") { continue; }
         cerr << "merging " << filetype << ".kmers" << endl;
 
         bool graphmode = (filetype == "graph");

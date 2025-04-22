@@ -3,6 +3,7 @@
 
 #include "cereal/archives/binary.hpp"
 #include "cereal/types/unordered_map.hpp"
+#include "cereal/types/unordered_set.hpp"
 #include "cereal/types/vector.hpp"
 
 #include "stdlib.h"
@@ -29,7 +30,7 @@ using namespace std;
 
 //typedef unordered_set<size_t> kmer_set;
 typedef unordered_map<size_t, uint32_t> kmerCount_umap; // assume count < (2^32 -1)
-typedef unordered_map<size_t, atomic_size_t> kmer_aCount_umap;
+typedef unordered_map<size_t, atomic<size_t>> kmer_aCount_umap;
 typedef unordered_map<size_t, uint8_t> GraphType;
 typedef unordered_map<size_t, unordered_set<uint32_t>> kmeruIndex_umap; // assume number of loci < (2^32 -1)
 //typedef unordered_map<size_t, uint32_t> kmerIndex_uint32_umap; // assume number of loci < (2^32 -1)
@@ -43,6 +44,7 @@ typedef vector<kmerCount_umap> bubble_db_t;
 typedef vector<unordered_set<uint64_t>> bait_db_t;
 typedef vector<unordered_map<uint64_t, uint16_t>> bait_fps_db_t;
 typedef unordered_map<uint64_t, uint8_t> kc8_t; // Kmer Count. Max <= numeric_limits<uint8_t>::max
+typedef vector<unordered_set<uint64_t>> kset_db_t;
 
 //const unordered_map<char, size_t> base( {{'A', 0}, {'C', 1}, {'G', 2}, {'T', 3}});
 //const char baseinv[] = {'A', 'C', 'G', 'T'};
@@ -255,6 +257,41 @@ void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank 
         canonicalkmer = (kmer > rckmer ? rckmer : kmer);
 		if (keepN) { kmers[i] = canonical ? canonicalkmer : kmer; }
         else { kmers.push_back(canonical ? canonicalkmer : kmer); }
+
+        if (std::find(alphabet, alphabet+4, read[i + k]) == alphabet+4) {
+            nbeg = getNextKmer(kmer, i+k+1, read, k);
+            if (nbeg == rlen) { return; }
+            rckmer = getNuRC(kmer, k);
+            i = nbeg - 1;
+        } else {
+            kmer = ( (kmer & mask) << 2 ) + baseNumConversion[static_cast<unsigned char>(read[i + k])];
+            rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[static_cast<unsigned char>(read[i + k])]] & mask) << (2*(k-1)));
+        }
+    }
+}
+
+// store both k and k+1 mers (edges);  keepN, canoinical, no flank
+void read2kmers_edges(vector<size_t>& kmers, vector<size_t>& edges, string& read, size_t k) {
+    const size_t rlen = read.size();
+    const size_t mask = (1ULL << 2*(k-1)) - 1;
+	const size_t INVALID = -1;
+    size_t beg, nbeg, canonicalkmer, kmer, kmer_, rckmer, rckmer_, caedge, edge, rcedge;
+
+    beg = getNextKmer(kmer, 0, read, k);
+    if (beg == rlen) { return; }
+	kmers.resize(rlen-k+1, -1);
+	edges.resize(rlen-k, -1);
+    rckmer = getNuRC(kmer, k);
+
+    for (size_t i = beg; i < rlen - k + 1; ++i) {
+        canonicalkmer = std::min(kmer, rckmer);
+		kmers[i] = canonicalkmer;
+		if (i != 0 and kmer_ != INVALID) {
+			edge = (kmer_ << 2) + (kmer % 4);
+			rcedge = (rckmer << 2) + (rckmer_ % 4);
+			caedge = std::min(edge, rcedge);
+			edges[i-1] = caedge;
+		}
 
         if (std::find(alphabet, alphabet+4, read[i + k]) == alphabet+4) {
             nbeg = getNextKmer(kmer, i+k+1, read, k);
@@ -623,6 +660,23 @@ void readBinaryGraph(vector<GraphType>& graphDB, string& pref) {
 	iarchive(graphDB);
 }
 
+void readBinaryKmerSetDB(kset_db_t& flankDB, kset_db_t& trEdgeDB, string& pref) {
+	{
+		cerr << "deserializing fl.kdb" << endl;
+		ifstream fin(pref+".fl.kdb", ios::binary);
+		assert(fin);
+		cereal::BinaryInputArchive iarchive(fin);
+		iarchive(flankDB);
+	}
+	{
+		cerr << "deserializing tre.kdb" << endl;
+		ifstream fin(pref+".tre.kdb", ios::binary);
+		assert(fin);
+		cereal::BinaryInputArchive iarchive(fin);
+		iarchive(trEdgeDB);
+	}
+}
+
 
 void readKmerIndex(kmerIndex_uint32_umap& kmerDBi, vector<vector<uint32_t>>& kmerDBi_vec, string fname) { // optimized version
     ifstream f(fname);
@@ -823,6 +877,32 @@ void readKmersFile(T& kmerDB, kmeruIndex_umap& kmerDBi, string fname, size_t sta
     }
     f.close();
 }
+
+// 
+void readKmers_ksetDB(string fn, kset_db_t& ksdb) {
+    cerr <<"reading kmers from " << fn << endl;
+    ifstream fin(fn);
+    assert(fin);
+    string line;
+	int tri = -1;
+	while (getline(fin, line)) {
+		if (line[0] == '>') { ++tri; }
+		else { ksdb[tri].insert(stoull(line)); } // only converts the first field to ULL
+	}
+}
+
+void readKmers_atomicKmerCountDB(string fn, vector<kmer_aCount_umap>& akcdb) {
+    cerr <<"reading kmers from " << fn << endl;
+    ifstream fin(fn);
+    assert(fin);
+    string line;
+	int tri = -1;
+	while (getline(fin, line)) {
+		if (line[0] == '>') { ++tri; }
+		else { akcdb[tri][stoull(line)] = 0; } // only converts the first field to ULL
+	}
+}
+
 
 template <typename T>
 void writeKmersWithName(string outfpref, T& kmerDB, size_t threshold = 0) {

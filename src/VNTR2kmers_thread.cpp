@@ -43,14 +43,15 @@ int main(int argc, const char * argv[]) {
 
     if (argc < 2){
         cerr << endl
-             << "Usage: vntr2kmers_thread [-th] [-g] [-p] [-m] -k -fs -ntr [-o|-on] -fa \n"
+             << "Usage: vntr2kmers_thread [-tr] [-th] [-g] [-p] [-m] -k -fs -ntr [-o|-on] -fa \n"
+			 << "  -tr              Output TR regions only, skip flanks\n"
              << "  -th <INT>        Filter out kmers w/ count below this threshold. Default: 0, i.e. no filtering\n"
              << "  -g               output *graph.kmers for threading-based kmer query.\n"
              << "  -p <FILE>        Prune tr/graph kmers with the given kmers file.\n"
              << "  -m <FILE>        Use orthology map to merge haps.\n"
              << "  -k <INT>         Kmer size\n"
-             << "  -fs <INT>        Length of flanking sequence in *.tr.fasta.\n"
-             << "  -ntr <INT>       Length of desired NTR in *kmers.\n"
+             << "  -fsi <INT>       Length of input flanking sequence in *.tr.fasta.\n"
+             << "  -fso <INT>       Length of output flanking sequence to be included in *.ntr.kmers.\n"
              << "  -o <STR>         Output file prefix" << endl
              << "  -on <STR>        Same as the -o option, but write locus and kmer name as well" << endl
              << "  -fa <n> <list>   Use specified *.fasta in the [list] instead of hapDB.\n"
@@ -58,8 +59,8 @@ int main(int argc, const char * argv[]) {
         return 0;
     }
     vector<string> args(argv, argv+argc);
-    bool genGraph = false, prune = false, usemap = false, writeKmerName = false;
-    size_t argi = 1, threshold = 0, nhap = 0, NTRsize, fs, nfile2count, nloci;
+    bool genGraph = false, prune = false, usemap = false, writeKmerName = false, TRonly = false;
+    size_t argi = 1, threshold = 0, nhap = 0, fso, fsi, nfile2count, nloci;
     string pruneFname, outPref, mapf;
     vector<string> infnames;
 
@@ -78,10 +79,10 @@ int main(int argc, const char * argv[]) {
 			mapf = args[++argi];
 		}
         else if (args[argi] == "-k") { ksize = stoi(args[++argi]); }
-        else if (args[argi] == "-fs") { fs = stoi(args[++argi]); }
-        else if (args[argi] == "-ntr") {
-            NTRsize = stoi(args[++argi]);
-            assert(fs >= NTRsize);
+        else if (args[argi] == "-fsi") { fsi = stoi(args[++argi]); }
+        else if (args[argi] == "-fso") {
+            fso = stoi(args[++argi]);
+            assert(fsi >= fso);
         }
         else if (args[argi] == "-o" or args[argi] == "-on") {
 			writeKmerName = args[argi] == "-on";
@@ -108,6 +109,7 @@ int main(int argc, const char * argv[]) {
 				cerr << nloci << endl;
 			}
         }
+		else if (args[argi] == "-tr") { TRonly = true; }
         else {
             cerr << "invalid option" << endl;
             return 1;
@@ -146,19 +148,19 @@ int main(int argc, const char * argv[]) {
                 if (read != "") {
 					if (usemap) { while (not omap[locus][n]) { ++locus; } }
 
-                    size_t tr_l = fs;
-                    size_t tr_r = fs;
-                    size_t lntr_l = fs - NTRsize;
-                    size_t lntr_r = read.size() - fs - (ksize-1); // seamless contenuation of kmers from ntr to tr
-                    size_t rntr_l = read.size() - fs - (ksize-1); // seamless contenuation of kmers from tr to ntr
-                    size_t rntr_r = fs - NTRsize;
+                    size_t tr_l = fsi;
+                    size_t tr_r = fsi;
+                    size_t lntr_l = fsi - fso;
+                    size_t lntr_r = read.size() - fsi - (ksize-1); // seamless contenuation of kmers from ntr to tr
+                    size_t rntr_l = read.size() - fsi - (ksize-1); // seamless contenuation of kmers from tr to ntr
+                    size_t rntr_r = fsi - fso;
 
                     buildNuKmers(TRkmersDB[locus], read, ksize, tr_l, tr_r, count); // (begin_pos, right_flank_size)
-                    buildNuKmers(NTRkmersDB[locus], read, ksize, lntr_l, lntr_r, count);
-                    buildNuKmers(NTRkmersDB[locus], read, ksize, rntr_l, rntr_r, count);
-                    if (genGraph) {
-                        buildKmerGraph(graphDB[locus], read, ksize); // no self loop
-                    }
+					if (not TRonly) {
+						buildNuKmers(NTRkmersDB[locus], read, ksize, lntr_l, lntr_r, count);
+						buildNuKmers(NTRkmersDB[locus], read, ksize, rntr_l, rntr_r, count);
+						if (genGraph) { buildKmerGraph(graphDB[locus], read, ksize); } // no self loop
+					}
                 }
                 read = "";
                 ++locus;
@@ -167,7 +169,7 @@ int main(int argc, const char * argv[]) {
         fin.close();
     }
 
-    if (prune) {
+    if (prune) { // obsolete
         cerr << "pruning unsupported kmers with " << pruneFname << endl;
 
         vector<kmerCount_umap> prunedkmersDB(nloci);
@@ -195,15 +197,17 @@ int main(int argc, const char * argv[]) {
     cerr << "writing outputs" << endl;
     if (writeKmerName) {
         writeKmersWithName(outPref + ".tr", TRkmersDB, threshold);
-        writeKmersWithName(outPref + ".ntr", NTRkmersDB, threshold);    
-        if (genGraph)
-            writeKmersWithName(outPref + ".graph", graphDB);
+		if (not TRonly) {
+			writeKmersWithName(outPref + ".ntr", NTRkmersDB, threshold);
+			if (genGraph) { writeKmersWithName(outPref + ".graph", graphDB); }
+		}
     }
     else {
         writeKmers(outPref + ".tr", TRkmersDB, threshold);
-        writeKmers(outPref + ".ntr", NTRkmersDB, threshold);
-        if (genGraph)
-            writeKmers(outPref + ".graph", graphDB);
+		if (not TRonly) {
+			writeKmers(outPref + ".ntr", NTRkmersDB, threshold);
+			if (genGraph) { writeKmers(outPref + ".graph", graphDB); }
+		}
     }
 
     return 0;

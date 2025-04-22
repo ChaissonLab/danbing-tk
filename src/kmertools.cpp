@@ -1,13 +1,10 @@
 #include "aQueryFasta_thread.h"
 #include "cereal/archives/binary.hpp"
 #include "cereal/types/unordered_map.hpp"
+#include "cereal/types/unordered_set.hpp"
 #include "cereal/types/vector.hpp"
+#include "cereal/types/atomic.hpp"
 
-#include <iostream>
-#include <fstream>
-#include <string>
-#include <vector>
-#include <cassert>
 #include <ctime>
 
 
@@ -315,24 +312,107 @@ int main (int argc, const char * argv[]) {
 			for (size_t i = 0; i < vv.size(); ++i) { assert(vv[i] == vv_copy[i]); }
 		}
 		cerr << "Done!" << endl;
+	}
+	else if (args[1] == "serialize-fl") {
+        if (argc == 2) {
+            cerr << "Usage: ktools serialize-fl <pref>\n\n"
 
-		// 1-step method
-		//readKmersWithIndex(trKmerDB, kmerDBi, kmerDBi_vec, trFname);
-		//readKmerIndex(kmerDBi, kmerDBi_vec, trPrefix+".ntr.kmers");
-		//readGraphKmers(graphDB, trPrefix+".graph.kmers");
+                 << "  PREF     prefix of *.(graph|ntr|tr).kmers\n";
+            return 0;
+        }
 
+        size_t nloci = countLoci(args[2]+".tr.kmers");
 
-		// 2-step method
-		//readKmerIndex(kmerDBi, kmerDBi_vec, trFname);
-		//readKmerIndex(kmerDBi, kmerDBi_vec, trPrefix+".ntr.kmers");
+		{
+			cerr << "Generating flank binary kmers fl.kdb" << endl;
+			kset_db_t ksdb(nloci), ksdb_copy;
+			readKmers_ksetDB(args[2]+".ntr.kmers", ksdb);
+			{
+				cerr << "serializing fl.kdb" << endl;
+				ofstream fout(args[2]+".fl.kdb", ios::binary);
+				assert(fout);
+				cereal::BinaryOutputArchive oarchive(fout);
+				oarchive(ksdb);
+			}
+			{
+				cerr << "deserializing fl.kdb" << endl;
+				clock_t t = clock();
+				ifstream fin(args[2]+".fl.kdb", ios::binary);
+				assert(fin);
+				cereal::BinaryInputArchive iarchive(fin);
+				iarchive(ksdb_copy);
+				cerr << "fl.kdb deserialized in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+			}
+			cerr << "validating fl.kdb" << endl;
+			for (int i = 0; i < ksdb.size(); ++i) {
+				assert(ksdb[i].size() == ksdb_copy[i].size());
+				auto& ks_copy = ksdb_copy[i];
+				for (auto v : ksdb[i]) {
+					assert(ks_copy.count(v));
+				}
+			}
+		}
 
-		//readTRKmers(trKmerDB, trFname);
-		//readGraphKmers(graphDB, trPrefix+".graph.kmers");
-
-
-		//cerr << "# unique kmers in kmerDBi: " << kmerDBi.size() << '\n';
-		//cerr << "# unique kmers in kmerDBi: " << kmerDBi.size() << '\n';
-		//cerr << "read *.kmers file in " << (time(nullptr) - time1) << " sec." << endl;
+		{
+			cerr << "Generating TR edge (k+1) binary kmers tre.kdb" << endl;
+			kset_db_t ksdb(nloci), ksdb_copy;
+			readKmers_ksetDB(args[2]+".tre.kmers", ksdb);
+			{
+				cerr << "serializing tre.kdb" << endl;
+				ofstream fout(args[2]+".tre.kdb", ios::binary);
+				assert(fout);
+				cereal::BinaryOutputArchive oarchive(fout);
+				oarchive(ksdb);
+			}
+			{
+				cerr << "deserializing tre.kdb" << endl;
+				clock_t t = clock();
+				ifstream fin(args[2]+".tre.kdb", ios::binary);
+				assert(fin);
+				cereal::BinaryInputArchive iarchive(fin);
+				iarchive(ksdb_copy);
+				cerr << "tre.kdb deserialized in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+			}
+			cerr << "validating tre.kdb" << endl;
+			for (int i = 0; i < ksdb.size(); ++i) {
+				assert(ksdb[i].size() == ksdb_copy[i].size());
+				auto& ks_copy = ksdb_copy[i];
+				for (auto v : ksdb[i]) {
+					assert(ks_copy.count(v));
+				}
+			}
+		}
+		// XXX not fully supported by cereal?
+        //cerr << "Generating tr binary atomic kmer counts tr.akc" << endl;
+        //vector<kmer_aCount_umap> akcdb(nloci);
+		//vector<kmer_aCount_umap> akcdb_copy;
+        //readKmers_atomicKmerCountDB(args[2]+".tr.kmers", akcdb);
+        //{
+		//	cerr << "serializing tr.akc" << endl;
+        //    ofstream fout(args[2]+".tr.akc", ios::binary);
+        //    assert(fout);
+        //    cereal::BinaryOutputArchive oarchive(fout);
+        //    oarchive(akcdb);
+        //}
+        //{
+		//	clock_t t = clock();
+		//	cerr << "deserializing tr.akc" << endl;
+        //    ifstream fin(args[2]+".tr.akc", ios::binary);
+        //    assert(fin);
+        //    cereal::BinaryInputArchive iarchive(fin);
+        //    iarchive(akcdb_copy);
+		//	cerr << "tr.akc deserialized in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+        //}
+        //cerr << "validating tr.akc" << endl;
+        //for (int i = 0; i < akcdb.size(); ++i) {
+        //    assert(akcdb[i].size() == akcdb_copy[i].size());
+        //    auto& akc_copy = akcdb_copy[i];
+        //    for (auto& p : akcdb[i]) {
+		//		auto it = akc_copy.find(p.first);
+		//		assert(it != akc_copy.end());
+		//		//assert(it->second == 0);
+        //    }
+        //}
 	}
 	else if (args[1] == "serialize-bt") {
 		if (argc == 2) {

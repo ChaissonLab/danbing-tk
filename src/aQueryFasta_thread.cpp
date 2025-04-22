@@ -1439,8 +1439,7 @@ void qfilter(vector<size_t>& ks, GraphType& gf, int& qf, int& qn, int& qm) {
 	if (float(qm) / qn < 0.5) { qf = 1; }
 }
 
-//void assignTRkmc(vector<uint64_t>& kmers, kmer_aCount_umap& trKmers, GraphType& g, vector<int>& as, int& si, int& ei, int& nt, int& bs, int& ti, int& af, int& rm) {
-void assignTRkmc(vector<uint64_t>& kmers, kmer_aCount_umap& trKmers, GraphType& g, km_asgn_read_t& r, int& af, int& rm, bool okam) {
+void assignTRkmc(vector<uint64_t>& kmers, kmer_aCount_umap& trKmers, unordered_set<uint64_t>& flKmers, vector<kmer_aCount_umap::iterator>& its, km_asgn_read_t& r, int& af, int& rm, bool okam) {
 	if (not okam and rm) { return; }
 
 	int nk = kmers.size();
@@ -1453,13 +1452,12 @@ void assignTRkmc(vector<uint64_t>& kmers, kmer_aCount_umap& trKmers, GraphType& 
 	int si2 = -1, ei2 = -1;     // unknown tract start/end index right before 2nd transition
 
 	r.as.resize(nk);
+	its.resize(nk);
 	for (int i=0; i<nk; ++i) {
 		auto km = kmers[i];
-		uint8_t tr = trKmers.count(km);
-		uint8_t db = g.count(km);
-		if (tr) { assert(db); }
-		r.as[i] = tr + db;
-		ntr += tr;
+		its[i] = trKmers.find(km);
+		if      (flKmers.count(km))       { r.as[i] = 1; }
+		else if (its[i] != trKmers.end()) { r.as[i] = 2; ++ntr; }
 	}
 	if (rm) {
 		r.nt = -1;
@@ -1549,37 +1547,43 @@ void assignTRkmc(vector<uint64_t>& kmers, kmer_aCount_umap& trKmers, GraphType& 
 	}
 }
 
-// bu: bubble
-void countNovelEdges(vector<uint64_t>& noncakmers, km_asgn_read_t& r, GraphType& g, kmerCount_umap& bu) {
-	uint64_t km0, km1, e, n;
-	bool nnts[4];
-	GraphType::iterator it;
-	
-	km0 = noncakmers[r.si_];
-	it = g.find(km0);
-	for (int i = r.si_+1; i < r.ei_; ++i) {
-		km1 = noncakmers[i];
-		while (it == g.end()) {
-		    if (km0 != -1ULL and km1 != -1ULL) {
-                e = (km0 << 2) + (km1 % 4);
-                ++bu[e];
-            }
-            km0 = km1;
-            it = km0 != -1ULL? g.find(km0) : g.end();
-            ++i;
-			if (i == r.ei_) return;
-			km1 = noncakmers[i];
-		}
-        if (km1 != -1ULL) {
-            fill_nnts(it, nnts);
-            if (not nnts[km1%4]) {
-                e = (km0 << 2) + (km1 % 4);
-                ++bu[e];
-            }
-        }
-        km0 = km1;
-        it = km0 != -1ULL? g.find(km0) : g.end();
+// bu: bubble;  es: read (k+1)-mer;  tres: TR (k+1)-mer in graph
+void countNovelEdges(vector<uint64_t>& es, km_asgn_read_t& r, unordered_set<uint64_t>& tres, kmerCount_umap& bu) {
+	int si = r.si_;
+	int ei = r.ei_-1;
+	assert(ei >= si);
+	for (auto e : es) {
+		if (tres.count(e) == 0) { ++bu[e]; }
 	}
+	//uint64_t km0, km1, e, n;
+	//bool nnts[4];
+	//GraphType::iterator it;
+	//
+	//km0 = ks[r.si_];
+	//it = g.find(km0);
+	//for (int i = r.si_+1; i < r.ei_; ++i) {
+	//	km1 = ks[i];
+	//	while (it == g.end()) {
+	//	    if (km0 != -1ULL and km1 != -1ULL) {
+    //            e = (km0 << 2) + (km1 % 4);
+    //            ++bu[e];
+    //        }
+    //        km0 = km1;
+    //        it = km0 != -1ULL? g.find(km0) : g.end();
+    //        ++i;
+	//		if (i == r.ei_) return;
+	//		km1 = ks[i];
+	//	}
+    //    if (km1 != -1ULL) {
+    //        fill_nnts(it, nnts);
+    //        if (not nnts[km1%4]) {
+    //            e = (km0 << 2) + (km1 % 4);
+    //            ++bu[e];
+    //        }
+    //    }
+    //    km0 = km1;
+    //    it = km0 != -1ULL? g.find(km0) : g.end();
+	//}
 }
 
 void accumBubbles(bubbles_t& bubbles, bubble_db_t& bubbleDB) {
@@ -1754,6 +1758,7 @@ public:
 	vector<atomic_uint64_t>* kmc;
 	bubble_db_t* bubbleDB;
 	bait_fps_db_t* baitDB;
+	kset_db_t *flankDB, *trEdgeDB;
 	ifstream *in;
 	// simmode only
 	int simmode;
@@ -1818,6 +1823,8 @@ void CountWords(void *data) {
 	bubble_db_t& bubbleDB = *((Counts*)data)->bubbleDB;
 	//bait_db_t& baitDB = *((Counts*)data)->baitDB;
 	bait_fps_db_t& baitDB = *((Counts*)data)->baitDB;
+	kset_db_t& flankDB = *((Counts*)data)->flankDB;
+	kset_db_t& trEdgeDB = *((Counts*)data)->trEdgeDB;
 	vector<msa_umap>& msaStats = *((Counts*)data)->msaStats;
 	err_umap& errdb = *((Counts*)data)->errdb;
 	err_umap err;
@@ -1966,7 +1973,7 @@ void CountWords(void *data) {
 
 		while (seqi < nReads_) {
 			//vector<uint64_t> kmers1, kmers2;
-			vector<uint64_t> caks1, caks2, ncks1, ncks2;
+			vector<uint64_t> caks1, caks2, caes1, caes2;
 			vector<kmerIndex_uint32_umap::iterator> its1, its2;
 			vector<PE_KMC> dup;
 			log_t log;
@@ -1997,10 +2004,8 @@ void CountWords(void *data) {
 			}
 			seqi += 2;
 
-			//read2kmers(kmers1, *seq, ksize); // stores numeric canonical kmers
-			//read2kmers(kmers2, *seq1, ksize);
-			read2kmers_raw_and_canonical(ncks1, caks1, *seq1, ksize);
-			read2kmers_raw_and_canonical(ncks2, caks2, *seq2, ksize);
+			read2kmers_edges(caks1, caes1, *seq1, ksize);
+			read2kmers_edges(caks2, caes2, *seq2, ksize);
 			if (not caks1.size() or not caks2.size()) { 
 				++nShort_;
 				if (verbosity >= 3) {
@@ -2026,7 +2031,6 @@ void CountWords(void *data) {
 
 			bool alned = false;
 			int alned0 = 0, alned1 = 0;
-			//kmerCount_umap cakmers;
 			sam_t sam;
 			km_asgn_t kam;
 			//vector<uint64_t> akmers0, akmers1; // aligned kmers
@@ -2052,7 +2056,6 @@ void CountWords(void *data) {
 			//}
 
 			if ((threading and alned) or not threading) {
-				kmer_aCount_umap &trKmers = trResults[destLocus];
 				//kmer_aCount_umap &ikmers = ikmerDB[destLocus];
 				nFeasibleReads_ += 2;
 
@@ -2099,8 +2102,11 @@ void CountWords(void *data) {
 						//	rm2 = 1;
 						//}
 
-						assignTRkmc(caks1, trKmers, gf, kam.r1, af1, rm1, okam);
-						assignTRkmc(caks2, trKmers, gf, kam.r2, af2, rm2, okam);
+						kmer_aCount_umap &trKmers = trResults[destLocus];
+						unordered_set<uint64_t>& flKmers = flankDB[destLocus];
+						vector<kmer_aCount_umap::iterator> kits1, kits2;
+						assignTRkmc(caks1, trKmers, flKmers, kits1, kam.r1, af1, rm1, okam);
+						assignTRkmc(caks2, trKmers, flKmers, kits2, kam.r2, af2, rm2, okam);
 						if (rm1 and rm2) { destLocus = nloci; } // removed by TR_kmer_assignment
 						else {
 							int n = 2 - rm1 - rm2;
@@ -2111,18 +2117,17 @@ void CountWords(void *data) {
 							kmc[destLocus] += (kam.r1.ei - kam.r1.si) + (kam.r2.ei - kam.r2.si);
 
 							// accumulate kmer-level estimates
-							kc8_t ckc;
-							if (not rm1) { for (auto km : caks1) { ++ckc[km]; } }
-							if (not rm2) { for (auto km : caks2) { ++ckc[km]; } }
-							for (auto& p : ckc) {
-								auto it = trKmers.find(p.first);
-								if (it != trKmers.end()) { it->second += p.second; }
-							}
+							auto& as1 = kam.r1.as;
+							auto& as2 = kam.r2.as;
+							if (not rm1) { for (int i = 0; i < as1.size(); ++i) { if (as1[i] == 2) { ++(kits1[i]->second); } } }
+							if (not rm2) { for (int i = 0; i < as2.size(); ++i) { if (as2[i] == 2) { ++(kits2[i]->second); } } }
 
 							// accumulate bubbles
 							if (outputBubbles) {
-								if (not rm1) { countNovelEdges(ncks1, kam.r1, graphDB[destLocus], bubbles[destLocus]); }
-								if (not rm2) { countNovelEdges(ncks2, kam.r2, graphDB[destLocus], bubbles[destLocus]); }
+								unordered_set<uint64_t>& tres = trEdgeDB[destLocus];
+								kmerCount_umap& bu = bubbles[destLocus];
+								if (not rm1) { countNovelEdges(caes1, kam.r1, tres, bu); }
+								if (not rm2) { countNovelEdges(caes2, kam.r2, tres, bu); }
 							}
 						}
 
@@ -2411,6 +2416,7 @@ int main(int argc, char* argv[]) {
 	// read input files
 	time_t time1 = time(nullptr);
 	vector<kmer_aCount_umap> trKmerDB(nloci);
+	kset_db_t flankDB, trEdgeDB;
 	//vector<kmer_aCount_umap> ikmerDB(nloci);
 	vector<GraphType> graphDB(nloci);
 	kmerIndex_uint32_umap kmerDBi;
@@ -2433,7 +2439,8 @@ int main(int argc, char* argv[]) {
 	}
 	else { // step 1+2
 		readBinaryIndex(kmerDBi, kmerDBi_vv, trPrefix);
-		readBinaryGraph(graphDB, trPrefix);
+		//readBinaryGraph(graphDB, trPrefix); // XXX replace with k22 tre.kdb and fl.kdb
+		readBinaryKmerSetDB(flankDB, trEdgeDB, trPrefix);
 		readKmers(trKmerDB, trFname);
 		//if (invkmer) { readiKmers(ikmerDB, trPrefix); }
 		if (bait) { readBinaryBaitDB(baitDB, baitFname); }
@@ -2457,6 +2464,8 @@ int main(int argc, char* argv[]) {
 		counts.nmapread = &nmapread;
 		counts.kmc = &kmc;
 		//counts.ikmerDB = &ikmerDB;
+		counts.flankDB = &flankDB;
+		counts.trEdgeDB = &trEdgeDB;
 		counts.bubbleDB = &bubbleDB;
 		counts.graphDB = &graphDB;
 		counts.baitDB = &baitDB;
