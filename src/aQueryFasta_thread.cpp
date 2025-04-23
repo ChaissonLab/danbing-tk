@@ -1951,7 +1951,7 @@ void CountWords(void *data) {
 
 		if (simmode == 1) { locusReadi.push_back(nReads_); }
 
-		cerr << "Buffered reading " << nReads_ << '\t' << nReads << '\t' << readDB.size()+fqDB.size() << endl;
+		cerr << "Buffered reading " << nReads_ << '\t' << nReads << '\t' << readDB.size()+fqDB.size() << '\n';
 
 		//
 		// All done reading, release the thread lock.
@@ -2240,7 +2240,7 @@ void CountWords(void *data) {
 		        nThreadingReads_ << '/' <<
 		        nFeasibleReads_ << '/' <<
 		        nBaitFiltered_ << '/' <<
-		        nAsgnReads_ << endl;
+		        nAsgnReads_ << '\n';
 
 		sem_post(semwriter);
 		//
