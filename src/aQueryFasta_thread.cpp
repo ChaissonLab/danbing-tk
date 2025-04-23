@@ -1552,7 +1552,8 @@ void countNovelEdges(vector<uint64_t>& es, km_asgn_read_t& r, unordered_set<uint
 	int si = r.si_;
 	int ei = r.ei_-1;
 	assert(ei >= si);
-	for (auto e : es) {
+	for (int i = si; i < ei; ++i) {
+		auto e = es[i];
 		if (tres.count(e) == 0) { ++bu[e]; }
 	}
 	//uint64_t km0, km1, e, n;
