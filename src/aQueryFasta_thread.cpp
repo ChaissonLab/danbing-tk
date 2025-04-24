@@ -174,7 +174,7 @@ bool subfilter(vector<uint64_t>& kmers1, vector<uint64_t>& kmers2, kmerIndex_uin
 	uint64_t S1 = L1 / (N_FILTER-1), S2 = L2 / (N_FILTER-1);
 	uint64_t h1 = 0, h2 = 0;
 	for (uint64_t i = 0; i < N_FILTER; ++i, ++nhash) {
-		uint64_t i1 = (i != N_FILTER-1 ? i*S1 : L1-1); // XXX no need to use L1-1, i*S1 is okay
+		uint64_t i1 = (i != N_FILTER-1 ? i*S1 : L1-1);
 		h1 += kmerDBi.count(kmers1[i1]);
 		if (h1 >= NM_FILTER) { break; }
 	}

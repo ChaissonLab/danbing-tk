@@ -177,74 +177,17 @@ int main (int argc, const char * argv[]) {
 		}
 
         size_t nloci = countLoci(args[2]+".tr.kmers");
-		//vector<kmer_aCount_umap> trKmerDB;
-		vector<GraphType> graphDB(nloci);
-        //{
-        //    clock_t t = clock();
-        //    readGraphKmers(trKmerDB, args[2]+".tr.kmers");
-        //    cerr << "tr.kmers read in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
-        //    cerr << "serializing tr.umap" << endl;
-        //    ofstream fout(args[2]+".tr.umap", ios::binary);
-        //    assert(fout);
-        //    cereal::BinaryOutputArchive oarchive(fout);
-        //    oarchive(trKmerDB);
-        //}
-        //{
-		//	vector<kmer_aCount_umap> trKmerDB_copy;
-        //    ifstream fin(args[2]+".tr.umap", ios::binary);
-        //    assert(fin);
-        //    cereal::BinaryInputArchive iarchive(fin);
-        //    clock_t t = clock();
-        //    iarchive(trKmerDB_copy);
-        //    cerr << "tr.umap deserialized in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
-        //    cerr << "validating tr.umap" << endl;
-        //    for (size_t i = 0; i < nloci; ++i) {
-        //        for (auto& p : trKmerDB[i]) {
-        //            auto it = trKmerDB_copy[i].find(p.first);
-        //            assert(it != trKmerDB_copy[i].end());
-        //            assert(it->second == p.second);
-        //        }
-        //    }
-
-        //}
-
-        {
-			clock_t t = clock();
-            readGraphKmers(graphDB, args[2]+".graph.kmers");
-			cerr << "graph.kmers read in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
-            cerr << "serializing graph.umap" << endl;
-            ofstream fout(args[2]+".graph.umap", ios::binary);
-            assert(fout);
-            cereal::BinaryOutputArchive oarchive(fout);
-            oarchive(graphDB);
-        }
-		{
-			vector<GraphType> graphDB_copy(nloci);
-			ifstream fin(args[2]+".graph.umap", ios::binary);
-            assert(fin);
-            cereal::BinaryInputArchive iarchive(fin);
-			clock_t t = clock();
-            iarchive(graphDB_copy);
-			cerr << "graph.umap deserialized in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
-			cerr << "validating graph.umap" << endl;
-			for (size_t i = 0; i < nloci; ++i) {
-				for (auto& p : graphDB[i]) { 
-					auto it = graphDB_copy[i].find(p.first);
-					assert(it != graphDB_copy[i].end());
-					assert(it->second == p.second);
-				}
-			}
-
-		}
-
+		clock_t t;
+		
+		// kmerDBi, kmerDBi_vv
         kmerIndex_uint32_umap kmerDBi;
         vector<vector<uint32_t>> kmerDBi_vec;
-		{
-			clock_t t = clock();
-			readKmerIndex(kmerDBi, kmerDBi_vec, args[2]+".tr.kmers");
-			readKmerIndex(kmerDBi, kmerDBi_vec, args[2]+".ntr.kmers");
-			cerr << "xtr.kmers read in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
-		}
+        {
+            t = clock();
+            readKmerIndex(kmerDBi, kmerDBi_vec, args[2]+".tr.kmers");
+            readKmerIndex(kmerDBi, kmerDBi_vec, args[2]+".ntr.kmers");
+            cerr << "xtr.kmers read in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+        }
 
         cerr << "generating kmerDBi.vv (non-unique kmer container)" << endl;
         vector<uint32_t> vv;
@@ -254,6 +197,7 @@ int main (int argc, const char * argv[]) {
             vv.push_back(v.size());
             vv.insert(vv.end(), v.begin(), v.end());
         }
+		uint64_t nvv = vv.size();
 
         cerr << "reindexing kmerDBi.umap (unique kmer container)" << endl;
         for (auto& p : kmerDBi) {
@@ -263,55 +207,132 @@ int main (int argc, const char * argv[]) {
                 for (uint32_t v : kmerDBi_vec[p.second>>1]) { assert(v == vv[vvi[p.second>>1]+i]); ++i; }
                 p.second = (vvi[p.second>>1] << 1) + 1;
             }
-            //cout << p.first << '\t' << p.second << endl;
         }
 
-        cerr << "serializing kmerDBi.umap" << endl;
-        {
-            ofstream fout(args[2]+".kmerDBi.umap", ios::binary);
-            assert(fout);
-            cereal::BinaryOutputArchive oarchive(fout);
-            oarchive(kmerDBi);
-        }
-
-        cerr << "serializing kmerDBi.vv" << endl;
-        {
-            ofstream fout(args[2]+".kmerDBi.vv", ios::binary);
-            assert(fout);
-            cereal::BinaryOutputArchive oarchive(fout);
-            oarchive(vv);
-        }
-
-		{
-			kmerIndex_uint32_umap kmerDBi_copy;
-			vector<uint32_t> vv_copy;
-			clock_t t = clock();
-			{
-				cerr << "deserializing kmerDBi.umap" << endl;
-				ifstream fin(args[2]+".kmerDBi.umap", ios::binary);
-				assert(fin);
-				cereal::BinaryInputArchive iarchive(fin);
-				iarchive(kmerDBi_copy);
-			}
-			{
-				cerr << "deserializing kmerDBi.vv" << endl;
-				ifstream fin(args[2]+".kmerDBi.vv", ios::binary);
-				assert(fin);
-				cereal::BinaryInputArchive iarchive(fin);
-				iarchive(vv_copy);
-			}
-			cerr << "kmerDBi.(umap|vv) deserialized in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
-
-			cerr << "validating kmerDBi.umap" << endl;
-			for (auto& p : kmerDBi) {
-				auto it = kmerDBi_copy.find(p.first);
-				assert(it != kmerDBi_copy.end());
-				assert(it->second == p.second);
-			}
-			cerr << "validating kmerDBi.vv" << endl;
-			for (size_t i = 0; i < vv.size(); ++i) { assert(vv[i] == vv_copy[i]); }
+		cerr << "generating flattened kmerDBi.umap for serialization" << endl;
+		uint64_t nk = kmerDBi.size();
+		vector<uint64_t> kdbi_keys(nk);
+		vector<uint32_t> kdbi_vals(nk);
+		uint64_t ki = 0;
+		for (auto& p : kmerDBi) {
+			kdbi_keys[ki] = p.first;
+			kdbi_vals[ki] = p.second;
+			++ki;
 		}
-		cerr << "Done!" << endl;
+
+		cerr << "serializing kmerDBi as *.kmers.dbi" << endl;
+		t = clock();
+		{
+			ofstream fout(args[2]+".kmers.dbi", ios::out | ios::binary);
+			fout.write(reinterpret_cast<const char*>( &nk ), sizeof(uint64_t));
+			fout.write(reinterpret_cast<const char*>( kdbi_keys.data() ), sizeof(uint64_t)*nk);
+			fout.write(reinterpret_cast<const char*>( kdbi_vals.data() ), sizeof(uint32_t)*nk);
+			fout.write(reinterpret_cast<const char*>( &nvv ), sizeof(uint64_t));
+			fout.write(reinterpret_cast<const char*>( vv.data() ), sizeof(uint32_t)*nvv);
+		}
+		cerr << "*.kmers.dbi written in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+
+		cerr << "deserializing *.kmers.dbi" << endl;
+		t = clock();
+		uint64_t nk_, nvv_;
+        kmerIndex_uint32_umap kmerDBi_;
+		vector<uint64_t> kdbi_keys_;
+		vector<uint32_t> kdbi_vals_, vv_;
+		{
+			ifstream fin(args[2]+".kmers.dbi", ios::in | ios::binary);
+			fin.read((char*)( &nk_ ), sizeof(uint64_t));
+			kdbi_keys_.resize(nk_);
+			kdbi_vals_.resize(nk_);
+			fin.read((char*)( kdbi_keys_.data() ), sizeof(uint64_t)*nk_);
+			fin.read((char*)( kdbi_vals_.data() ), sizeof(uint32_t)*nk_);
+			fin.read((char*)( &nvv_ ), sizeof(uint64_t));
+			vv_.resize(nvv_);
+			fin.read((char*)( vv_.data() ), sizeof(uint32_t)*nvv_);
+		}
+		cerr << "*.kmers.dbi read in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+
+		for (int i = 0; i < nk_; ++i) { kmerDBi_[kdbi_keys_[i]] = kdbi_vals_[i]; }
+		cerr << "*.kmers.dbi read+constructed in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+
+		cerr << "validating data" << endl;
+		assert(kmerDBi.size() == kmerDBi_.size());
+		for (auto& p : kmerDBi) {
+			auto it = kmerDBi_.find(p.first);
+			assert(it != kmerDBi_.end());
+			assert(p.second == it->second);
+		}
+		assert(nvv == nvv_);
+		for (int i = 0; i < nvv; ++i) { assert(vv[i] == vv_[i]); }
+		cerr << "done!" << endl;
+
+
+		// baitDB
+		bait_fps_db_t baitDB(nloci);
+		readFPSKmersV2(baitDB, args[3]);
+
+		cerr << "generating flattened baitDB" << endl;
+		vector<uint64_t> bkeys, bti(nloci);
+		vector<uint16_t> bvals;
+		for (int tri = 0; tri < nloci; ++tri) {
+			bti[tri] = baitDB[tri].size();
+			for (auto& p : baitDB[tri]) {
+				bkeys.push_back(p.first);
+				bvals.push_back(p.second);
+			}
+		}
+		uint64_t nbk = bkeys.size();
+
+		cerr << "serializing baitDB as *.kmers.bt" << endl;
+		t = clock();
+		{
+			ofstream fout(args[2]+".kmers.bt", ios::out | ios::binary);
+			fout.write(reinterpret_cast<const char*>( &nloci ), sizeof(uint64_t));
+			fout.write(reinterpret_cast<const char*>( bti.data() ), sizeof(uint64_t)*nloci);
+			fout.write(reinterpret_cast<const char*>( &nbk ), sizeof(uint64_t));
+			fout.write(reinterpret_cast<const char*>( bkeys.data() ), sizeof(uint64_t)*nbk);
+			fout.write(reinterpret_cast<const char*>( bvals.data() ), sizeof(uint16_t)*nbk);
+		}
+		cerr << "*.kmers.bt written in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+
+		cerr << "deserializing *.kmers.bt" << endl;
+		t = clock();
+		uint64_t nloci_, nbk_;
+		vector<uint64_t> bkeys_, bti_;
+		vector<uint16_t> bvals_;
+		bait_fps_db_t baitDB_;
+		ifstream fin(args[2]+".kmers.bt", ios::in | ios::binary);
+		{
+			fin.read((char*)( &nloci_ ), sizeof(uint64_t));
+			bti_.resize(nloci);
+			fin.read((char*)( bti_.data() ), sizeof(uint64_t)*nloci_);
+			fin.read((char*)( &nbk_ ), sizeof(uint64_t));
+			bkeys_.resize(nbk_);
+			bvals_.resize(nbk_);
+			fin.read((char*)( bkeys_.data() ), sizeof(uint64_t)*nbk_);
+			fin.read((char*)( bvals_.data() ), sizeof(uint16_t)*nbk_);
+		}
+		cerr << "*.kmers.bt read in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+
+		baitDB_.resize(nloci_);
+		int bki = 0;
+		for (int tri = 0; tri < nloci_; ++tri) {
+			for (int i0 = bki; bki < bti_[tri]+i0; ++bki) {
+				baitDB_[tri][bkeys_[bki]] = bvals_[bki];
+			}
+		}
+		cerr << "*.kmers.bt read+reconstructed in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+
+		cerr << "validating data" << endl;
+		for (int tri = 0; tri < nloci; ++tri) {
+			assert(baitDB[tri].size() == baitDB_[tri].size());
+			auto& bt_ = baitDB_[tri];
+			for (auto& p : baitDB[tri]) {
+				auto it = bt_.find(p.first);
+				assert(it != bt_.end());
+				assert(p.second == it->second);
+			}
+		}
+		cerr << "done" << endl;
 	}
 	else if (args[1] == "serialize-fl") {
         if (argc == 2) {
