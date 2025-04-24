@@ -170,10 +170,10 @@ int main (int argc, const char * argv[]) {
 	}
 	else if (args[1] == "serialize") {
 		if (argc == 2) {
-			cerr << "Usage: ktools serialize <pref> <bait>" << endl << endl
+			cerr << "Usage: ktools serialize <pref> [bait]" << endl << endl
 
 			     << "  PREF     prefix of *.(graph|ntr|tr).kmers" << endl
-			     << "  bait     Path to bait kmers. " << endl
+			     << "  bait     Path to bait kmers. Skip if not specified." << endl
 				 << "           File format (tab delimited):" << endl
 				 << "             >locus_index" << endl
 				 << "             kmer	c0	c1" << endl
@@ -272,6 +272,8 @@ int main (int argc, const char * argv[]) {
 
 
 		// baitDB
+		if (argc < 4) { return 0; }
+
 		bait_fps_db_t baitDB(nloci);
 		readFPSKmersV2(baitDB, args[3]);
 
