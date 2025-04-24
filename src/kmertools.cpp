@@ -170,9 +170,14 @@ int main (int argc, const char * argv[]) {
 	}
 	else if (args[1] == "serialize") {
 		if (argc == 2) {
-			cerr << "Usage: ktools serialize <pref>" << endl << endl
+			cerr << "Usage: ktools serialize <pref> <bait>" << endl << endl
 
-			     << "  PREF     prefix of *.(graph|ntr|tr).kmers" << endl;
+			     << "  PREF     prefix of *.(graph|ntr|tr).kmers" << endl
+			     << "  bait     Path to bait kmers. " << endl
+				 << "           File format (tab delimited):" << endl
+				 << "             >locus_index" << endl
+				 << "             kmer	c0	c1" << endl
+				 << "           c0/c1: min/max observed kmer count in TP reads. If kmer not present in any TP read, c0/c1=255/0" << endl;
 			return 0;
 		}
 
