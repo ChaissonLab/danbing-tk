@@ -2354,7 +2354,7 @@ int main(int argc, char* argv[]) {
 				augFile.close();
 			}
 			if (bait) {
-				if (baitFname == "") { baitFname = trPrefix+".bt.vumap"; }
+				if (baitFname == "") { baitFname = trPrefix+".kmers.bt"; }
 				baitFile.open(baitFname);
 				assert(baitFile);
 				baitFile.close();
