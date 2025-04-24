@@ -8,7 +8,7 @@ LDLIBS = -pthread
 dir_guard = @mkdir -p $(@D)
 INC=$(PREFIX)/include
 CPPFLAGS = -std=c++11 -I $(INC) -I $(INC)/eigen3
-INCFILES = $(INC)/cereal $(INC)/eigen3
+INCFILES = $(INC)/eigen3
 
 
 all: $(INCFILES) $(TARGETS)
@@ -17,8 +17,6 @@ allg: $(INCFILES) $(TARGETS) $(TARGETSg)
 
 # copy INCLUDE files to ./include
 $(INCFILES):
-	mkdir -p $(INC)
-	if [ ! -f $(INC)/cereal ]; then cp -r cereal/include/cereal $(INC); fi
 	mkdir -p $(INC)/eigen3
 	if [ ! -f $(INC)/eigen3 ]; then cp -r Eigen/Eigen  $(INC)/eigen3; fi
 	

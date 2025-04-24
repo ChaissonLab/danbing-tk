@@ -1,9 +1,9 @@
 #include "aQueryFasta_thread.h"
-#include "cereal/archives/binary.hpp"
-#include "cereal/types/unordered_map.hpp"
-#include "cereal/types/unordered_set.hpp"
-#include "cereal/types/vector.hpp"
-#include "cereal/types/atomic.hpp"
+//#include "cereal/archives/binary.hpp"
+//#include "cereal/types/unordered_map.hpp"
+//#include "cereal/types/unordered_set.hpp"
+//#include "cereal/types/vector.hpp"
+//#include "cereal/types/atomic.hpp"
 
 #include <ctime>
 
