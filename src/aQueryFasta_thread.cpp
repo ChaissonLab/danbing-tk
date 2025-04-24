@@ -2440,8 +2440,8 @@ int main(int argc, char* argv[]) {
 	}
 	else { // step 1+2
 		readBinaryIndex(kmerDBi, kmerDBi_vv, trPrefix);
-		//readBinaryGraph(graphDB, trPrefix); // XXX replace with k22 tre.kdb and fl.kdb
-		readBinaryKmerSetDB(flankDB, trEdgeDB, trPrefix);
+		readBinaryKmerSetDB(flankDB, trPrefix+".fl");
+		readBinaryKmerSetDB(trEdgeDB, trPrefix+".tre");
 		readKmers(trKmerDB, trFname);
 		//if (invkmer) { readiKmers(ikmerDB, trPrefix); }
 		if (bait) { readBinaryBaitDB(baitDB, baitFname); }

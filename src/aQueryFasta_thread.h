@@ -1,10 +1,10 @@
 #ifndef A_QUERYFASTA_THREAD_H_
 #define A_QUERYFASTA_THREAD_H_
 
-#include "cereal/archives/binary.hpp"
-#include "cereal/types/unordered_map.hpp"
-#include "cereal/types/unordered_set.hpp"
-#include "cereal/types/vector.hpp"
+//#include "cereal/archives/binary.hpp"
+//#include "cereal/types/unordered_map.hpp"
+//#include "cereal/types/unordered_set.hpp"
+//#include "cereal/types/vector.hpp"
 
 #include "stdlib.h"
 #include <vector>
@@ -701,30 +701,55 @@ void readBinaryIndex(kmerIndex_uint32_umap& kmerDBi, vector<uint32_t>& kmerDBi_v
 	cerr << "*.kmers.dbi read+constructed in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
 }
 
-void readBinaryGraph(vector<GraphType>& graphDB, string& pref) {
-	cerr << "deserializing graph.umap" << endl;
-	ifstream fin(pref+".graph.umap", ios::binary);
-	assert(fin);
-	cereal::BinaryInputArchive iarchive(fin);
-	iarchive(graphDB);
+//void readBinaryGraph(vector<GraphType>& graphDB, string& pref) {
+//	cerr << "deserializing graph.umap" << endl;
+//	ifstream fin(pref+".graph.umap", ios::binary);
+//	assert(fin);
+//	cereal::BinaryInputArchive iarchive(fin);
+//	iarchive(graphDB);
+//}
+
+void readBinaryKmerSetDB(kset_db_t& ksdb, string pref) {
+    cerr << "deserializing " << pref << endl;
+	uint64_t nloci, nk;
+	vector<uint64_t> index, ks;
+
+    clock_t t = clock();
+    ifstream fin(pref + ".kdb", ios::binary);
+    fin.read((char*)( &nloci ), sizeof(uint64_t));
+    index.resize(nloci);
+    fin.read((char*)( index.data() ), sizeof(uint64_t)*nloci);
+    fin.read((char*)( &nk ), sizeof(uint64_t));
+    ks.resize(nk);
+    fin.read((char*)( ks.data() ), sizeof(uint64_t)*nk);
+    cerr << ".kdb read in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+
+    ksdb.resize(nloci);
+    int ki = 0;
+    for (int tri = 0; tri < nloci; ++tri) {
+        for (int i0 = ki; ki < index[tri]+i0; ++ki) {
+            ksdb[tri].insert(ks[ki]);
+        }
+    }
+    cerr << ".kdb read+reconstructed in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
 }
 
-void readBinaryKmerSetDB(kset_db_t& flankDB, kset_db_t& trEdgeDB, string& pref) {
-	{
-		cerr << "deserializing fl.kdb" << endl;
-		ifstream fin(pref+".fl.kdb", ios::binary);
-		assert(fin);
-		cereal::BinaryInputArchive iarchive(fin);
-		iarchive(flankDB);
-	}
-	{
-		cerr << "deserializing tre.kdb" << endl;
-		ifstream fin(pref+".tre.kdb", ios::binary);
-		assert(fin);
-		cereal::BinaryInputArchive iarchive(fin);
-		iarchive(trEdgeDB);
-	}
-}
+//void readBinaryKmerSetDB(kset_db_t& flankDB, kset_db_t& trEdgeDB, string& pref) {
+//	{
+//		cerr << "deserializing fl.kdb" << endl;
+//		ifstream fin(pref+".fl.kdb", ios::binary);
+//		assert(fin);
+//		cereal::BinaryInputArchive iarchive(fin);
+//		iarchive(flankDB);
+//	}
+//	{
+//		cerr << "deserializing tre.kdb" << endl;
+//		ifstream fin(pref+".tre.kdb", ios::binary);
+//		assert(fin);
+//		cereal::BinaryInputArchive iarchive(fin);
+//		iarchive(trEdgeDB);
+//	}
+//}
 
 
 void readKmerIndex(kmerIndex_uint32_umap& kmerDBi, vector<vector<uint32_t>>& kmerDBi_vec, string fname) { // optimized version
