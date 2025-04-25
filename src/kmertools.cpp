@@ -1,65 +1,7 @@
-#include "aQueryFasta_thread.h"
-//#include "cereal/archives/binary.hpp"
-//#include "cereal/types/unordered_map.hpp"
-//#include "cereal/types/unordered_set.hpp"
-//#include "cereal/types/vector.hpp"
-//#include "cereal/types/atomic.hpp"
-
-#include <ctime>
+#include "binaryKmerIO.hpp"
+#include "kmerIO.hpp"
 
 
-using std::cout;
-using std::cerr;
-using std::endl;
-using std::ifstream;
-using std::ofstream;
-using std::string;
-using std::vector;
-
-void serializeKsetDB(string tp, string pref, uint64_t& nloci, uint64_t& nk, vector<uint64_t>& index, vector<uint64_t>& ks) {
-	cerr << "serializing " << tp << ".kdb" << endl;
-	clock_t t = clock();
-	ofstream fout(pref+ "." + tp + ".kdb", ios::binary);
-	fout.write(reinterpret_cast<const char*>( &nloci ), sizeof(uint64_t));
-	fout.write(reinterpret_cast<const char*>( index.data() ), sizeof(uint64_t)*nloci);
-	fout.write(reinterpret_cast<const char*>( &nk ), sizeof(uint64_t));
-	fout.write(reinterpret_cast<const char*>( ks.data() ), sizeof(uint64_t)*nk);
-	cerr << "*.fl.kdb written in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
-}
-
-void deserializeKsetDB(string tp, string pref, uint64_t& nloci, uint64_t& nk, vector<uint64_t>& index, vector<uint64_t>& ks, kset_db_t& ksdb) {
-	cerr << "deserializing *." << tp << ".kdb" << endl;
-	clock_t t = clock();
-	ifstream fin(pref + "." + tp + ".kdb", ios::binary);
-	fin.read((char*)( &nloci ), sizeof(uint64_t));
-	index.resize(nloci);
-	fin.read((char*)( index.data() ), sizeof(uint64_t)*nloci);
-	fin.read((char*)( &nk ), sizeof(uint64_t));
-	ks.resize(nk);
-	fin.read((char*)( ks.data() ), sizeof(uint64_t)*nk);
-	cerr << "*." << tp << ".kdb read in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
-
-	ksdb.resize(nloci);
-	int ki = 0;
-	for (int tri = 0; tri < nloci; ++tri) {
-		for (int i0 = ki; ki < index[tri]+i0; ++ki) {
-			ksdb[tri].insert(ks[ki]);
-		}
-	}
-	cerr << "*." << tp << ".kdb read+reconstructed in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
-}
-
-void validateKsetDB(kset_db_t& ksdb, kset_db_t& ksdb_) {
-	cerr << "validating data" << endl;
-	int nloci = ksdb.size();
-	for (int tri = 0; tri < nloci; ++tri) {
-		assert(ksdb[tri].size() == ksdb_[tri].size());
-		auto& ks_ = ksdb_[tri];
-		for (auto km : ksdb[tri]) {
-			assert(ks_.count(km));
-		}
-	}
-}
 
 
 int main (int argc, const char * argv[]) {
@@ -312,52 +254,28 @@ int main (int argc, const char * argv[]) {
 
 		{	// flank DB
 			cerr << "Generating flank binary kmers fl.kdb" << endl;
-			kset_db_t fldb(nloci);
+			kset_db_t fldb(nloci), fldb_;
 			readKmers_ksetDB(args[2]+".ntr.kmers", fldb);
 
-			cerr << "flattening fl.kdb" << endl;
-			vector<uint64_t> fks, fli(nloci);
-			for (int tri = 0; tri < nloci; ++tri) {
-				fli[tri] = fldb[tri].size();
-				for (auto km : fldb[tri]) {
-					fks.push_back(km);
-				}
-			}
-			uint64_t nfk = fks.size();
-
+			uint64_t nfk, nloci_, nfk_;
+			vector<uint64_t> fks, fks_, fli, fli_;
+			flattenKsetDB(fldb, nloci, nfk, fli, fks);
 			serializeKsetDB("fl", args[2], nloci, nfk, fli, fks);
-
-			uint64_t nloci_, nfk_;
-			vector<uint64_t> fks_, fli_;
-			kset_db_t fldb_;
 			deserializeKsetDB("fl", args[2], nloci_, nfk_, fli_, fks_, fldb_);
-
 			validateKsetDB(fldb, fldb_);
 			cerr << "done" << endl;
 		}
 
 		{	// edge DB
             cerr << "Generating TR edge (k+1) binary kmers tre.kdb" << endl;
-            kset_db_t esdb(nloci);
+            kset_db_t esdb(nloci), esdb_;
             readKmers_ksetDB(args[2]+".tre.kmers", esdb);
 
-            cerr << "flattening tre.kdb" << endl;
-            vector<uint64_t> es, ei(nloci);
-            for (int tri = 0; tri < nloci; ++tri) {
-                ei[tri] = esdb[tri].size();
-                for (auto km : esdb[tri]) {
-                    es.push_back(km);
-                }
-            }
-            uint64_t ne = es.size();
-
+			uint64_t ne, nloci_, ne_;
+			vector<uint64_t> es, es_, ei, ei_;
+			flattenKsetDB(esdb, nloci, ne, ei, es);
 			serializeKsetDB("tre", args[2], nloci, ne, ei, es);
-
-			uint64_t nloci_, ne_;
-            vector<uint64_t> es_, ei_;
-            kset_db_t esdb_;
             deserializeKsetDB("tre", args[2], nloci_, ne_, ei_, es_, esdb_);
-
 			validateKsetDB(esdb, esdb_);
 			cerr << "done" << endl;
 		}
@@ -423,69 +341,14 @@ int main (int argc, const char * argv[]) {
 		bait_fps_db_t baitDB(nloci);
 		readFPSKmersV2(baitDB, args[2]);
 
-		cerr << "generating flattened baitDB" << endl;
-		vector<uint64_t> bkeys, bti(nloci);
-		vector<uint16_t> bvals;
-		for (int tri = 0; tri < nloci; ++tri) {
-			bti[tri] = baitDB[tri].size();
-			for (auto& p : baitDB[tri]) {
-				bkeys.push_back(p.first);
-				bvals.push_back(p.second);
-			}
-		}
-		uint64_t nbk = bkeys.size();
-
-		cerr << "serializing baitDB as *.kmers.bt" << endl;
-		clock_t t = clock();
-		{
-			ofstream fout(args[4]+".kmers.bt", ios::out | ios::binary);
-			fout.write(reinterpret_cast<const char*>( &nloci ), sizeof(uint64_t));
-			fout.write(reinterpret_cast<const char*>( bti.data() ), sizeof(uint64_t)*nloci);
-			fout.write(reinterpret_cast<const char*>( &nbk ), sizeof(uint64_t));
-			fout.write(reinterpret_cast<const char*>( bkeys.data() ), sizeof(uint64_t)*nbk);
-			fout.write(reinterpret_cast<const char*>( bvals.data() ), sizeof(uint16_t)*nbk);
-		}
-		cerr << "*.kmers.bt written in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
-
-		cerr << "deserializing *.kmers.bt" << endl;
-		t = clock();
-		uint64_t nloci_, nbk_;
-		vector<uint64_t> bkeys_, bti_;
-		vector<uint16_t> bvals_;
+		uint64_t nbk, nbk_, nloci_;
+		vector<uint64_t> bkeys, bkeys_, bti, bti_;
+		vector<uint16_t> bvals, bvals_;
 		bait_fps_db_t baitDB_;
-		ifstream fin(args[4]+".kmers.bt", ios::in | ios::binary);
-		{
-			fin.read((char*)( &nloci_ ), sizeof(uint64_t));
-			bti_.resize(nloci);
-			fin.read((char*)( bti_.data() ), sizeof(uint64_t)*nloci_);
-			fin.read((char*)( &nbk_ ), sizeof(uint64_t));
-			bkeys_.resize(nbk_);
-			bvals_.resize(nbk_);
-			fin.read((char*)( bkeys_.data() ), sizeof(uint64_t)*nbk_);
-			fin.read((char*)( bvals_.data() ), sizeof(uint16_t)*nbk_);
-		}
-		cerr << "*.kmers.bt read in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
-
-		baitDB_.resize(nloci_);
-		int bki = 0;
-		for (int tri = 0; tri < nloci_; ++tri) {
-			for (int i0 = bki; bki < bti_[tri]+i0; ++bki) {
-				baitDB_[tri][bkeys_[bki]] = bvals_[bki];
-			}
-		}
-		cerr << "*.kmers.bt read+reconstructed in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
-
-		cerr << "validating data" << endl;
-		for (int tri = 0; tri < nloci; ++tri) {
-			assert(baitDB[tri].size() == baitDB_[tri].size());
-			auto& bt_ = baitDB_[tri];
-			for (auto& p : baitDB[tri]) {
-				auto it = bt_.find(p.first);
-				assert(it != bt_.end());
-				assert(p.second == it->second);
-			}
-		}
-		cerr << "done" << endl;
+		flattenKmapDB(baitDB, nloci, nbk, bti, bkeys, bvals);
+		serializeKmapDB("bt", args[4], nloci, nbk, bti, bkeys, bvals);
+		deserializeKmapDB("bt", args[4], nloci_, nbk_, bti_, bkeys_, bvals_, baitDB_);
+		validateKmapDB(baitDB, baitDB_);
 	}
 	else {
 		cerr << "Unrecognized command " << args[1] << endl;

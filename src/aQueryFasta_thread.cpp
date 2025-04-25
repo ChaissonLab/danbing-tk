@@ -1374,7 +1374,7 @@ void bfilter_FPS(unordered_map<uint64_t, uint16_t>& baitdb, vector<uint64_t>& km
 	}
 }
 
-void bfilter_FPSv1(unordered_map<uint64_t, uint16_t>& baitdb, vector<size_t>& ks, int& bf) {
+void bfilter_FPSv1(unordered_map<uint64_t, uint16_t>& baitdb, vector<size_t>& ks, int& bf, bool tk, bt_tracker_t& tkr, int destLocus) {
 	if (not ks.size()) { return; }
 
     kc8_t kc;
@@ -1386,12 +1386,16 @@ void bfilter_FPSv1(unordered_map<uint64_t, uint16_t>& baitdb, vector<size_t>& ks
             uint8_t mi, ma;
             mi = th >> 8;
             ma = th & 0xff;
-            if (p.second < mi or p.second > ma) { bf = 1; return; }
+            if (p.second < mi or p.second > ma) {
+				bf = 1;
+				if (tk) { ++tkr[destLocus][p.first]; }
+				return;
+			}
         }
     }
 }
 
-void bfilter_FPSv1(unordered_map<uint64_t, uint16_t>& baitdb, vector<size_t>& ks, vector<bool>& km, int& bf) {
+void bfilter_FPSv1(unordered_map<uint64_t, uint16_t>& baitdb, vector<size_t>& ks, vector<bool>& km, int& bf, bool tk, bt_tracker_t& tkr, int destLocus) {
 	if (not ks.size()) { return; }
 
     kc8_t kc;
@@ -1405,7 +1409,11 @@ void bfilter_FPSv1(unordered_map<uint64_t, uint16_t>& baitdb, vector<size_t>& ks
             uint8_t mi, ma;
             mi = th >> 8;
             ma = th & 0xff;
-            if (p.second < mi or p.second > ma) { bf = 1; return; }
+            if (p.second < mi or p.second > ma) {
+				bf = 1;
+				if (tk) { ++tkr[destLocus][p.first]; }
+				return;
+			}
         }
     }
 }
@@ -1596,6 +1604,16 @@ void accumBubbles(bubbles_t& bubbles, bubble_db_t& bubbleDB) {
 	}
 }
 
+void accumBaitKmerHits(bt_tracker_db_t& btTK, bt_tracker_t& tkr_) {
+	for (auto& p1 : tkr_) {
+		int tri = p1.first;
+		auto& tkr = btTK[tri];
+		for (auto& p2 : p1.second) {
+			tkr[p2.first] += p2.second;
+		}
+	}
+}
+
 void writeExtractedReads(int extractFastX, vector<string>& seqs, vector<string>& quals, vector<string>& titles, vector<uint64_t>& extractindices, vector<uint64_t>& assignedloci) {
 	for (uint64_t i = 0; i < extractindices.size(); ++i) {
 		if (extractFastX == 1) { cout << titles[(--extractindices[i])/2] << '\n'; } 
@@ -1742,7 +1760,7 @@ void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<uint64
 
 class Counts {
 public:
-	bool isFastq, outputBubbles, bait, threading, correction, tc, aln, aln_minimal, okam, g2pan, skip1, invkmer;
+	bool isFastq, outputBubbles, bait, threading, correction, tc, aln, aln_minimal, okam, g2pan, skip1, invkmer, trackBait;
 	uint16_t Cthreshold, thread_cth;
 	uint64_t *nReads, *nThreadingReads, *nFeasibleReads, *nAsgnReads, *nSubFiltered, *nKmerFiltered, *nBaitFiltered, *nQualFiltered, *nLocusAssignFiltered;
 	uint64_t nloci;
@@ -1759,6 +1777,7 @@ public:
 	vector<atomic_uint64_t>* kmc;
 	bubble_db_t* bubbleDB;
 	bait_fps_db_t* baitDB;
+	bt_tracker_db_t* btTK;
 	kset_db_t *flankDB, *trEdgeDB;
 	ifstream *in;
 	// simmode only
@@ -1790,8 +1809,8 @@ void CountWords(void *data) {
 	bool aln_minimal = ((Counts*)data)->aln_minimal;
 	bool okam = ((Counts*)data)->okam;
 	bool g2pan = ((Counts*)data)->g2pan;
-	bool skip1 = ((Counts*)data)->skip1; // obsolete
 	bool invkmer = ((Counts*)data)->invkmer;
+	bool trackBait = ((Counts*)data)->trackBait;
 	int simmode = ((Counts*)data)->simmode;
 	int countMode = ((Counts*)data)->countMode;
 	int extractFastX = ((Counts*)data)->extractFastX;
@@ -1822,8 +1841,8 @@ void CountWords(void *data) {
 	vector<atomic_uint32_t>& nmapread = *((Counts*)data)->nmapread;
 	vector<atomic_uint64_t>& kmc = *((Counts*)data)->kmc;
 	bubble_db_t& bubbleDB = *((Counts*)data)->bubbleDB;
-	//bait_db_t& baitDB = *((Counts*)data)->baitDB;
 	bait_fps_db_t& baitDB = *((Counts*)data)->baitDB;
+	bt_tracker_db_t& btTK = *((Counts*)data)->btTK;
 	kset_db_t& flankDB = *((Counts*)data)->flankDB;
 	kset_db_t& trEdgeDB = *((Counts*)data)->trEdgeDB;
 	vector<msa_umap>& msaStats = *((Counts*)data)->msaStats;
@@ -1964,6 +1983,7 @@ void CountWords(void *data) {
 		uint64_t nhash0 = 0, nhash1 = 0;
 		uint64_t destLocus, destLocus0; // filtered/raw destLocus
 		bubbles_t bubbles;
+		unordered_map<uint32_t, unordered_map<uint64_t, uint64_t>> tkr; // bait tracker
 		// aln only
 		vector<sam_t> sams;
 		// simmode only
@@ -2080,11 +2100,11 @@ void CountWords(void *data) {
 						if (bait) {
 							auto& baitdb = baitDB[destLocus];
 							if (isFastq) {
-								bfilter_FPSv1(baitdb, caks1, qkm1, bf1);
-								bfilter_FPSv1(baitdb, caks2, qkm2, bf2);
+								bfilter_FPSv1(baitdb, caks1, qkm1, bf1, trackBait, tkr, destLocus);
+								bfilter_FPSv1(baitdb, caks2, qkm2, bf2, trackBait, tkr, destLocus);
 							} else {
-								bfilter_FPSv1(baitdb, caks1, bf1);
-								bfilter_FPSv1(baitdb, caks2, bf2);
+								bfilter_FPSv1(baitdb, caks1, bf1, trackBait, tkr, destLocus);
+								bfilter_FPSv1(baitdb, caks2, bf2, trackBait, tkr, destLocus);
 							}
 							if (bf1 or bf2) {
 								nBaitFiltered_ += (bf1 & !rm1) + (bf2 & !rm2);
@@ -2224,12 +2244,10 @@ void CountWords(void *data) {
 				if (isFastq) { writeExtractedReads(extractFastX, seqs, quals, titles, extractindices, assignedloci); }
 				else         { writeExtractedReads(extractFastX, seqs, titles, extractindices, assignedloci); }
 			}
-			else if (aln) {
-				if (skip1) { writeAlignments(seqs, titles, alnindices, sams); }
-				else { writeAlignments(seqs, titles, alnindices, sams); }
-			}
+			else if (aln) { writeAlignments(seqs, titles, alnindices, sams); }
 		}
 		if (outputBubbles) { accumBubbles(bubbles, bubbleDB); }
+		if (trackBait) { accumBaitKmerHits(btTK, tkr); }
 
 		cerr << "Batch query in " << (time(nullptr) - time2) << " sec. " << 
 		        nShort_ << '/' <<
@@ -2293,12 +2311,13 @@ int main(int argc, char* argv[]) {
 		     << "                        Discard pe reads if # of matching kmers < INT1 [100]\n"
 		     << "                        Maxmimal # of edits allowed = INT2 [3]\n"
 		     << "  -gcc <INT1> [INT2]    Same as above, except also running sanity check\n"
+			 << "  -tb                   track bait kmer hitting rate\n"
 		     << "  -v <INT>              Verbosity: 0-3. [0]\n" << endl;
 		return 0;
 	}
 
 	vector<string> args(argv, argv+argc);
-	bool bait = false, aug = false, threading = false, correction = true, tc = false, aln = false, aln_minimal=false, okam = true, g2pan = false, skip1 = false, writeKmerName = false, outputBubbles = false, invkmer = false, isFastq = false;
+	bool bait = false, aug = false, threading = false, correction = true, tc = false, aln = false, aln_minimal=false, okam = true, g2pan = false, skip1 = false, writeKmerName = false, outputBubbles = false, invkmer = false, isFastq = false, trackBait = false;
 	int simmode = 0, extractFastX = 0, countMode = 2;
 	uint64_t argi = 1, trim = 0, thread_cth = 100, Cthreshold = 10, nproc = 1;
 	float readsPerBatchFactor = 1;
@@ -2342,6 +2361,7 @@ int main(int argc, char* argv[]) {
 			ksize = stoi(args[++argi]);
 			rmask = (1ULL << 2*(ksize-1)) - 1;
 		}
+		else if (args[argi] == "-tb") { trackBait = true; }
 		else if (args[argi] == "-qs") {
 			trPrefix = args[++argi];
 			trFname = (trim ? trPrefix+".tr.trim"+std::to_string(trim)+".kmers" : trPrefix+".tr.kmers");
@@ -2392,6 +2412,7 @@ int main(int argc, char* argv[]) {
 	     << "trim mode: " << trim << endl
 	     << "augmentation mode: " << aug << endl
 	     << "graph threading mode: " << threading << endl
+	     << "track bait kmer hitting rate: " << trackBait << endl
 	     << "output alignment: " << aln << endl
 	     << "output successfully aligned reads only: " << aln_minimal << endl
 		 << "output kmer assignment (kam): " << okam << endl
@@ -2423,6 +2444,7 @@ int main(int argc, char* argv[]) {
 	kmerIndex_uint32_umap kmerDBi;
 	vector<uint32_t> kmerDBi_vv;
 	bait_fps_db_t baitDB;
+	bt_tracker_db_t btTK;
 
 	vector<atomic_uint32_t> nmapread(nloci);
 	vector<atomic_uint64_t> kmc(nloci);
@@ -2444,7 +2466,10 @@ int main(int argc, char* argv[]) {
 		readBinaryKmerSetDB(trEdgeDB, trPrefix+".tre");
 		readKmers(trKmerDB, trFname);
 		//if (invkmer) { readiKmers(ikmerDB, trPrefix); }
-		if (bait) { readBinaryBaitDB(baitDB, baitFname); }
+		if (bait) {
+			readBinaryBaitDB(baitDB, baitFname);
+			if (trackBait) { btTK.resize(nloci); }
+		}
 		cerr << baitDB.size() << " bait loci in baitDB" << endl;
 		cerr << "deserialized graph/index and read tr.kmers in " << (time(nullptr) - time1) << " sec." << endl;
 		cerr << "# unique kmers in kmerDBi: " << kmerDBi.size() << endl;
@@ -2470,6 +2495,7 @@ int main(int argc, char* argv[]) {
 		counts.bubbleDB = &bubbleDB;
 		counts.graphDB = &graphDB;
 		counts.baitDB = &baitDB;
+		counts.btTK = &btTK;
 		counts.kmerDBi = &kmerDBi;
 		counts.kmerDBi_vv = &kmerDBi_vv;
 		counts.nReads = &nReads;
@@ -2500,6 +2526,7 @@ int main(int argc, char* argv[]) {
 		counts.skip1 = skip1;
 		counts.countMode = countMode;
 		counts.invkmer = invkmer;
+		counts.trackBait = trackBait;
 
 		counts.Cthreshold = Cthreshold;
 		counts.thread_cth = thread_cth;
@@ -2575,7 +2602,7 @@ int main(int argc, char* argv[]) {
 			writeKmersWithName(outPrefix+".tr", trKmerDB);
 		}
 		else {
-			writeKmers(outPrefix+".tr", trKmerDB);
+			dumpTRKmers(outPrefix, trKmerDB);
 			if (countMode == 2) {
 				writeTRKmerSummary(outPrefix+".tr.summary.txt", kmc, nmapread);
 			}
@@ -2588,7 +2615,11 @@ int main(int argc, char* argv[]) {
 
 		if (outputBubbles) {
 			cerr << "writing bubbles..." << endl;
-			writeBubbles(outPrefix+".bub", bubbleDB);
+			dumpBubbles(outPrefix, bubbleDB);
+		}
+		if (trackBait) {
+			cerr << "writing bait kmer hit statistics..." << endl;
+			dumpBaitKmerHits(outPrefix, btTK);
 		}
 	}
 

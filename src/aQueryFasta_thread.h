@@ -5,6 +5,8 @@
 //#include "cereal/types/unordered_map.hpp"
 //#include "cereal/types/unordered_set.hpp"
 //#include "cereal/types/vector.hpp"
+#include "kmerIO.hpp"
+#include "binaryKmerIO.hpp"
 
 #include "stdlib.h"
 #include <vector>
@@ -43,6 +45,8 @@ typedef unordered_map<size_t, unordered_map<size_t, vector<uint16_t>>> nuAdjAttr
 typedef vector<kmerCount_umap> bubble_db_t;
 typedef vector<unordered_set<uint64_t>> bait_db_t;
 typedef vector<unordered_map<uint64_t, uint16_t>> bait_fps_db_t;
+typedef vector<unordered_map<uint64_t, uint64_t>> bt_tracker_db_t; // [tri : {kmer : count}]
+typedef unordered_map<uint32_t, unordered_map<uint64_t, uint64_t>> bt_tracker_t; // {tri : {kmer : count}}
 typedef unordered_map<uint64_t, uint8_t> kc8_t; // Kmer Count. Max <= numeric_limits<uint8_t>::max
 typedef vector<unordered_set<uint64_t>> kset_db_t;
 
@@ -405,19 +409,19 @@ void nonckmer2ckmer(vector<size_t>& kmers, vector<size_t>& ckmers, size_t ksize)
 	}
 }
 
-size_t countLoci(string fname) {
-    ifstream inf(fname);
-    assert(inf);
-    string line;
-    size_t nloci = 0;
-    while (getline(inf, line)) {
-        if (line[0] == '>') {
-            ++nloci;
-        }
-    }
-    inf.close();
-    return nloci;
-}
+//size_t countLoci(string fname) {
+//    ifstream inf(fname);
+//    assert(inf);
+//    string line;
+//    size_t nloci = 0;
+//    while (getline(inf, line)) {
+//        if (line[0] == '>') {
+//            ++nloci;
+//        }
+//    }
+//    inf.close();
+//    return nloci;
+//}
 
 size_t countBedLoci(string fname) {
     ifstream inf(fname);
@@ -501,33 +505,24 @@ void readFPSKmersV1(T& kmerDB, string fname) {
 	}
 }
 
-template <typename T>
-void readFPSKmersV2(T& kmerDB, string fname) {
-	size_t tri;
-	string line;
-	ifstream f;
-
-	f.open(fname);
-	assert(f);
-	cerr << "reading kmers from " << fname << endl;
-	while (getline(f, line)) {
-		if (line[0] == '>') { tri = stoul(line.substr(1)); continue; }
-
-		stringstream ss(line);
-		size_t km, mi, ma;
-		ss >> km >> mi >> ma;
-		kmerDB[tri][km] = (mi<<8) + ma;
-		//cout << km << '\t' << ((mi<<8) + ma) << endl;
-	}
-}
-
 //template <typename T>
-//void readBinaryBaitDB(T& kmerDB, string& fname) {
-//    cerr << "deserializing bt.vumap" << endl;
-//    ifstream fin(fname, ios::binary);
-//    assert(fin);
-//    cereal::BinaryInputArchive iarchive(fin);
-//    iarchive(kmerDB);
+//void readFPSKmersV2(T& kmerDB, string fname) {
+//	size_t tri;
+//	string line;
+//	ifstream f;
+//
+//	f.open(fname);
+//	assert(f);
+//	cerr << "reading kmers from " << fname << endl;
+//	while (getline(f, line)) {
+//		if (line[0] == '>') { tri = stoul(line.substr(1)); continue; }
+//
+//		stringstream ss(line);
+//		size_t km, mi, ma;
+//		ss >> km >> mi >> ma;
+//		kmerDB[tri][km] = (mi<<8) + ma;
+//		//cout << km << '\t' << ((mi<<8) + ma) << endl;
+//	}
 //}
 
 void readBinaryBaitDB(bait_fps_db_t& baitDB, string& fname) {
@@ -551,9 +546,10 @@ void readBinaryBaitDB(bait_fps_db_t& baitDB, string& fname) {
 	baitDB.resize(nloci);
 	int bki = 0;
 	for (int tri = 0; tri < nloci; ++tri) {
-			for (int i0 = bki; bki < bti[tri]+i0; ++bki) {
-					baitDB[tri][bkeys[bki]] = bvals[bki];
-			}
+		int ei = bti[tri];
+		for (int i = 0; i < ei; ++i, ++bki) {
+			baitDB[tri][bkeys[bki]] = bvals[bki];
+		}
 	}
 	cerr << "*.kmers.bt read+reconstructed in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
 }
@@ -663,23 +659,6 @@ void mapKmersFile2DB(T& kmerDB, string fname, vector<bool>& omap, bool count=tru
     f.close();
 }
 
-//void readBinaryIndex(kmerIndex_uint32_umap& kmerDBi, vector<uint32_t>& kmerDBi_vv, string& pref) {
-//	{
-//		cerr << "deserializing kmerDBi.umap" << endl;
-//		ifstream fin(pref+".kmerDBi.umap", ios::binary);
-//		assert(fin);
-//		cereal::BinaryInputArchive iarchive(fin);
-//		iarchive(kmerDBi);
-//	}
-//	{
-//		cerr << "deserializing kmerDBi.vv" << endl;
-//		ifstream fin(pref+".kmerDBi.vv", ios::binary);
-//		assert(fin);
-//		cereal::BinaryInputArchive iarchive(fin);
-//		iarchive(kmerDBi_vv);
-//	}
-//}
-
 void readBinaryIndex(kmerIndex_uint32_umap& kmerDBi, vector<uint32_t>& kmerDBi_vv, string& pref) {
 	cerr << "deserializing kmers.dbi" << endl;
 	ifstream fin(pref+".kmers.dbi", ios::binary);
@@ -700,14 +679,6 @@ void readBinaryIndex(kmerIndex_uint32_umap& kmerDBi, vector<uint32_t>& kmerDBi_v
 	for (int i = 0; i < nk; ++i) { kmerDBi[kdbi_keys[i]] = kdbi_vals[i]; }
 	cerr << "*.kmers.dbi read+constructed in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
 }
-
-//void readBinaryGraph(vector<GraphType>& graphDB, string& pref) {
-//	cerr << "deserializing graph.umap" << endl;
-//	ifstream fin(pref+".graph.umap", ios::binary);
-//	assert(fin);
-//	cereal::BinaryInputArchive iarchive(fin);
-//	iarchive(graphDB);
-//}
 
 void readBinaryKmerSetDB(kset_db_t& ksdb, string pref) {
     cerr << "deserializing " << pref << endl;
@@ -734,56 +705,38 @@ void readBinaryKmerSetDB(kset_db_t& ksdb, string pref) {
     cerr << ".kdb read+reconstructed in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
 }
 
-//void readBinaryKmerSetDB(kset_db_t& flankDB, kset_db_t& trEdgeDB, string& pref) {
-//	{
-//		cerr << "deserializing fl.kdb" << endl;
-//		ifstream fin(pref+".fl.kdb", ios::binary);
-//		assert(fin);
-//		cereal::BinaryInputArchive iarchive(fin);
-//		iarchive(flankDB);
-//	}
-//	{
-//		cerr << "deserializing tre.kdb" << endl;
-//		ifstream fin(pref+".tre.kdb", ios::binary);
-//		assert(fin);
-//		cereal::BinaryInputArchive iarchive(fin);
-//		iarchive(trEdgeDB);
-//	}
+//void readKmerIndex(kmerIndex_uint32_umap& kmerDBi, vector<vector<uint32_t>>& kmerDBi_vec, string fname) { // optimized version
+//    ifstream f(fname);
+//    assert(f);
+//    cerr <<"reading kmers from " << fname << endl;
+//	uint32_t idx = -1;
+//    uint32_t vsize = kmerDBi_vec.size();
+//    string line;
+//    while (getline(f, line)) {
+//        if (line[0] == '>') { ++idx; }
+//        else { 
+//			size_t kmer = stoul(line);
+//			auto it = kmerDBi.find(kmer);
+//            if (it != kmerDBi.end()) { // kmer is not unique
+//                uint32_t vi = it->second;
+//                if (vi % 2) { // kmer freq. >= 2 in current db; kmerDBi_vec[(vi>>1)] records the list of mapped loci
+//                    bool good = true;
+//                    for (uint32_t x : kmerDBi_vec[vi>>1]) { if (x == idx) { good = false; break; } }
+//                    if (good) { kmerDBi_vec[vi>>1].push_back(idx); }
+//                }
+//                else { // kmer freq. = 1 in current db; vi>>1 is the mapped locus.
+//                    if ((vi >> 1) != idx) {
+//                        kmerDBi_vec.push_back(vector<uint32_t>{vi>>1, idx});
+//                        it->second = ((vsize++) << 1) + 1;
+//                    }
+//                }
+//            } else {
+//                kmerDBi[kmer] = (idx << 1);
+//            }
+//		}
+//    }
+//    f.close();
 //}
-
-
-void readKmerIndex(kmerIndex_uint32_umap& kmerDBi, vector<vector<uint32_t>>& kmerDBi_vec, string fname) { // optimized version
-    ifstream f(fname);
-    assert(f);
-    cerr <<"reading kmers from " << fname << endl;
-	uint32_t idx = -1;
-    uint32_t vsize = kmerDBi_vec.size();
-    string line;
-    while (getline(f, line)) {
-        if (line[0] == '>') { ++idx; }
-        else { 
-			size_t kmer = stoul(line);
-			auto it = kmerDBi.find(kmer);
-            if (it != kmerDBi.end()) { // kmer is not unique
-                uint32_t vi = it->second;
-                if (vi % 2) { // kmer freq. >= 2 in current db; kmerDBi_vec[(vi>>1)] records the list of mapped loci
-                    bool good = true;
-                    for (uint32_t x : kmerDBi_vec[vi>>1]) { if (x == idx) { good = false; break; } }
-                    if (good) { kmerDBi_vec[vi>>1].push_back(idx); }
-                }
-                else { // kmer freq. = 1 in current db; vi>>1 is the mapped locus.
-                    if ((vi >> 1) != idx) {
-                        kmerDBi_vec.push_back(vector<uint32_t>{vi>>1, idx});
-                        it->second = ((vsize++) << 1) + 1;
-                    }
-                }
-            } else {
-                kmerDBi[kmer] = (idx << 1);
-            }
-		}
-    }
-    f.close();
-}
 
 void readKmersFile2DBi(kmerIndex_uint32_umap& kmerDBi, vector<vector<uint32_t>>& kmerDBi_vec, string fname) { // optimized version
     ifstream f(fname);
@@ -953,17 +906,17 @@ void readKmersFile(T& kmerDB, kmeruIndex_umap& kmerDBi, string fname, size_t sta
 }
 
 // 
-void readKmers_ksetDB(string fn, kset_db_t& ksdb) {
-    cerr <<"reading kmers from " << fn << endl;
-    ifstream fin(fn);
-    assert(fin);
-    string line;
-	int tri = -1;
-	while (getline(fin, line)) {
-		if (line[0] == '>') { ++tri; }
-		else { ksdb[tri].insert(stoull(line)); } // only converts the first field to ULL
-	}
-}
+//void readKmers_ksetDB(string fn, kset_db_t& ksdb) {
+//    cerr <<"reading kmers from " << fn << endl;
+//    ifstream fin(fn);
+//    assert(fin);
+//    string line;
+//	int tri = -1;
+//	while (getline(fin, line)) {
+//		if (line[0] == '>') { ++tri; }
+//		else { ksdb[tri].insert(stoull(line)); } // only converts the first field to ULL
+//	}
+//}
 
 void readKmers_atomicKmerCountDB(string fn, vector<kmer_aCount_umap>& akcdb) {
     cerr <<"reading kmers from " << fn << endl;
@@ -976,7 +929,6 @@ void readKmers_atomicKmerCountDB(string fn, vector<kmer_aCount_umap>& akcdb) {
 		else { akcdb[tri][stoull(line)] = 0; } // only converts the first field to ULL
 	}
 }
-
 
 template <typename T>
 void writeKmersWithName(string outfpref, T& kmerDB, size_t threshold = 0) {
@@ -1021,6 +973,13 @@ void writeKmers(string outfpref, vector<kmerAttr_dict>& kmerAttrDB) {
     fout.close();
 }
 
+void dumpTRKmers(string pref, vector<kmer_aCount_umap>& trKmerDB) {
+    uint64_t nloci, nk;
+    vector<uint64_t> index, ks, vs;
+    flattenKmapDB(trKmerDB, nloci, nk, index, ks, vs);
+    serializeKmapDB("tr", pref, nloci, nk, index, ks, vs);
+}
+
 template <typename S, typename T>
 void writeTRKmerSummary(string fn, vector<S>& kmc, vector<T>& nmapread) {
     ofstream fout(fn);
@@ -1042,7 +1001,20 @@ void writeBubbles(string fn, bubble_db_t& bubbleDB) {
             fout << p.first << '\t' << p.second << '\n';
         }
     }
+}
 
+void dumpBubbles(string pref, bubble_db_t& bubbleDB) {
+	uint64_t nloci, nk;
+	vector<uint64_t> index, ks, vs;
+	flattenKmapDB(bubbleDB, nloci, nk, index, ks, vs);
+	serializeKmapDB("bub", pref, nloci, nk, index, ks, vs);
+}
+
+void dumpBaitKmerHits(string pref, bt_tracker_db_t& btTK) {
+	uint64_t nloci, nk;
+	vector<uint64_t> index, ks, vs;
+	flattenKmapDB(btTK, nloci, nk, index, ks, vs);
+	serializeKmapDB("btk", pref, nloci, nk, index, ks, vs);
 }
 
 void readOrthoMap(string& mapf, vector<vector<bool>>& omap, size_t nhap) {
