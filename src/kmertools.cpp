@@ -13,6 +13,7 @@ int main (int argc, const char * argv[]) {
 			 << "  ksi           generate ksi index for ktools sum" << endl
 		     << "  sum           acculumate kmer counts for each locus" << endl
 		     << "  extract       extract locus-RPGG from RPGG" << endl
+			 << "  extract-bt    extract certain loci from bt.kmdb" << endl
 		     << "  serialize     generate kmer index using pan.(graph|ntr|tr).kmers" << endl 
 			 << "  serialize-bt  generate serialized bait.kmers" << endl << endl;
 		return 0;
@@ -155,6 +156,55 @@ int main (int argc, const char * argv[]) {
 			}
 			fout.close();
 		}
+	}
+	else if (args[1] == "extract-bt") {
+		if (argc == 2) {
+			cerr << "Usage: ktools extract-bt <in.pref> <filter> [out.pref]" << endl
+			     << "  in.pref    prefix of *.bt.kmdb" << endl
+			     << "  filter     the boolean mask for each locus" << endl
+				 << "             format: a single row of 1's and 0's; total # of digits = nloci" << endl
+			     << "  out.pref   output prefix [$(in.pref).qc]" << endl << endl;
+			return 0;
+		}
+		
+        uint64_t nbk_i, nbk_o, nloci;
+		vector<uint8_t> qc;
+        vector<uint64_t> bkeys_i, bkeys_o, bti_i, bti_o;
+        vector<uint16_t> bvals_i, bvals_o;
+        bait_fps_db_t baitDB_i, baitDB_o;
+
+        deserializeKmapDB("bt", args[2], nloci, nbk_i, bti_i, bkeys_i, bvals_i, baitDB_i);
+		
+		{
+			qc.resize(nloci);
+			ifstream fin(args[3]);
+			fin.read((char*)( qc.data() ), sizeof(uint8_t)*nloci);
+		}
+
+		{	// constructing filtered qc.bt.kmdb
+			int ki_i = 0, ki_o = 0;
+			for (int tri = 0; tri < nloci; ++tri) {
+				if (qc[tri]) {
+					int nbk_ = bti_i[tri];
+					bti_o[tri] = nbk_;
+					for (int i = ki_i, j = ki_i + nbk_; i < j; ++i) {
+						bkeys_o.push_back(bkeys_i[i]);
+						bvals_o.push_back(bvals_i[i]);
+					}
+					ki_o += bti_i[tri];
+				}
+				ki_i += bti_i[tri];
+			}
+			nbk_o = ki_o;
+		}
+		serializeKmapDB("bt", args[2]+".qc", nloci, nbk_o, bti_o, bkeys_o, bvals_o);
+
+        uint64_t nbk_, nloci_;
+        vector<uint64_t> bkeys_, bti_;
+        vector<uint16_t> bvals_;
+        bait_fps_db_t baitDB_;
+		deserializeKmapDB("bt", args[2]+".qc", nloci_, nbk_, bti_, bkeys_, bvals_, baitDB_);
+        validateKmapDB(baitDB_o, baitDB_);
 	}
 	else if (args[1] == "serialize") {
 		if (argc == 2) {
