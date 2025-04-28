@@ -2324,7 +2324,7 @@ int main(int argc, char* argv[]) {
 	string trPrefix, trFname, fastxFname, outPrefix;
 	string baitFname = "";
 	ifstream fastxFile, trFile, augFile, baitFile, mapFile;
-	ofstream outfile, baitOut;
+	ofstream outfile;
 	while (argi < argc) {
 		if (args[argi] == "-b") {
 			bait = true;
@@ -2389,7 +2389,7 @@ int main(int argc, char* argv[]) {
 		else if (args[argi] == "-o" or args[argi] == "-on") {
 			writeKmerName = args[argi] == "-on";
 			outPrefix = args[++argi];
-			outfile.open(outPrefix+".tr.kmers");
+			outfile.open(outPrefix+".tr.kmdb");
 			assert(outfile);
 			outfile.close();
 		}
@@ -2467,7 +2467,7 @@ int main(int argc, char* argv[]) {
 		readKmers(trKmerDB, trFname);
 		//if (invkmer) { readiKmers(ikmerDB, trPrefix); }
 		if (bait) {
-			readBinaryBaitDB(baitDB, baitFname);
+			readBinaryBaitDB(baitDB, trPrefix);
 			if (trackBait) { btTK.resize(nloci); }
 		}
 		cerr << baitDB.size() << " bait loci in baitDB" << endl;

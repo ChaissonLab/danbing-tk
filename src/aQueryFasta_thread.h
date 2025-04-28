@@ -1,10 +1,6 @@
 #ifndef A_QUERYFASTA_THREAD_H_
 #define A_QUERYFASTA_THREAD_H_
 
-//#include "cereal/archives/binary.hpp"
-//#include "cereal/types/unordered_map.hpp"
-//#include "cereal/types/unordered_set.hpp"
-//#include "cereal/types/vector.hpp"
 #include "kmerIO.hpp"
 #include "binaryKmerIO.hpp"
 
@@ -525,33 +521,11 @@ void readFPSKmersV1(T& kmerDB, string fname) {
 //	}
 //}
 
-void readBinaryBaitDB(bait_fps_db_t& baitDB, string& fname) {
-    cerr << "deserializing kmers.bt" << endl;
-    ifstream fin(fname, ios::binary);
-    assert(fin);
-	clock_t t = clock();
-	uint64_t nloci, nbk;
-	vector<uint64_t> bkeys, bti;
-	vector<uint16_t> bvals;
-	fin.read((char*)( &nloci ), sizeof(uint64_t));
-	bti.resize(nloci);
-	fin.read((char*)( bti.data() ), sizeof(uint64_t)*nloci);
-	fin.read((char*)( &nbk ), sizeof(uint64_t));
-	bkeys.resize(nbk);
-	bvals.resize(nbk);
-	fin.read((char*)( bkeys.data() ), sizeof(uint64_t)*nbk);
-	fin.read((char*)( bvals.data() ), sizeof(uint16_t)*nbk);
-	fin.close();
-
-	baitDB.resize(nloci);
-	int bki = 0;
-	for (int tri = 0; tri < nloci; ++tri) {
-		int ei = bti[tri];
-		for (int i = 0; i < ei; ++i, ++bki) {
-			baitDB[tri][bkeys[bki]] = bvals[bki];
-		}
-	}
-	cerr << "*.kmers.bt read+reconstructed in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+void readBinaryBaitDB(bait_fps_db_t& baitDB, string pref) {
+	uint64_t nloci, nk;
+	vector<uint64_t> index, ks;
+	vector<uint16_t> vs;
+	deserializeKmapDB("bt", pref, nloci, nk, index, ks, vs, baitDB);
 }
 
 template <typename T>

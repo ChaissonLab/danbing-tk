@@ -49,13 +49,14 @@ void serializeKmapDB(string tp, string pref, uint64_t& nloci, uint64_t& nk, vect
     clock_t t = clock();
     uint64_t sizeofval = sizeof(T);
     ofstream fout(pref+ "." + tp + ".kmdb", ios::binary);
+	assert(fout);
     fout.write(reinterpret_cast<const char*>( &nloci ), sizeof(uint64_t));
     fout.write(reinterpret_cast<const char*>( index.data() ), sizeof(uint64_t)*nloci);
     fout.write(reinterpret_cast<const char*>( &nk ), sizeof(uint64_t));
     fout.write(reinterpret_cast<const char*>( &sizeofval ), sizeof(uint64_t));
     fout.write(reinterpret_cast<const char*>( ks.data() ), sizeof(uint64_t)*nk);
     fout.write(reinterpret_cast<const char*>( vs.data() ), sizeofval*nk);
-    cerr << "*." << tp << ".kdb written in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+    cerr << "*." << tp << ".kmdb written in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
 }
 
 template <typename S, typename T>
@@ -63,7 +64,8 @@ void deserializeKmapDB(string tp, string pref, uint64_t& nloci, uint64_t& nk, ve
     cerr << "deserializing *." << tp << ".kmdb" << endl;
     clock_t t = clock();
     uint64_t sizeofval;
-    ifstream fin(pref + "." + tp + ".kdb", ios::binary);
+    ifstream fin(pref + "." + tp + ".kmdb", ios::binary);
+	assert(fin);
     fin.read((char*)( &nloci ), sizeof(uint64_t));
     index.resize(nloci);
     fin.read((char*)( index.data() ), sizeof(uint64_t)*nloci);
@@ -117,6 +119,7 @@ void serializeKsetDB(string tp, string pref, uint64_t& nloci, uint64_t& nk, vect
     cerr << "serializing " << tp << ".kdb" << endl;
     clock_t t = clock();
     ofstream fout(pref+ "." + tp + ".kdb", ios::binary);
+	assert(fout);
     fout.write(reinterpret_cast<const char*>( &nloci ), sizeof(uint64_t));
     fout.write(reinterpret_cast<const char*>( index.data() ), sizeof(uint64_t)*nloci);
     fout.write(reinterpret_cast<const char*>( &nk ), sizeof(uint64_t));
@@ -128,6 +131,7 @@ void deserializeKsetDB(string tp, string pref, uint64_t& nloci, uint64_t& nk, ve
     cerr << "deserializing *." << tp << ".kdb" << endl;
     clock_t t = clock();
     ifstream fin(pref + "." + tp + ".kdb", ios::binary);
+	assert(fin);
     fin.read((char*)( &nloci ), sizeof(uint64_t));
     index.resize(nloci);
     fin.read((char*)( index.data() ), sizeof(uint64_t)*nloci);
