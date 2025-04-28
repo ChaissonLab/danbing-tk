@@ -101,6 +101,7 @@ void validateKmapDB(T& kmdb, T& kmdb_) {
             assert(p.second == it->second);
         }
     }
+	cerr << "done" << endl;
 }
 
 void flattenKsetDB(kset_db_t& ksdb, uint64_t& nloci, uint64_t& nk, vector<uint64_t>& index, vector<uint64_t>& ks) {
@@ -161,6 +162,7 @@ void validateKsetDB(kset_db_t& ksdb, kset_db_t& ksdb_) {
             assert(ks_.count(km));
         }
     }
+	cerr << "done" << endl;
 }
 
 #endif

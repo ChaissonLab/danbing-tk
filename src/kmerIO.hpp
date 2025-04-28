@@ -108,4 +108,15 @@ void readFPSKmersV2(T& kmerDB, string fname) {
 	}
 }
 
+void readQCFile(vector<uint8_t>& out, string fn) {
+	ifstream fin(fn);
+	assert(fin);
+	int ntr = out.size();
+	assert(ntr);
+	fin.read((char*)( out.data() ), sizeof(uint8_t)*ntr);
+	for (int tri = 0; tri < ntr; ++tri) {
+		out[tri] -= 48; // ASCII code of `0` is 48
+	}
+}
+
 #endif

@@ -21,11 +21,11 @@ $(INCFILES):
 	if [ ! -f $(INC)/eigen3 ]; then cp -r Eigen/Eigen  $(INC)/eigen3; fi
 	
 # dependencies between programs and .o files
-bin/danbing-tk:	src/aQueryFasta_thread.cpp src/aQueryFasta_thread.h
+bin/danbing-tk:	src/aQueryFasta_thread.cpp src/aQueryFasta_thread.h src/kmerIO.hpp src/binaryKmerIO.hpp
 	$(dir_guard)
 	$(CXX) $(LDLIBS) $(CPPFLAGS) -O3 -o bin/danbing-tk src/aQueryFasta_thread.cpp
 
-bin/danbing-tk_g:	src/aQueryFasta_thread.cpp
+bin/danbing-tk_g:	src/aQueryFasta_thread.cpp src/aQueryFasta_thread.h src/kmerIO.hpp src/binaryKmerIO.hpp
 	$(dir_guard)
 	$(CXX) $(LDLIBS) $(CPPFLAGS) -g -o bin/danbing-tk_g src/aQueryFasta_thread.cpp
 
@@ -37,11 +37,11 @@ bin/danbing-tk-pred_g:	src/pred.cpp
 	$(dir_guard)
 	$(CXX) $(CPPFLAGS) -g -o bin/danbing-tk-pred_g src/pred.cpp
 
-bin/ktools:	src/kmertools.cpp
+bin/ktools:	src/kmertools.cpp src/kmerIO.hpp src/binaryKmerIO.hpp
 	$(dir_guard)
 	$(CXX) $(CPPFLAGS) -O3 -o bin/ktools src/kmertools.cpp
 
-bin/ktools_g:	src/kmertools.cpp
+bin/ktools_g:	src/kmertools.cpp src/kmerIO.hpp src/binaryKmerIO.hpp
 	$(dir_guard)
 	$(CXX) $(CPPFLAGS) -g -o bin/ktools_g src/kmertools.cpp
 
