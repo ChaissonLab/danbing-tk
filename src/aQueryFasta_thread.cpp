@@ -2391,7 +2391,10 @@ int main(int argc, char* argv[]) {
 				augFile.close();
 			}
 			if (bait) {
-				if (baitFname == "") { baitFname = trPrefix+".kmers.bt"; }
+				if (baitFname == "") {
+					if (not qc) { baitFname = trPrefix+".bt.kmdb"; }
+					else { baitFname = trPrefix+".qc.bt.kmdb"; }
+				}
 				baitFile.open(baitFname);
 				assert(baitFile);
 				baitFile.close();
@@ -2487,7 +2490,7 @@ int main(int argc, char* argv[]) {
 		if (qc) { readQCFile(qcFilter, qcFn); }
 		if (bait) {
 			if (qc) { readBinaryBaitDB(baitDB, trPrefix+".qc"); }
-			else { readBinaryBaitDB(baitDB, trPrefix); }
+			else    { readBinaryBaitDB(baitDB, trPrefix); }
 			if (trackBait) { btTK.resize(nloci); }
 		}
 		cerr << baitDB.size() << " bait loci in baitDB" << endl;

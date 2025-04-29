@@ -175,13 +175,11 @@ int main (int argc, const char * argv[]) {
 
         deserializeKmapDB("bt", args[2], nloci, nbk_i, bti_i, bkeys_i, bvals_i, baitDB_i);
 		
-		{
-			qc.resize(nloci);
-			ifstream fin(args[3]);
-			fin.read((char*)( qc.data() ), sizeof(uint8_t)*nloci);
-		}
+		qc.resize(nloci);
+		readQCFile(qc, args[3]);
 
 		{	// constructing filtered qc.bt.kmdb
+			bti_o.resize(nloci);
 			int ki_i = 0, ki_o = 0;
 			for (int tri = 0; tri < nloci; ++tri) {
 				if (qc[tri]) {
