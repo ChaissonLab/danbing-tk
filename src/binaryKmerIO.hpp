@@ -45,10 +45,11 @@ void flattenKmapDB(S& kmdb, uint64_t& nloci, uint64_t& nk, vector<uint64_t>& ind
 
 template <typename T>
 void serializeKmapDB(string tp, string pref, uint64_t& nloci, uint64_t& nk, vector<uint64_t>& index, vector<uint64_t>& ks, vector<T>& vs) {
-    cerr << "serializing " << tp << ".kmdb" << endl;
+	string fn = pref + "." + tp + ".kmdb";
+    cerr << "serializing " << fn << endl;
     clock_t t = clock();
     uint64_t sizeofval = sizeof(T);
-    ofstream fout(pref+ "." + tp + ".kmdb", ios::binary);
+    ofstream fout(fn, ios::binary);
 	assert(fout);
     fout.write(reinterpret_cast<const char*>( &nloci ), sizeof(uint64_t));
     fout.write(reinterpret_cast<const char*>( index.data() ), sizeof(uint64_t)*nloci);
@@ -56,15 +57,16 @@ void serializeKmapDB(string tp, string pref, uint64_t& nloci, uint64_t& nk, vect
     fout.write(reinterpret_cast<const char*>( &sizeofval ), sizeof(uint64_t));
     fout.write(reinterpret_cast<const char*>( ks.data() ), sizeof(uint64_t)*nk);
     fout.write(reinterpret_cast<const char*>( vs.data() ), sizeofval*nk);
-    cerr << "*." << tp << ".kmdb written in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+    cerr << fn << " written in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
 }
 
 template <typename S, typename T>
 void deserializeKmapDB(string tp, string pref, uint64_t& nloci, uint64_t& nk, vector<uint64_t>& index, vector<uint64_t>& ks, vector<T>& vs, S& kmdb) {
-    cerr << "deserializing *." << tp << ".kmdb" << endl;
+	string fn = pref + "." + tp + ".kmdb";
+    cerr << "deserializing "<< fn << endl;
     clock_t t = clock();
     uint64_t sizeofval;
-    ifstream fin(pref + "." + tp + ".kmdb", ios::binary);
+    ifstream fin(fn, ios::binary);
 	assert(fin);
     fin.read((char*)( &nloci ), sizeof(uint64_t));
     index.resize(nloci);
@@ -75,7 +77,7 @@ void deserializeKmapDB(string tp, string pref, uint64_t& nloci, uint64_t& nk, ve
     vs.resize(nk);
     fin.read((char*)( ks.data() ), sizeof(uint64_t)*nk);
     fin.read((char*)( vs.data() ), sizeofval*nk);
-    cerr << "*." << tp << ".kmdb read in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+    cerr << fn << " read in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
 
     kmdb.resize(nloci);
     int ki = 0;
@@ -85,7 +87,7 @@ void deserializeKmapDB(string tp, string pref, uint64_t& nloci, uint64_t& nk, ve
             kmdb[tri][ks[ki]] = vs[ki];
         }
     }
-    cerr << "*." << tp << ".kmdb read+reconstructed in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+    cerr << fn << " read+reconstructed in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
 }
 
 template <typename T>
@@ -117,21 +119,23 @@ void flattenKsetDB(kset_db_t& ksdb, uint64_t& nloci, uint64_t& nk, vector<uint64
 }
 
 void serializeKsetDB(string tp, string pref, uint64_t& nloci, uint64_t& nk, vector<uint64_t>& index, vector<uint64_t>& ks) {
-    cerr << "serializing " << tp << ".kdb" << endl;
+	string fn = pref + "." + tp + ".kdb";
+    cerr << "serializing " << fn << endl;
     clock_t t = clock();
-    ofstream fout(pref+ "." + tp + ".kdb", ios::binary);
+    ofstream fout(fn, ios::binary);
 	assert(fout);
     fout.write(reinterpret_cast<const char*>( &nloci ), sizeof(uint64_t));
     fout.write(reinterpret_cast<const char*>( index.data() ), sizeof(uint64_t)*nloci);
     fout.write(reinterpret_cast<const char*>( &nk ), sizeof(uint64_t));
     fout.write(reinterpret_cast<const char*>( ks.data() ), sizeof(uint64_t)*nk);
-    cerr << "*." << tp << ".kdb written in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+    cerr << fn << " written in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
 }
 
 void deserializeKsetDB(string tp, string pref, uint64_t& nloci, uint64_t& nk, vector<uint64_t>& index, vector<uint64_t>& ks, kset_db_t& ksdb) {
-    cerr << "deserializing *." << tp << ".kdb" << endl;
+	string fn = pref + "." + tp + ".kdb";
+    cerr << "deserializing " << fn << endl;
     clock_t t = clock();
-    ifstream fin(pref + "." + tp + ".kdb", ios::binary);
+    ifstream fin(fn, ios::binary);
 	assert(fin);
     fin.read((char*)( &nloci ), sizeof(uint64_t));
     index.resize(nloci);
@@ -139,7 +143,7 @@ void deserializeKsetDB(string tp, string pref, uint64_t& nloci, uint64_t& nk, ve
     fin.read((char*)( &nk ), sizeof(uint64_t));
     ks.resize(nk);
     fin.read((char*)( ks.data() ), sizeof(uint64_t)*nk);
-    cerr << "*." << tp << ".kdb read in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+    cerr << fn << " read in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
 
     ksdb.resize(nloci);
     int ki = 0;
@@ -149,7 +153,7 @@ void deserializeKsetDB(string tp, string pref, uint64_t& nloci, uint64_t& nk, ve
             ksdb[tri].insert(ks[ki]);
         }
     }
-    cerr << "*." << tp << ".kdb read+reconstructed in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+    cerr << fn << " read+reconstructed in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
 }
 
 void validateKsetDB(kset_db_t& ksdb, kset_db_t& ksdb_) {
@@ -166,9 +170,10 @@ void validateKsetDB(kset_db_t& ksdb, kset_db_t& ksdb_) {
 }
 
 void deserializeKarray(string tp, string pref, uint64_t& nloci, uint64_t& nk, vector<uint64_t>& index, vector<uint64_t>& ks) {
-    cerr << "deserializing *." << tp << ".kdb" << endl;
+	string fn = pref + "." + tp + ".kdb";
+    cerr << "deserializing " << fn << endl;
     clock_t t = clock();
-    ifstream fin(pref + "." + tp + ".kdb", ios::binary);
+    ifstream fin(fn, ios::binary);
     assert(fin);
     fin.read((char*)( &nloci ), sizeof(uint64_t));
     index.resize(nloci);
@@ -176,7 +181,7 @@ void deserializeKarray(string tp, string pref, uint64_t& nloci, uint64_t& nk, ve
     fin.read((char*)( &nk ), sizeof(uint64_t));
     ks.resize(nk);
     fin.read((char*)( ks.data() ), sizeof(uint64_t)*nk);
-    cerr << "*." << tp << ".kdb read in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+    cerr << fn << " read in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
 }
 
 void validateKarray(vector<uint64_t>& ks, vector<uint64_t>& ks_) {

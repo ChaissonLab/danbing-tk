@@ -4,6 +4,7 @@
 
 
 void makeBidirectional(kset_db_t& kdb, int ksize) {
+	cerr << "making bidirectional kdb" << endl;
 	for (int tri = 0; tri < kdb.size(); ++tri) {
 		auto& ksf = kdb[tri];
 		unordered_set<uint64_t> ksr;
@@ -422,36 +423,38 @@ int main (int argc, const char * argv[]) {
 
 		
 		uint64_t nloci = countLoci(args[2]+".tr.kmers");
-		kset_db_t trdb(nloci), fldb(nloci);
+
+		kset_db_t trdb(nloci);
 		readKmers_ksetDB(args[2]+".tr.kmers", trdb);
-		readKmers_ksetDB(args[2]+".ntr.kmers", fldb);
 		int ksize = stoi(args[3]);
 		makeBidirectional(trdb, ksize);
-		makeBidirectional(fldb, ksize);
-		
 		{
 			uint64_t nloci_, nk, nk_;
 			vector<uint64_t> index, index_, ks, ks_;
 			kset_db_t trdb_;
 			flattenKsetDB(trdb, nloci, nk, index, ks);
 			serializeKsetDB("bi_tr", args[2], nloci, nk, index, ks);
-			deserializeKsetDB("bt_tr", args[2], nloci_, nk_, index_, ks_, trdb_);
+			deserializeKsetDB("bi_tr", args[2], nloci_, nk_, index_, ks_, trdb_);
 			validateKsetDB(trdb, trdb_);
 		}
+
+		kset_db_t fldb(nloci);
+		readKmers_ksetDB(args[2]+".ntr.kmers", fldb);
+		makeBidirectional(fldb, ksize);
 		{
 			uint64_t nloci_, nk, nk_;
 			vector<uint64_t> index, index_, ks, ks_;
 			kset_db_t fldb_;
 			flattenKsetDB(fldb, nloci, nk, index, ks);
 			serializeKsetDB("bi_fl", args[2], nloci, nk, index, ks);
-			deserializeKsetDB("bt_fl", args[2], nloci_, nk_, index_, ks_, fldb_);
+			deserializeKsetDB("bi_fl", args[2], nloci_, nk_, index_, ks_, fldb_);
 			validateKsetDB(fldb, fldb_);
 		}
 
 		uint64_t ntrk;
 		vector<uint64_t> trki(nloci), trks;
 		{
-			ifstream fin(args[2]+"reindex.tr.kmers");
+			ifstream fin(args[2]+".reindex.tr.kmers");
 			assert(fin);
 			string line;
 			int tri = -1;
@@ -470,6 +473,7 @@ int main (int argc, const char * argv[]) {
 				}
 			}
 			trki[tri] = nk_;
+			ntrk = trks.size();
 		}
 		{
 			uint64_t nloci_, ntrk_;
