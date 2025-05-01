@@ -1,7 +1,19 @@
 #include "binaryKmerIO.hpp"
 #include "kmerIO.hpp"
+#include "kmer.hpp"
 
 
+void makeBidirectional(kset_db_t& kdb, int ksize) {
+	for (int tri = 0; tri < kdb.size(); ++tri) {
+		auto& ksf = kdb[tri];
+		unordered_set<uint64_t> ksr;
+		for (uint64_t kf : ksf) {
+			uint64_t kr = getNuRC(kf, ksize);
+			ksr.insert(kr);
+		}
+		for (auto kr : ksr) { ksf.insert(kr); }
+	}
+}
 
 
 int main (int argc, const char * argv[]) {
@@ -15,7 +27,8 @@ int main (int argc, const char * argv[]) {
 		     << "  extract       extract locus-RPGG from RPGG" << endl
 			 << "  extract-bt    extract certain loci from bt.kmdb" << endl
 		     << "  serialize     generate kmer index using pan.(graph|ntr|tr).kmers" << endl 
-			 << "  serialize-bt  generate serialized bait.kmers" << endl << endl;
+			 << "  serialize-bt  generate serialized bait.kmers" << endl
+			 << "  raava         generate kmer index/annot for raava" << endl << endl;
 		return 0;
 	}
 
@@ -397,6 +410,80 @@ int main (int argc, const char * argv[]) {
 		serializeKmapDB("bt", args[4], nloci, nbk, bti, bkeys, bvals);
 		deserializeKmapDB("bt", args[4], nloci_, nbk_, bti_, bkeys_, bvals_, baitDB_);
 		validateKmapDB(baitDB, baitDB_);
+	}
+	else if (args[1] == "raava") {
+		if (argc == 2) {
+			cerr << "Usage: ktools raava <pref> <ksize>" << endl << endl
+
+				 << "  pref		input RPGG prefix of .(tr|ntr|reindex.tr).kmers" << endl 
+				 << "  ksize	RPGG kmer size" << endl << endl;
+			return 0;
+		}
+
+		
+		uint64_t nloci = countLoci(args[2]+".tr.kmers");
+		kset_db_t trdb(nloci), fldb(nloci);
+		readKmers_ksetDB(args[2]+".tr.kmers", trdb);
+		readKmers_ksetDB(args[2]+".ntr.kmers", fldb);
+		int ksize = stoi(args[3]);
+		makeBidirectional(trdb, ksize);
+		makeBidirectional(fldb, ksize);
+		
+		{
+			uint64_t nloci_, nk, nk_;
+			vector<uint64_t> index, index_, ks, ks_;
+			kset_db_t trdb_;
+			flattenKsetDB(trdb, nloci, nk, index, ks);
+			serializeKsetDB("bi_tr", args[2], nloci, nk, index, ks);
+			deserializeKsetDB("bt_tr", args[2], nloci_, nk_, index_, ks_, trdb_);
+			validateKsetDB(trdb, trdb_);
+		}
+		{
+			uint64_t nloci_, nk, nk_;
+			vector<uint64_t> index, index_, ks, ks_;
+			kset_db_t fldb_;
+			flattenKsetDB(fldb, nloci, nk, index, ks);
+			serializeKsetDB("bi_fl", args[2], nloci, nk, index, ks);
+			deserializeKsetDB("bt_fl", args[2], nloci_, nk_, index_, ks_, fldb_);
+			validateKsetDB(fldb, fldb_);
+		}
+
+		uint64_t ntrk;
+		vector<uint64_t> trki(nloci), trks;
+		{
+			ifstream fin(args[2]+"reindex.tr.kmers");
+			assert(fin);
+			string line;
+			int tri = -1;
+			uint64_t nk_ = 0;
+			while(getline(fin, line)) {
+				if (line[0] == '>') {
+					if (tri >= 0) {
+						trki[tri] = nk_;
+						nk_ = 0;
+					}
+					++tri;
+				}
+				else {
+					trks.push_back(stoull(line));
+					++nk_;
+				}
+			}
+			trki[tri] = nk_;
+		}
+		{
+			uint64_t nloci_, ntrk_;
+			vector<uint64_t> trki_, trks_;
+			serializeKsetDB("reindex.tr", args[2], nloci, ntrk, trki, trks);
+			deserializeKarray("reindex.tr", args[2], nloci_, ntrk_, trki_, trks_);
+			cerr << "validating data" << endl;
+			validateKarray(trks, trks_);
+			validateKarray(trki, trki_);
+			cerr << "done" << endl;
+		}
+
+		
+
 	}
 	else {
 		cerr << "Unrecognized command " << args[1] << endl;

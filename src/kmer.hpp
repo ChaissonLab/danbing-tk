@@ -1,3 +1,6 @@
+#ifndef KMER_HPP_
+#define KMER_HPP_
+
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -152,19 +155,19 @@ void read2kmers(vector<size_t>& kmers, string& read, size_t k, size_t leftflank 
     }
 }
 
-template <typename T>
-void readKmerSet(T& kmerDB, string fname) { // vector<unordered_set>
-    ifstream f(fname);
-    assert(f);
-    cerr <<"reading kmers from " << fname << endl;
-    string line;
-    size_t idx;
-    while (getline(f, line)) {
-        if (line[0] == '>') { idx = stoul(line.substr(1)); }
-        else { kmerDB[idx].insert(stoul(line)); }
-    }
-    f.close();
-}
+//template <typename T>
+//void readKmerSet(T& kmerDB, string fname) { // vector<unordered_set>
+//    ifstream f(fname);
+//    assert(f);
+//    cerr <<"reading kmers from " << fname << endl;
+//    string line;
+//    size_t idx;
+//    while (getline(f, line)) {
+//        if (line[0] == '>') { idx = stoul(line.substr(1)); }
+//        else { kmerDB[idx].insert(stoul(line)); }
+//    }
+//    f.close();
+//}
 
 template <typename T>
 void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t rightflank = 0, bool count = true) {
@@ -196,3 +199,4 @@ void buildNuKmers(T& kmers, string& read, size_t k, size_t leftflank = 0, size_t
     }
 }
 
+#endif
