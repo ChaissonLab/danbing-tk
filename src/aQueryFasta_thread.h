@@ -299,6 +299,8 @@ void read2kmers_edges(vector<size_t>& kmers, vector<size_t>& edges, string& read
             if (nbeg == rlen) { return; }
             rckmer = getNuRC(kmer, k);
             i = nbeg - 1;
+			kmer_ = INVALID;
+			rckmer_ = INVALID;
         } else {
 			kmer_ = kmer;
 			rckmer_ = rckmer;
