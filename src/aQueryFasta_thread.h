@@ -275,7 +275,8 @@ void read2kmers_edges(vector<size_t>& kmers, vector<size_t>& edges, string& read
     const size_t rlen = read.size();
     const size_t mask = (1ULL << 2*(k-1)) - 1;
 	const size_t INVALID = -1;
-    size_t beg, nbeg, canonicalkmer, kmer, kmer_, rckmer, rckmer_, caedge, edge, rcedge;
+    size_t beg, nbeg, canonicalkmer, kmer, rckmer, caedge, edge, rcedge;
+	size_t kmer_ = INVALID, rckmer_ = INVALID;
 
     beg = getNextKmer(kmer, 0, read, k);
     if (beg == rlen) { return; }
@@ -286,7 +287,7 @@ void read2kmers_edges(vector<size_t>& kmers, vector<size_t>& edges, string& read
     for (size_t i = beg; i < rlen - k + 1; ++i) {
         canonicalkmer = std::min(kmer, rckmer);
 		kmers[i] = canonicalkmer;
-		if (i != 0 and kmer_ != INVALID) {
+		if (kmer_ != INVALID) {
 			edge = (kmer_ << 2) + (kmer % 4);
 			rcedge = (rckmer << 2) + (rckmer_ % 4);
 			caedge = std::min(edge, rcedge);
@@ -299,6 +300,8 @@ void read2kmers_edges(vector<size_t>& kmers, vector<size_t>& edges, string& read
             rckmer = getNuRC(kmer, k);
             i = nbeg - 1;
         } else {
+			kmer_ = kmer;
+			rckmer_ = rckmer;
             kmer = ( (kmer & mask) << 2 ) + baseNumConversion[static_cast<unsigned char>(read[i + k])];
             rckmer = (rckmer >> 2) + ( (baseNumConversion[baseComplement[static_cast<unsigned char>(read[i + k])]] & mask) << (2*(k-1)));
         }
