@@ -169,20 +169,43 @@ void validateKsetDB(kset_db_t& ksdb, kset_db_t& ksdb_) {
 	cerr << "done" << endl;
 }
 
-void deserializeKarray(string tp, string pref, uint64_t& nloci, uint64_t& nk, vector<uint64_t>& index, vector<uint64_t>& ks) {
-	string fn = pref + "." + tp + ".kdb";
+void serializeKarray(string tp, string pref, uint64_t& nk, vector<uint64_t>& ks) {
+	string fn = pref + "." + tp + ".ar";
+	cerr << "serializing " << fn << endl;
+    clock_t t = clock();
+    ofstream fout(fn, ios::binary);
+    assert(fout);
+    fout.write(reinterpret_cast<const char*>( &nk ), sizeof(uint64_t));
+    fout.write(reinterpret_cast<const char*>( ks.data() ), sizeof(uint64_t)*nk);
+    cerr << fn << " written in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+}
+
+void deserializeKarray(string tp, string pref, uint64_t& nk, vector<uint64_t>& ks) {
+    string fn = pref + "." + tp + ".ar";
     cerr << "deserializing " << fn << endl;
     clock_t t = clock();
     ifstream fin(fn, ios::binary);
     assert(fin);
-    fin.read((char*)( &nloci ), sizeof(uint64_t));
-    index.resize(nloci);
-    fin.read((char*)( index.data() ), sizeof(uint64_t)*nloci);
     fin.read((char*)( &nk ), sizeof(uint64_t));
     ks.resize(nk);
     fin.read((char*)( ks.data() ), sizeof(uint64_t)*nk);
     cerr << fn << " read in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
 }
+
+//void deserializeKarray(string tp, string pref, uint64_t& nloci, uint64_t& nk, vector<uint64_t>& index, vector<uint64_t>& ks) {
+//	string fn = pref + "." + tp + ".kdb";
+//    cerr << "deserializing " << fn << endl;
+//    clock_t t = clock();
+//    ifstream fin(fn, ios::binary);
+//    assert(fin);
+//    fin.read((char*)( &nloci ), sizeof(uint64_t));
+//    index.resize(nloci);
+//    fin.read((char*)( index.data() ), sizeof(uint64_t)*nloci);
+//    fin.read((char*)( &nk ), sizeof(uint64_t));
+//    ks.resize(nk);
+//    fin.read((char*)( ks.data() ), sizeof(uint64_t)*nk);
+//    cerr << fn << " read in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
+//}
 
 void validateKarray(vector<uint64_t>& ks, vector<uint64_t>& ks_) {
 	assert(ks.size() == ks_.size());

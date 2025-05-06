@@ -478,8 +478,9 @@ int main (int argc, const char * argv[]) {
 		{
 			uint64_t nloci_, ntrk_;
 			vector<uint64_t> trki_, trks_;
+			kset_db_t tmp_;
 			serializeKsetDB("reindex.tr", args[2], nloci, ntrk, trki, trks);
-			deserializeKarray("reindex.tr", args[2], nloci_, ntrk_, trki_, trks_);
+			deserializeKsetDB("reindex.tr", args[2], nloci_, ntrk_, trki_, trks_, tmp_);
 			cerr << "validating data" << endl;
 			validateKarray(trks, trks_);
 			validateKarray(trki, trki_);

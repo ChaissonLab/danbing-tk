@@ -951,7 +951,7 @@ void dumpTRKmers(string pref, vector<kmer_aCount_umap>& trKmerDB) {
     uint64_t nloci, nk;
     vector<uint64_t> index, ks, vs;
     flattenKmapDB(trKmerDB, nloci, nk, index, ks, vs);
-    serializeKmapDB("tr", pref, nloci, nk, index, ks, vs);
+	serializeKarray("trkmc", pref, nk, vs);
 }
 
 template <typename S, typename T>
