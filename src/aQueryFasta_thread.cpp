@@ -2410,7 +2410,7 @@ int main(int argc, char* argv[]) {
 		else if (args[argi] == "-o" or args[argi] == "-on") {
 			writeKmerName = args[argi] == "-on";
 			outPrefix = args[++argi];
-			outfile.open(outPrefix+".tr.kmdb");
+			outfile.open(outPrefix+".trkmc.ar");
 			assert(outfile);
 			outfile.close();
 		}
