@@ -1,6 +1,6 @@
 PREFIX ?=.
-TARGETS = bin/danbing-tk bin/vntr2kmers_thread bin/genPanKmers bin/ktools bin/danbing-tk-pred bin/baitBuilder
-TARGETSg = bin/danbing-tk_g bin/vntr2kmers_thread_g bin/genPanKmers_g bin/ktools_g bin/danbing-tk-pred_g bin/baitBuilder_g
+TARGETS = bin/danbing-tk bin/fa2kmers bin/genPanKmers bin/ktools bin/danbing-tk-pred bin/baitBuilder
+TARGETSg = bin/danbing-tk_g bin/fa2kmers_g bin/genPanKmers_g bin/ktools_g bin/danbing-tk-pred_g bin/baitBuilder_g
 #TARGETS = seq2num num2seq rvseq bam2pe
 
 CXX ?= g++
@@ -45,13 +45,13 @@ bin/ktools_g:	src/kmertools.cpp src/kmerIO.hpp src/binaryKmerIO.hpp
 	$(dir_guard)
 	$(CXX) $(CPPFLAGS) -g -o bin/ktools_g src/kmertools.cpp
 
-bin/vntr2kmers_thread:	src/VNTR2kmers_thread.cpp
+bin/fa2kmers:	src/fa2kmers.cpp
 	$(dir_guard)
-	$(CXX) $(CPPFLAGS) -O3 -o bin/vntr2kmers_thread src/VNTR2kmers_thread.cpp
+	$(CXX) $(CPPFLAGS) -O3 -o bin/fa2kmers src/fa2kmers.cpp
 
-bin/vntr2kmers_thread_g:	src/VNTR2kmers_thread.cpp
+bin/fa2kmers_g:	src/fa2kmers.cpp
 	$(dir_guard)
-	$(CXX) $(CPPFLAGS) -g -o bin/vntr2kmers_thread_g src/VNTR2kmers_thread.cpp
+	$(CXX) $(CPPFLAGS) -g -o bin/fa2kmers_g src/fa2kmers.cpp
 
 bin/genPanKmers:	src/genPanKmers.cpp
 	$(dir_guard)

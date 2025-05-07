@@ -982,18 +982,20 @@ void writeBubbles(string fn, bubble_db_t& bubbleDB) {
     }
 }
 
+template <typename T>
+void dumpKmerMapDB(string tp, string& pref, T& db, int th=-1) {
+    uint64_t nloci, nk;
+    vector<uint64_t> index, ks, vs;
+    flattenKmapDB(db, nloci, nk, index, ks, vs, th);
+    serializeKmapDB(tp, pref, nloci, nk, index, ks, vs);
+}
+
 void dumpBubbles(string pref, bubble_db_t& bubbleDB) {
-	uint64_t nloci, nk;
-	vector<uint64_t> index, ks, vs;
-	flattenKmapDB(bubbleDB, nloci, nk, index, ks, vs);
-	serializeKmapDB("bub", pref, nloci, nk, index, ks, vs);
+	dumpKmerMapDB("bub", pref, bubbleDB);
 }
 
 void dumpBaitKmerHits(string pref, bt_tracker_db_t& btTK) {
-	uint64_t nloci, nk;
-	vector<uint64_t> index, ks, vs;
-	flattenKmapDB(btTK, nloci, nk, index, ks, vs);
-	serializeKmapDB("btk", pref, nloci, nk, index, ks, vs);
+	dumpKmerMapDB("btk", pref, btTK);
 }
 
 void readOrthoMap(string& mapf, vector<vector<bool>>& omap, size_t nhap) {

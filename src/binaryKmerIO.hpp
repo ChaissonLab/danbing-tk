@@ -29,16 +29,20 @@ typedef unordered_map<size_t, size_t> kmerIndex_uint32_umap;
 typedef vector<unordered_map<uint64_t, uint16_t>> bait_fps_db_t;
 
 template <typename S, typename T>
-void flattenKmapDB(S& kmdb, uint64_t& nloci, uint64_t& nk, vector<uint64_t>& index, vector<uint64_t>& ks, vector<T>& vs) {
+void flattenKmapDB(S& kmdb, uint64_t& nloci, uint64_t& nk, vector<uint64_t>& index, vector<uint64_t>& ks, vector<T>& vs, int th=-1) {
     nloci = kmdb.size();
     index.resize(nloci);
     for (int tri = 0; tri < nloci; ++tri) {
         auto& kmap = kmdb[tri];
-        index[tri] = kmap.size();
+		int nskip = 0;
         for (auto& p : kmap) {
-            ks.push_back(p.first);
-            vs.push_back(p.second);
+			if (p.second > th) {
+				ks.push_back(p.first);
+				vs.push_back(p.second);
+			}
+			else { ++nskip; }
         }
+		index[tri] = kmap.size() - nskip;
     }
     nk = ks.size();
 }
