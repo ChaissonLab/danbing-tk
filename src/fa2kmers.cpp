@@ -1,10 +1,3 @@
-//
-//  VNTR2kmers.cpp
-//  convert VNTR loci to .kmer and generate .dot for corresponding DBG
-//
-//  Created by Tsung-Yu Lu on 6/5/18.
-//  Copyright © 2018 Tsung-Yu Lu. All rights reserved.
-//
 #include "aQueryFasta_thread.h"
 
 #include <iostream>
@@ -41,25 +34,27 @@ void removeNodeFromGraph(size_t node, GraphType& graph) { // XXX test edge pruni
 
 int main(int argc, const char * argv[]) {
 
-    if (argc < 2){
+    if (argc < 2) {
         cerr << endl
-             << "Usage: vntr2kmers_thread [-tr] [-th] [-g] [-p] [-m] -k -fsi -fso <-o|-on> -fa \n"
+             << "Usage: fa2kmers [-tr] [-th] [-g] [-p] [-m] [-h] -k -fsi -fso <-o|-on> -fa \n"
 			 << "  -tr              Output TR regions only, skip flanks\n"
              << "  -th <INT>        Filter out kmers w/ count below this threshold. Default: 0, i.e. no filtering\n"
              << "  -g               output *graph.kmers for threading-based kmer query.\n"
              << "  -p <FILE>        Prune tr/graph kmers with the given kmers file.\n"
              << "  -m <FILE>        Use orthology map to merge haps.\n"
+			 << "  -h               Write human readable outputs *.kmers instead of *.kmdb\n"
+			 << "                   Will turn on automatically if using -on\n"
              << "  -k <INT>         Kmer size\n"
              << "  -fsi <INT>       Length of input flanking sequence in *.tr.fasta.\n"
-             << "  -fso <INT>       Length of output flanking sequence to be included in *.ntr.kmers.\n"
-             << "  -o <STR>         Output file prefix" << endl
-             << "  -on <STR>        Same as the -o option, but write locus and kmer name as well" << endl
+             << "  -fso <INT>       Length of output flanking sequence to be included in *.fl.kmers.\n"
+             << "  -o <STR>         Output file prefix\n"
+             << "  -on <STR>        Same as the -o option, but write locus and kmer name as well\n"
              << "  -fa <n> <list>   Use specified *.fasta in the <list>\n"
              << "                   Count the first <n> files and build kmers for the rest\n\n";
         return 0;
     }
     vector<string> args(argv, argv+argc);
-    bool genGraph = false, prune = false, usemap = false, writeKmerName = false, TRonly = false;
+    bool genGraph=false, prune=false, usemap=false, writeKmerName=false, TRonly=false, readable=false;
     size_t argi = 1, threshold = 0, nhap = 0, fso, fsi, nfile2count, nloci;
     string pruneFname, outPref, mapf;
     vector<string> infnames;
@@ -78,6 +73,7 @@ int main(int argc, const char * argv[]) {
 			usemap = true;
 			mapf = args[++argi];
 		}
+		else if (args[argi] == "-h") { readable = true; }
         else if (args[argi] == "-k") { ksize = stoi(args[++argi]); }
         else if (args[argi] == "-fsi") { fsi = stoi(args[++argi]); }
         else if (args[argi] == "-fso") {
@@ -86,6 +82,7 @@ int main(int argc, const char * argv[]) {
         }
         else if (args[argi] == "-o" or args[argi] == "-on") {
 			writeKmerName = args[argi] == "-on";
+			if (writeKmerName) { readable = true; }
             outPref = args[++argi];
             ofstream outf(outPref+".tr.kmers");
             assert(outf);
@@ -129,7 +126,7 @@ int main(int argc, const char * argv[]) {
     // combine the kmer databases of the same loci across different files
     // -----
     vector<kmerCount_umap> TRkmersDB(nloci);
-    vector<kmerCount_umap> NTRkmersDB(nloci);
+    vector<kmerCount_umap> FLkmersDB(nloci);
     vector<GraphType> graphDB(nloci);
     for (size_t n = 0; n < nhap; ++n) {
         bool count = n < nfile2count;
@@ -150,15 +147,15 @@ int main(int argc, const char * argv[]) {
 
                     size_t tr_l = fsi;
                     size_t tr_r = fsi;
-                    size_t lntr_l = fsi - fso;
-                    size_t lntr_r = read.size() - fsi - (ksize-1); // seamless contenuation of kmers from ntr to tr
-                    size_t rntr_l = read.size() - fsi - (ksize-1); // seamless contenuation of kmers from tr to ntr
-                    size_t rntr_r = fsi - fso;
+                    size_t lFL_l = fsi - fso;
+                    size_t lFL_r = read.size() - fsi - (ksize-1); // seamless contenuation of kmers from FL to tr
+                    size_t rFL_l = read.size() - fsi - (ksize-1); // seamless contenuation of kmers from tr to FL
+                    size_t rFL_r = fsi - fso;
 
                     buildNuKmers(TRkmersDB[locus], read, ksize, tr_l, tr_r, count); // (begin_pos, right_flank_size)
 					if (not TRonly) {
-						buildNuKmers(NTRkmersDB[locus], read, ksize, lntr_l, lntr_r, count);
-						buildNuKmers(NTRkmersDB[locus], read, ksize, rntr_l, rntr_r, count);
+						buildNuKmers(FLkmersDB[locus], read, ksize, lFL_l, lFL_r, count);
+						buildNuKmers(FLkmersDB[locus], read, ksize, rFL_l, rFL_r, count);
 						if (genGraph) { buildKmerGraph(graphDB[locus], read, ksize); } // no self loop
 					}
                 }
@@ -196,17 +193,27 @@ int main(int argc, const char * argv[]) {
     // -----
     cerr << "writing outputs" << endl;
     if (writeKmerName) {
-        writeKmersWithName(outPref + ".tr", TRkmersDB, threshold);
+		writeKmersWithName(outPref + ".tr", TRkmersDB, threshold);
 		if (not TRonly) {
-			writeKmersWithName(outPref + ".ntr", NTRkmersDB, threshold);
+			writeKmersWithName(outPref + ".fl", FLkmersDB, threshold);
 			if (genGraph) { writeKmersWithName(outPref + ".graph", graphDB); }
 		}
     }
     else {
-        writeKmers(outPref + ".tr", TRkmersDB, threshold);
-		if (not TRonly) {
-			writeKmers(outPref + ".ntr", NTRkmersDB, threshold);
-			if (genGraph) { writeKmers(outPref + ".graph", graphDB); }
+		if (readable) {
+			writeKmers(outPref + ".tr", TRkmersDB, threshold);
+			if (not TRonly) {
+				writeKmers(outPref + ".fl", FLkmersDB, threshold);
+				if (genGraph) { writeKmers(outPref + ".graph", graphDB); }
+			}
+		}
+		else {
+			dumpKmerMapDB("tr", outPref, TRkmersDB, threshold);
+			if (not TRonly) {
+				dumpKmerMapDB("fl", outPref, FLkmersDB, threshold);
+				if (genGraph) { dumpKmerMapDB("graph", outPref, graphDB); }
+			}
+
 		}
     }
 
