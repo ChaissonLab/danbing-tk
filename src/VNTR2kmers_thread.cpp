@@ -43,7 +43,7 @@ int main(int argc, const char * argv[]) {
 
     if (argc < 2){
         cerr << endl
-             << "Usage: vntr2kmers_thread [-tr] [-th] [-g] [-p] [-m] -k -fs -ntr [-o|-on] -fa \n"
+             << "Usage: vntr2kmers_thread [-tr] [-th] [-g] [-p] [-m] -k -fsi -fso <-o|-on> -fa \n"
 			 << "  -tr              Output TR regions only, skip flanks\n"
              << "  -th <INT>        Filter out kmers w/ count below this threshold. Default: 0, i.e. no filtering\n"
              << "  -g               output *graph.kmers for threading-based kmer query.\n"
@@ -54,8 +54,8 @@ int main(int argc, const char * argv[]) {
              << "  -fso <INT>       Length of output flanking sequence to be included in *.ntr.kmers.\n"
              << "  -o <STR>         Output file prefix" << endl
              << "  -on <STR>        Same as the -o option, but write locus and kmer name as well" << endl
-             << "  -fa <n> <list>   Use specified *.fasta in the [list] instead of hapDB.\n"
-             << "                   Count the first [n] files and build kmers for the rest\n\n";
+             << "  -fa <n> <list>   Use specified *.fasta in the <list>\n"
+             << "                   Count the first <n> files and build kmers for the rest\n\n";
         return 0;
     }
     vector<string> args(argv, argv+argc);
