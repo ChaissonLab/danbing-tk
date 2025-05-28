@@ -2489,7 +2489,7 @@ int main(int argc, char* argv[]) {
 		readBinaryIndex(kmerDBi, kmerDBi_vv, trPrefix);
 		readBinaryKmerSetDB(flankDB, trPrefix+".fl");
 		readBinaryKmerSetDB(trEdgeDB, trPrefix+".tre");
-		readKmers(trKmerDB, trFname);
+		readKmersWithZeroCount(trKmerDB, trFname);
 		//if (invkmer) { readiKmers(ikmerDB, trPrefix); }
 		if (qc) { readQCFile(qcFilter, qcFn); }
 		if (bait) {

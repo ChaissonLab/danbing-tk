@@ -466,6 +466,19 @@ void readKmers(T& kmerDB, string fname) {
 	f.close();
 }
 
+void readKmersWithZeroCount(vector<kmer_aCount_umap>& kmerDB, string fname) {
+    ifstream f(fname);
+    assert(f);
+    cerr << "reading kmers from " << fname << endl;
+    string line;
+    size_t idx = -1;
+    while (getline(f, line)) {
+        if (line[0] == '>') { ++idx; }
+        else { kmerDB[idx][stoul(line)] = 0; }
+    }
+    f.close();
+}
+
 template <typename T>
 void readKmerSet(T& kmerDB, string fname) { // vector<unordered_set>
     ifstream f(fname);
