@@ -2133,11 +2133,14 @@ void CountWords(void *data) {
 						//	rm2 = 1;
 						//}
 
-						kmer_aCount_umap &trKmers = trResults[destLocus];
-						unordered_set<uint64_t>& flKmers = flankDB[destLocus];
+						// record TR/FL matches against destLocus0 if kam output is required
 						vector<kmer_aCount_umap::iterator> kits1, kits2;
-						assignTRkmc(caks1, trKmers, flKmers, kits1, kam.r1, af1, rm1, okam);
-						assignTRkmc(caks2, trKmers, flKmers, kits2, kam.r2, af2, rm2, okam);
+						if (okam or not rm1 or not rm2) {
+							kmer_aCount_umap &trKmers = trResults[destLocus0];
+							unordered_set<uint64_t>& flKmers = flankDB[destLocus0];
+							assignTRkmc(caks1, trKmers, flKmers, kits1, kam.r1, af1, rm1, okam);
+							assignTRkmc(caks2, trKmers, flKmers, kits2, kam.r2, af2, rm2, okam);
+						}
 						if (rm1 and rm2) { destLocus = nloci; } // removed by TR_kmer_assignment
 						else {
 							int n = 2 - rm1 - rm2;
