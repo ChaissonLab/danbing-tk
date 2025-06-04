@@ -996,7 +996,7 @@ void writeBubbles(string fn, bubble_db_t& bubbleDB) {
 }
 
 template <typename T>
-void dumpKmerMapDB(string tp, string& pref, T& db, int th=-1) {
+void dumpKmerMapDB(string tp, string& pref, T& db, int th=0) {
     uint64_t nloci, nk;
     vector<uint64_t> index, ks, vs;
     flattenKmapDB(db, nloci, nk, index, ks, vs, th);
