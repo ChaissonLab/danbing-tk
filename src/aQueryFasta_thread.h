@@ -1004,7 +1004,7 @@ void dumpKmerMapDB(string tp, string& pref, T& db, int th=0) {
 }
 
 void dumpBubbles(string pref, bubble_db_t& bubbleDB) {
-	dumpKmerMapDB("bub", pref, bubbleDB);
+	dumpKmerMapDB("bub", pref, bubbleDB, 5); // th=5
 }
 
 void dumpBaitKmerHits(string pref, bt_tracker_db_t& btTK) {
