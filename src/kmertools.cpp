@@ -416,8 +416,8 @@ int main (int argc, const char * argv[]) {
 		if (argc == 2) {
 			cerr << "Usage: ktools raava <pref> <ksize>" << endl << endl
 
-				 << "  pref		input RPGG prefix of .(tr|ntr|reindex.tr).kmers" << endl 
-				 << "  ksize	RPGG kmer size" << endl << endl;
+				 << "  pref     input RPGG prefix of .(tr|ntr|reindex.tr).kmers" << endl 
+				 << "  ksize    RPGG kmer size" << endl << endl;
 			return 0;
 		}
 
