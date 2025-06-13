@@ -73,12 +73,12 @@ int main(int argc, const char * argv[]) {
 
     if (argc < 2) {
         cerr << "Usage: genPanKmers  [-tr]  -o <output_prefix>  -m <mapping>  -k <kmer_file_prefixes>\n"
-		     << "  -tr      precess *.tr.kmers only, skipping tre, ntr and graph\n"
-		     << "  -tre     precess *.tre.kmers only, skipping tr, ntr and graph\n"
+		     << "  -tr      precess *.tr.kmers only, skipping tre, fl and graph\n"
+		     << "  -tre     precess *.tre.kmers only, skipping tr, fl and graph\n"
              << "  -m       if is '-', the program assumes no missing loci\n"
              << "           full path name for <mapping> is required in any case\n"
              << "  -k       requires PREFIX.TYPE.kmers\n"
-             << "           TYPE = tr, tre, ntr or graph\n"
+             << "           TYPE = tr, tre, fl or graph\n"
              << "mapping file format:\n"
              << "   N columns; each column is a genome; order should be the same as specified in -k\n"
              << "   M rows; each row is a locus in the pan-genome (pan locus)\n"
@@ -124,7 +124,7 @@ int main(int argc, const char * argv[]) {
     cerr << "# loci in pangenome: " << nloci << endl
          << ngenome << " genomes to merge" << endl;
 
-    vector<string> filetypes = {"tr", "ntr", "graph", "tre"};
+    vector<string> filetypes = {"tr", "fl", "graph", "tre"};
     for (string& filetype : filetypes) {
 		if (TRonly and filetype != "tr") { continue; }
 		if (TREonly and filetype != "tre") { continue; }

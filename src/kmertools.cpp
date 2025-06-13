@@ -222,7 +222,7 @@ int main (int argc, const char * argv[]) {
 		if (argc == 2) {
 			cerr << "Usage: ktools serialize <pref>" << endl << endl
 
-			     << "  PREF     prefix of *.(graph|ntr|tr).kmers" << endl;
+			     << "  PREF     prefix of *.(graph|fl|tr).kmers" << endl;
 			return 0;
 		}
 
@@ -234,7 +234,7 @@ int main (int argc, const char * argv[]) {
 			vector<vector<uint32_t>> kmerDBi_vec;
 			t = clock();
 			readKmerIndex(kmerDBi, kmerDBi_vec, args[2]+".tr.kmers");
-			readKmerIndex(kmerDBi, kmerDBi_vec, args[2]+".ntr.kmers");
+			readKmerIndex(kmerDBi, kmerDBi_vec, args[2]+".fl.kmers");
 			cerr << "xtr.kmers read in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
 
 			cerr << "generating kmerDBi.vv (non-unique kmer container)" << endl;
@@ -317,7 +317,7 @@ int main (int argc, const char * argv[]) {
 		{	// flank DB
 			cerr << "Generating flank binary kmers fl.kdb" << endl;
 			kset_db_t fldb(nloci), fldb_;
-			readKmers_ksetDB(args[2]+".ntr.kmers", fldb);
+			readKmers_ksetDB(args[2]+".fl.kmers", fldb);
 
 			uint64_t nfk, nloci_, nfk_;
 			vector<uint64_t> fks, fks_, fli, fli_;
@@ -343,49 +343,6 @@ int main (int argc, const char * argv[]) {
 		}
 
 	}
-	//else if (args[1] == "serialize-fl") {
-    //    if (argc == 2) {
-    //        cerr << "Usage: ktools serialize-fl <pref>\n\n"
-
-    //             << "  PREF     prefix of *.(graph|ntr|tr).kmers\n";
-    //        return 0;
-    //    }
-
-    //    size_t nloci = countLoci(args[2]+".tr.kmers");
-	//	clock_t t;
-
-	//	// XXX not fully supported by cereal?
-    //    //cerr << "Generating tr binary atomic kmer counts tr.akc" << endl;
-    //    //vector<kmer_aCount_umap> akcdb(nloci);
-	//	//vector<kmer_aCount_umap> akcdb_copy;
-    //    //readKmers_atomicKmerCountDB(args[2]+".tr.kmers", akcdb);
-    //    //{
-	//	//	cerr << "serializing tr.akc" << endl;
-    //    //    ofstream fout(args[2]+".tr.akc", ios::binary);
-    //    //    assert(fout);
-    //    //    cereal::BinaryOutputArchive oarchive(fout);
-    //    //    oarchive(akcdb);
-    //    //}
-    //    //{
-	//	//	clock_t t = clock();
-	//	//	cerr << "deserializing tr.akc" << endl;
-    //    //    ifstream fin(args[2]+".tr.akc", ios::binary);
-    //    //    assert(fin);
-    //    //    cereal::BinaryInputArchive iarchive(fin);
-    //    //    iarchive(akcdb_copy);
-	//	//	cerr << "tr.akc deserialized in " << (float)(clock()-t) / CLOCKS_PER_SEC << " sec" << endl;
-    //    //}
-    //    //cerr << "validating tr.akc" << endl;
-    //    //for (int i = 0; i < akcdb.size(); ++i) {
-    //    //    assert(akcdb[i].size() == akcdb_copy[i].size());
-    //    //    auto& akc_copy = akcdb_copy[i];
-    //    //    for (auto& p : akcdb[i]) {
-	//	//		auto it = akc_copy.find(p.first);
-	//	//		assert(it != akc_copy.end());
-	//	//		//assert(it->second == 0);
-    //    //    }
-    //    //}
-	//}
 	else if (args[1] == "serialize-bt") {
 		if (argc == 2) {
 			cerr << "Usage: ktools serialize-bt <bait> <nloci> <outPref>" << endl << endl
@@ -416,7 +373,7 @@ int main (int argc, const char * argv[]) {
 		if (argc == 2) {
 			cerr << "Usage: ktools raava <pref> <ksize>" << endl << endl
 
-				 << "  pref     input RPGG prefix of .(tr|ntr|reindex.tr).kmers" << endl 
+				 << "  pref     input RPGG prefix of .(tr|fl|reindex.tr).kmers" << endl 
 				 << "  ksize    RPGG kmer size" << endl << endl;
 			return 0;
 		}
@@ -439,7 +396,7 @@ int main (int argc, const char * argv[]) {
 		}
 
 		kset_db_t fldb(nloci);
-		readKmers_ksetDB(args[2]+".ntr.kmers", fldb);
+		readKmers_ksetDB(args[2]+".fl.kmers", fldb);
 		makeBidirectional(fldb, ksize);
 		{
 			uint64_t nloci_, nk, nk_;
