@@ -37,7 +37,9 @@ class DupInfo:
         e_ = None
         for s, e in self.regions:
             if e_ is not None:
-                seqs.append(fa.get_seq(self.asm, e_, s).upper())
+                if s - e_ > QC_KSIZE:
+                    seqs.append(fa.get_seq(self.asm, e_, s).upper())
+            assert e - s > QC_KSIZE, f"lifted region < ksize {e-s} < {QC_KSIZE}"
             seqs.append(fa.get_seq(self.asm, s, e).upper())
             e_ = e
         # seq to kset
@@ -53,7 +55,9 @@ class DupInfo:
         for i in range(n):
             for j in range(n):
                 if i == j: continue
-                out[i,j] = len(kset[i] & kset[j]) / len(kset[j]) # intersection(i,j) / |j|
+                if len(kset[j]) == 0:
+                    assert False, f"{self.asm}"
+                out[i,j] = len(kset[i] & kset[j]) / len(kset[j]) # |intersection(i,j)| / |j|
         return out
 
 def cleanbed():
@@ -149,6 +153,7 @@ def cleanbed():
             print(f'{v.asm}\t{v.start}\t{v.end}\t{rr}\t{strand}\t{v.tri}')
         else:
             fout_bad.write(f"{rr}\t{v.asm}\t{v.n}\t{int(v.trim)}\t{int(v.tandem)}\t{int(v.single)}\t{int(v.noBigSV)}\t{int(v.qc)}\t{int(v.valid)}\t{int(v.asm in a2mc)}\t{a2mc[v.asm]}\t{v.ris}\t{v.regions}\t{v.gaps}\t{v.strand}\t{v.fos}\n")
+    print("bed cleaning done", file=sys.stderr)
 
 
 if __name__ == "__main__":
