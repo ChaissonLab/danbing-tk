@@ -1761,7 +1761,7 @@ void writeAlignments(vector<string>& seqs, vector<string>& titles, vector<uint64
 
 class Counts {
 public:
-	bool isFastq, outputBubbles, bait, threading, correction, tc, aln, aln_minimal, okam, g2pan, skip1, invkmer, trackBait;
+	bool isFastq, outputBubbles, bait, threading, correction, tc, aln, aln_minimal, okam, g2pan, skip1, invkmer, trackBait, qc;
 	uint16_t Cthreshold, thread_cth;
 	uint64_t *nReads, *nThreadingReads, *nFeasibleReads, *nAsgnReads, *nSubFiltered, *nKmerFiltered, *nBaitFiltered, *nQualFiltered, *nLocusAssignFiltered, *nQCFiltered;
 	uint64_t nloci;
@@ -1813,6 +1813,7 @@ void CountWords(void *data) {
 	bool g2pan = ((Counts*)data)->g2pan;
 	bool invkmer = ((Counts*)data)->invkmer;
 	bool trackBait = ((Counts*)data)->trackBait;
+	bool qc = ((Counts*)data)->qc;
 	int simmode = ((Counts*)data)->simmode;
 	int countMode = ((Counts*)data)->countMode;
 	int extractFastX = ((Counts*)data)->extractFastX;
@@ -2055,7 +2056,7 @@ void CountWords(void *data) {
 			destLocus = countHit(kmerDBi_vv, its1, its2, hits1, hits2, dup, nloci, Cthreshold, log, destLocus0, nm1, nm2, hf1, hf2, rm1, rm2);
 			nLocusAssignFiltered_ += hf1 + hf2;
 			if (destLocus == nloci) { continue; }
-			if (not qcFilter[destLocus]) {
+			if (qc and not qcFilter[destLocus]) {
 				nQCFiltered_ += 2 - rm1 - rm2;
 				continue;
 			}
@@ -2298,7 +2299,7 @@ int main(int argc, char* argv[]) {
 		     << "  -bu                   Write read (k+1)-mers divergent from graph to .bub\n"
 			 << "  -ka                   Turn off kmer assignment output. [on]\n"
 			 << "-Algorithm:\n"
-			 << "  -qc <STR>             Locus QC. Skip genotyping loci failing QC; will use $PREF.qc.bt.kmdb if -b is on\n"
+			 << "  -qc <STR>             Locus QC. Skip genotyping loci failing QC\n"
 		     << "  -k <INT>              Kmer size [21]\n"
 		     << "  -kf <INT1> <INT2>     Parameters for kmer-based pre-filtering,\n"
 		     << "                        optimized for 150bp paired-end reads.\n"
@@ -2306,8 +2307,8 @@ int main(int argc, char* argv[]) {
 		     << "                        INT2 = minimal # of matches. [1]\n"
 		     << "  -cth <INT>            Discard both pe reads if maxhit of one pe read is below this threshold. [10]\n"
 			 << "  -qth <INT>            At baiting step, only consider kmers of which overlapping bases have qual score >= INT. [20]\n"
-			 << "  -b [STR]              read FP-specific kmers from file STR to remove FP reads.\n"
-			 << "                        Specify file name STR if having a different prefix than the one for graph/index. [$PREF.bt.kmdb]\n"
+			 << "  -b [STR]              Read FP-specific kmers to remove FP reads. Default name [$PREF.bt.kmdb]\n"
+			 << "                        Will use $PREF.qc.bt.kmdb if -qc is on\n"
 		     << "  -c <INT>              Minimal number of exact TR kmer matches for TR-spanning reads [40]\n"
 			 << "-Multiprocessing:\n"
 		     << "  -r <FLOAT>            scaling factor for readsPerBatch. Can affect multiprocess efficiency. [1]\n"
@@ -2556,6 +2557,7 @@ int main(int argc, char* argv[]) {
 		counts.countMode = countMode;
 		counts.invkmer = invkmer;
 		counts.trackBait = trackBait;
+		counts.qc = qc;
 
 		counts.Cthreshold = Cthreshold;
 		counts.thread_cth = thread_cth;
