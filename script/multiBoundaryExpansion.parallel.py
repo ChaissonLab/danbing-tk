@@ -358,7 +358,7 @@ if __name__ == "__main__":
                 for i in done:
                     ps.remove(i)
                 sleep(5)
-        except Exception: # this may not catch error in subprocess and will hang.
+        except Exception:
             print(f"worker {i} failed")
             for k, v in results[i].get():
                 idx2exp[k] = v

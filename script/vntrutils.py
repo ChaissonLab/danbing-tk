@@ -123,6 +123,39 @@ def readKmerDict(fname, kmerDB=None, threshold=0, checkkmer=False):
 
     if not hasInput: return kmerDB
 
+class rawkmerSetDB:
+    def __init__(self, index, ks):
+        self.ntr = index.size
+        self.nk = ks.size
+        self.index = index
+        self.ks = ks
+    def slice(self, trsi, trei=None):
+        if trei is None:
+            trei = trsi + 1
+        si = self.index[trsi-1] if trsi else 0
+        ei = self.index[trei-1]
+        return rawkmerSetDB(self.index[trsi:trei], self.ks[si:ei])
+    def set(self, tri=0):
+        si = self.index[tri-1] if tri else 0
+        ei = self.index[tri]
+        return set(self.ks[si:ei].flat)
+
+def readKmerAsSetDB(fn):
+    index = []
+    ks = []
+    with open(fn) as f:
+        tri = 0
+        ki = 0
+        for line in f:
+            if line[0] == '>':
+                if tri: index.append(ki)
+                tri += 1
+            else:
+                ks.append(int(line.split()[0]))
+                ki += 1
+        index.append(ki)
+    assert len(index) == tri
+    return rawkmerSetDB(np.array(index), np.array(ks))
 
 def readKms(fin, ki_tr, out=None):
     """
