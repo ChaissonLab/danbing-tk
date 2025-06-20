@@ -28,7 +28,7 @@ struct gt_meta {
 	uint64_t nk; // number of kmers
 	uint64_t n_tr; // number of TR loci
 	vector<string> fns; // *.tr.kmers of each sample
-	vector<double> rds; // read depth of each sample
+	vector<float> rds; // read depth of each sample
 };
 
 struct ikmer_meta {
@@ -142,50 +142,71 @@ void fill_gt(T& gt, vector<string>& fns) {
 	cout << "finished in " << (std::time(nullptr) - t0) << " sec" << endl;
 }
 
-template <typename T>
-void load_gt(T& gt, string& fn) {
-	std::time_t t0 = std::time(nullptr);
-    cout << "loading gt" << endl;
-	ifstream fin(fn);
-	assert(fin);
-	string line;
-	int nrow = 14752039, ncol = 879;
-	for (int i0 = 0; i0 < nrow; ++i0) {
-		if (i0 % 100000 == 0) { cout << '.' << flush; }
-		for (int i1 = 0; i1 < ncol-1; ++i1) {
-			getline(fin, line, '\t');
-			gt(i1,i0) = stof(line);
-		}
-		getline(fin, line);
-		gt(ncol-1,i0) = stof(line);
-	}
-	fin.close();
-	cout << "finished in " << (std::time(nullptr) - t0) << " sec" << endl;
-}
+//template <typename T>
+//void load_gt(T& gt, string& fn) {
+//	std::time_t t0 = std::time(nullptr);
+//    cout << "loading gt" << endl;
+//	ifstream fin(fn);
+//	assert(fin);
+//	string line;
+//	int nrow = 14752039, ncol = 879;
+//	for (int i0 = 0; i0 < nrow; ++i0) {
+//		if (i0 % 100000 == 0) { cout << '.' << flush; }
+//		for (int i1 = 0; i1 < ncol-1; ++i1) {
+//			getline(fin, line, '\t');
+//			gt(i1,i0) = stof(line);
+//		}
+//		getline(fin, line);
+//		gt(ncol-1,i0) = stof(line);
+//	}
+//	fin.close();
+//	cout << "finished in " << (std::time(nullptr) - t0) << " sec" << endl;
+//}
 
 template <typename T>
-void load_bingt(T& gt, string& fn) {
-	std::time_t t0 = std::time(nullptr);
-    cout << "loading gt" << endl;
-	ifstream fin(fn, ios::in | ios::binary);
-	assert(fin);
-	size_t sizeof32 = 4;
-	uint32_t nrow, ncol;
-	fin.read((char*)(&nrow), sizeof32);
-	fin.read((char*)(&ncol), sizeof32);
-	cout << "size = (" << nrow << ',' << ncol << ')' << endl;
-	gt.resize(nrow, ncol);
-	fin.read((char*)(gt.data()), (size_t)nrow*(size_t)ncol*sizeof32);
-	cout << "finished in " << (std::time(nullptr) - t0) << " sec" << endl;
+void load_eachBinGT(T& gt, gt_meta& gtm) {
+    Eigen::Array<uint64_t, Eigen::Dynamic, Eigen::Dynamic> tmp(gtm.nk, gtm.ns);
+	auto fns = gtm.fns;
+	size_t nk;
+	size_t nk_ = gtm.nk;
+	size_t sizeof64 = 8;
+    std::time_t t0 = std::time(nullptr);
+    cout << "reading " << fns.size() << " gt files" << endl;
+    for (int i0=0; i0<fns.size(); ++i0) {
+        ifstream fin(fns[i0], ios::in | ios::binary); // file format: 8 bytes (nk) | 8*nk bytes (kmc)
+        assert(fin);
+		fin.read((char*)(&nk), sizeof64);
+		assert(nk == nk_);
+		size_t offset = i0 * nk; // in element size not byte size
+		fin.read((char*)(tmp.data()+offset), (size_t)nk*sizeof64); // col-major assignment
+        fin.close();
+    }
+    cout << "finished in " << (std::time(nullptr) - t0) << " sec" << endl;
+	gt = tmp.cast<float>();
 }
 
+//template <typename T>
+//void load_binGTMat(T& gt, string& fn) {
+//	std::time_t t0 = std::time(nullptr);
+//    cout << "loading gt" << endl;
+//	ifstream fin(fn, ios::in | ios::binary);
+//	assert(fin);
+//	size_t sizeof32 = 4;
+//	uint32_t nrow, ncol;
+//	fin.read((char*)(&nrow), sizeof32);
+//	fin.read((char*)(&ncol), sizeof32);
+//	cout << "size = (" << nrow << ',' << ncol << ')' << endl;
+//	gt.resize(nrow, ncol);
+//	fin.read((char*)(gt.data()), (size_t)nrow*(size_t)ncol*sizeof32);
+//	cout << "finished in " << (std::time(nullptr) - t0) << " sec" << endl;
+//}
+
 template <typename T>
-void norm_rd(T& gt, vector<double>& rd) {
+void norm_rd(T& gt, vector<float>& rd_) {
 	cout << "normalizaing read depth" << endl;
-	auto nk = gt.cols();
-	for (int i=0; i<rd.size(); ++i) {
-		gt.block(i,0,1,nk) /= rd[i];
-	}
+	Eigen::Array<float, 1, Eigen::Dynamic> rd(rd_.size());
+	for (int i=0; i<rd_.size(); ++i) { rd(i) = rd_[i]; }
+	gt = (gt.rowwise() / rd).matrix().transpose().eval();
 }
 
 template <typename T, typename P>
@@ -200,12 +221,11 @@ void bias_correction(T& gt, ikmer_meta& ikmt, P& Bias) {
 		auto iei = ikmt.nik[tri];
 		if (si == ei or isi == iei) continue;
 		auto ikis = ikmt.iki.segment(isi,iei-isi).transpose();
-		auto gti = gt(Eigen::all, ikis);
+		auto igt = gt(Eigen::all, ikis);
 		auto ikmc = ikmt.ikmc.segment(isi,iei-isi).transpose();
-		auto B = gti.array().rowwise() / ikmc;
+		auto B = igt.array().rowwise() / ikmc;
 		Eigen::ArrayXf bias = B.rowwise().mean();
-		//if (bias == 0).all():
-		//else:
+		bias /= bias.mean();
 		gt.block(0,si,ns,ei-si) = gt.block(0,si,ns,ei-si).array().colwise() / bias;
 		Bias(Eigen::all,tri) = bias;
 	}
