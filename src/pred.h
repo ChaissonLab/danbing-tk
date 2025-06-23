@@ -176,7 +176,7 @@ void load_eachBinGT(T& gt, gt_meta& gtm) {
         ifstream fin(fns[i0], ios::in | ios::binary); // file format: 8 bytes (nk) | 8*nk bytes (kmc)
         assert(fin);
 		fin.read((char*)(&nk), sizeof64);
-		assert(nk == nk_);
+		if (nk != nk_) { cerr << "nk " << nk << " != nk_ " << nk_ << endl; assert(false); }
 		size_t offset = i0 * nk; // in element size not byte size
 		fin.read((char*)(tmp.data()+offset), (size_t)nk*sizeof64); // col-major assignment
         fin.close();
