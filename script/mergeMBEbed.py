@@ -3,18 +3,6 @@
 import sys
 import numpy as np
 
-def loadSamples(fn):
-    tmp = np.loadtxt(fn, dtype=object, ndmin=2)
-    sampleList = [] # gn, gi, h, hi, fn
-    hi = 0
-    for gi, (gn, f0, f1) in enumerate(tmp):
-        sampleList.append([gn, gi, 0, hi, f0])
-        hi += 1
-        if f1 != "None":
-            sampleList.append([gn, gi, 1, hi, f1])
-            hi += 1
-    return np.array(sampleList, dtype=object)
-
 def parseMergeSet():
     ms = []
     bs = set()
@@ -106,8 +94,8 @@ def writeBed_MergeMBE(MAXSVLEN=10000):
     for i1s_ in ms:
         i1s = sorted(list(i1s_))
         nm = len(i1s)-1
-        dist = np.full([nm, nh], np.nan)
-        for hi in range(nh):
+        dist = np.full([nm, 2*ng], np.nan)
+        for hi in range(2*ng):
             if np.all(panbed[i1s,3+hi*4] != "None"):
                 if np.any(panbed[i1s,3+hi*4] != panbed[i1s[0],3+hi*4]):
                     print(f"[Haplotype removed] merging across contigs: {hi}\t{i1s}\n {panbed[i1s,3+hi*4]}")
@@ -119,7 +107,7 @@ def writeBed_MergeMBE(MAXSVLEN=10000):
         if np.nanmax(dist) > MAXSVLEN:
             qcb.append(i1s_)
             print(f"[Loci removed] huge SV, {i1s}")
-        elif np.sum(good)/nh < THRESH:
+        elif np.sum(good)/(2*ng) < THRESH:
             qcb.append(i1s_)
             print(f"[Loci removed] QC failed {i1s}")
         else:
@@ -140,7 +128,7 @@ def writeBed_MergeMBE(MAXSVLEN=10000):
     nloci1, _ = panbed.shape
     for i1s_ in ms:
         assert len(i1s_ & bs) == 0
-    pv2bed = np.full([nloci1-nmi+len(ms)-len(bs), 3+nh*4], None, dtype=object)
+    pv2bed = np.full([nloci1-nmi+len(ms)-len(bs), 3+2*ng*4], None, dtype=object)
     nloci2, _ = pv2bed.shape
     i2toi1 = set(list(range(nloci1))) - mis - bs | set([sorted(list(i1s_))[0] for i1s_ in ms])
     i2toi1 = sorted(list(i2toi1)) # map v2 index to v1
@@ -158,7 +146,7 @@ def writeBed_MergeMBE(MAXSVLEN=10000):
         refe = max([int(e) for e in panbed[ids:ide,2]])
         pv2bed[i2,[1,2]] = [refs, refe]
         # fill asm
-        for hi in range(nh):
+        for hi in range(2*ng):
             if not i1togood[i1s[0]][hi]: # bad hap to remove
                 pv2bed[i2,3+hi*4:7+hi*4] = ["None"]*4
                 continue
@@ -168,8 +156,8 @@ def writeBed_MergeMBE(MAXSVLEN=10000):
     np.savetxt("pan.tr.mbe.v2.bed", pv2bed, delimiter="\t", fmt='%s')
     
     # orthology map
-    lmap = np.full([nloci2, nh], ".", dtype=object)
-    for hi in range(nh):
+    lmap = np.full([nloci2, 2*ng], ".", dtype=object)
+    for hi in range(2*ng):
         m = pv2bed[:,3+4*hi] != "None"
         lmap[m,hi] = np.arange(np.sum(m))
     np.savetxt("OrthoMap.v2.tsv", lmap, delimiter="\t", fmt='%s')
@@ -177,8 +165,8 @@ def writeBed_MergeMBE(MAXSVLEN=10000):
 
 
 if __name__ == "__main__":
-    sampleList = loadSamples(sys.argv[1]) # gn, gi, h, hi, fafn
-    ng = int(sampleList[-1,1]) + 1 # max(gi)+1
-    nh = sampleList.shape[0]
+    gs = np.loadtxt(sys.argv[1], usecols=0, dtype=object, ndmin=1)
+    ng = gs.size
+    #panmap = np.loadtxt(sys.argv[2], dtype=object, ndmin=2)[:,3:].astype(int)
     THRESH = float(sys.argv[2])
     writeBed_MergeMBE()

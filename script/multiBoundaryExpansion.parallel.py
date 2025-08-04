@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""
-goal of this version is to update script according parseMergeSet
-- no need to read tmp1.?.bed, read pan.tr.mbe.v0.bed for all the info
-"""
-
-
 
 import os
 import sys
@@ -26,47 +20,24 @@ class expStat:
     #def __repr__(self):
     #    return f"expanded: {self.exp}\tfail: {self.fail}\tave. exp. size: {self.es:.0f}\nopos: {self.opos}\tnpos: {self.npos}\n"
 
-def loadSamples(fn):
-    tmp = np.loadtxt(fn, dtype=object, ndmin=2)
-    sampleList = [] # gn, gi, h, hi, fn
-    hi = 0
-    for gi, (gn, f0, f1) in enumerate(tmp):
-        sampleList.append([gn, gi, 0, hi, f0])
-        hi += 1
-        if f1 != "None":
-            sampleList.append([gn, gi, 1, hi, f1])
-            hi += 1
-    return np.array(sampleList, dtype=object)
-
-def loadbeds(panbed):
-    _, NCOL = panbed.shape
-    NF = 4
-    NH = NCOL // NF
+def loadbeds(panmap):
     beds = np.full([nh, nloci, 4], None, dtype=object)
-    for g, gi, h, hi, fafn in sampleList:
-        beds[hi] = panbed[:,4*hi:4*(hi+1)]
+    for gi, g in enumerate(gs):
+        for h in [0,1]:
+            hi = 2*gi + h
+            m0 = panmap[:,hi]==1
+            bed = np.loadtxt(f"{g}/tmp1.{h}.bed", dtype=object, usecols=[0,1,2,6], ndmin=2, comments=None)
+            m1 = bed[:,0] != "."
+            if np.sum(m0) != np.sum(m1):
+                raise ValueError(f"[Error] Inconsistent # of supports between {g}/tmp1.{h}.bed ({np.sum(m1)}) and column {hi+3} of pan.tr.mbe.v0.bed {np.sum(m0)}")
+            beds[hi,m0] = bed[m1]
+        print(".", end="", flush=True)
     return beds
-
-#def loadbeds(panmap):
-#    beds = np.full([nh, nloci, 4], None, dtype=object)
-#    for g, gi, h, hi, fafn in sampleList:
-#        #print(g, gi, h, hi, fafn)
-#        #print(type(hi))
-#        if hi % 10 == 0: print(".", end="", flush=True)
-#
-#        m0 = panmap[:,hi]==1
-#        bed = np.loadtxt(f"{g}/tmp1.{h}.bed", dtype=object, usecols=[0,1,2,6], ndmin=2, comments=None)
-#        m1 = bed[:,0] != "."
-#        if np.sum(m0) != np.sum(m1):
-#            raise ValueError(f"[Error] Inconsistent # of supports between {g}/tmp1.{h}.bed ({np.sum(m1)}) and column {hi+3} of pan.tr.mbe.v0.bed {np.sum(m0)}")
-#        beds[hi,m0] = bed[m1]
-#    return beds
 
 def make_process_pickle():
     for i in range(NPROCESS):
         ibeg, iend = i*bsize, min((i+1)*bsize, nloci)
-        #indices = np.nonzero(np.sum(panmap[ibeg:iend], axis=1)>0)[0] + ibeg
-        indices = np.nonzero(np.any(beds[:,ibeg:iend,0] != "None", axis=0))[0] + ibeg
+        indices = np.nonzero(np.sum(panmap[ibeg:iend], axis=1)>0)[0] + ibeg
         with open(f"MBE/{i}.pickle", 'wb') as f:
             pickle.dump([beds[:,ibeg:iend,:], indices, ibeg], f)
 
@@ -76,7 +47,7 @@ def load_process_pickle(i):
     return obj
 
 def get_ctg(fas, hi, hd):
-    assert hd in hd2is[hi], f"{sampleList[np.argmax(sampleList[:,3]==hi)]}, {hd}"
+    assert hd in hd2is[hi], f"{hi}, {gs[hi//2]}, {hi%2}, {hd}"
     i = hd2is[hi][hd]
     L, s, w = fais[hi][i]
     e = s + (L-1)//w + 1 + L
@@ -90,8 +61,7 @@ def get_seq_pos(fas, beds, ctgs, hds, idx, ibeg):
     seqs, poss = [None] * nh, [None] * nh
     for hi in range(nh):
         hd = beds[hi,idx-ibeg,0]
-        if hd == "None": continue
-        assert hd is not None
+        if hd is None: continue
         if hd != hds[hi]:
             hds[hi] = hd
             with locks[hi]:
@@ -103,7 +73,7 @@ def get_seq_pos(fas, beds, ctgs, hds, idx, ibeg):
         ns = s - TRWINDOW if s > TRWINDOW                 else 0
         ne = e + TRWINDOW if e + TRWINDOW < len(ctgs[hi]) else len(ctgs[hi])
         seqs[hi] = ctgs[hi][ns:ne]
-        poss[hi] = (s-ns, e-ns) # start pos of TR relative to the left end of flank
+        poss[hi] = (s-ns, e-ns) # start pos of TR relative to the left end of NTR
     return seqs, poss
 
 def multipleBoundaryExpansion(seqs, poss, idx, ibeg, UB, ksize=21):
@@ -197,11 +167,11 @@ def multipleBoundaryExpansion(seqs, poss, idx, ibeg, UB, ksize=21):
     return exp, fail, npos               
             
 def load_fais():
-    fafns = sampleList[:,-1]
+    fafns = [f"{g}.{h}.fa" for g in gs for h in [0,1]]
     locks = [Lock() for i in range(nh)]
     fais, hd2is = [], []
     for f in fafns:
-        fais.append(np.loadtxt(f"{f}.fai", dtype=object, ndmin=2, comments=None))
+        fais.append(np.loadtxt(f"{INDIR}/{f}.fai", dtype=object, ndmin=2, comments=None))
         d = {}
         for i, hd in enumerate(fais[-1][:,0]):
             d[hd] = i
@@ -210,7 +180,7 @@ def load_fais():
     return fais, hd2is, locks
 
 def load_fas():
-    return [open(fn, 'rb') for fn in sampleList[:,-1]]
+    return [open(f"{INDIR}/{g}.{h}.fa", 'rb') for g in gs for h in [0,1]]
 
 def close_fas(fas):
     for fa in fas:
@@ -250,128 +220,108 @@ def writeBed_MBE(th1=0.1, th2=0.8):
     th1: mimimal fraction of haps remaining & locus was expanded
     th2: minimal fraction of haps remaining & locus was not expanded
     """
-    tmp = np.loadtxt(sys.argv[5], dtype=object, ndmin=2, comments="!")
-    panbed = tmp[:,3:]
-    refbed = tmp[:,:3]
-    beds = loadbeds(panbed)
-    panmap = (beds[:,:,0] != "None").astype(int).T
+    panmap = np.loadtxt(sys.argv[5], dtype=object, ndmin=2)[:,3:].astype(int)
     bs = set() # bad set
     for idx, expstat in idx2exp.items():
         if expstat.exp:
             if len(expstat.fail) == nh:
                 bs.add(idx)
             else:
+                #ns = np.sum([v is not None for v in expstat.npos])
                 nf = len(expstat.fail) + np.sum([v is None for v in expstat.npos])
+                #print(idx,nf/ns)
+                #if nf/ns > th1:
                 if 1 - nf/nh < th1:
                     bs.add(idx)
     ns = nh * th2
     bs |= set(np.nonzero(np.sum(panmap, axis=1)<ns)[0].tolist())
-    vis = sorted(list(set(range(nloci))-bs)) # valid indices
-    np.savetxt("locusMap.v1.to.v0.txt", vis, fmt='%i')
+    vi = sorted(list(set(range(nloci))-bs)) # valid indices
+    np.savetxt("locusMap.v1.to.v0.txt", vi, fmt='%i')
 
-    #!panbed = np.full([nloci, 3+nh*4], None, dtype=object)
-    #!panbed[:,:3] = np.loadtxt(f"pan.tr.mbe.v0.bed", usecols=[0,1,2], dtype=object)
-    panbed1 = np.full([nloci, 3+nh*4], None, dtype=object)
-    panbed1[:,:3] = refbed
-    for g, gi, h, hi, _ in sampleList:
-        bed = beds[hi]
-        #!bed = np.loadtxt(f"{g}/tmp1.{h}.bed", dtype=object, ndmin=2, comments=None) # iterate w/ genome index
-        #!bed = bed[bed[:,0] != "."]
-        #!p2g = np.full(nloci, None, dtype=object) # map pan index to genome index
-        #!p2g[panmap[:,hi]==1] = np.arange(bed.shape[0])
-        #f = open(f"{g}/tmp2.{h}.mbe.bed", 'w')
-        for pid in vis: # panbed index
+    panbed = np.full([nloci, 3+nh*4], None, dtype=object)
+    panbed[:,:3] = np.loadtxt(f"pan.tr.mbe.v0.bed", usecols=[0,1,2], dtype=object)
+    for hi in range(nh):
+        g = gs[hi//2]
+        h = hi % 2
+        bed = np.loadtxt(f"{g}/tmp1.{h}.bed", dtype=object, ndmin=2, comments=None) # iterate w/ genome index
+        bed = bed[bed[:,0] != "."]
+        p2g = np.full(nloci, None, dtype=object) # map pan index to genome index
+        p2g[panmap[:,hi]==1] = np.arange(bed.shape[0])
+        f = open(f"{g}/tmp2.{h}.mbe.bed", 'w')
+        for pid in vi:
             if idx2exp[pid].opos[hi] is None: # missing hap
                 continue
             if hi in idx2exp[pid].fail: # MBE failed at this hap
-                panbed1[pid,3+hi*4:7+hi*4] = [None, None, None, None]
+                panbed[pid,3+hi*4:7+hi*4] = [None, None, None, None]
                 continue
-            #!gid = p2g[pid]
+            gid = p2g[pid]
             os, oe = idx2exp[pid].opos[hi]
             ns, ne = idx2exp[pid].npos[hi]
             dt = [os-ns, ne-oe]
-            #!s, e = int(bed[gid,1]), int(bed[gid,2])
-            s, e = int(bed[pid,1]), int(bed[pid,2])
+            s, e = int(bed[gid,1]), int(bed[gid,2])
             s -= dt[0]
             e += dt[1]
-            #!f.write(f"{bed[gid,0]}\t{s}\t{e}\t{bed[gid,3]}\t{bed[gid,4]}\t{bed[gid,5]}\t{bed[gid,6]}\n")
-            #!panbed[pid,3+hi*4:7+hi*4] = [bed[gid,0], s, e, bed[gid,6]]
-            panbed1[pid,3+hi*4:7+hi*4] = [bed[pid,0], s, e, bed[pid,3]]
+            f.write(f"{bed[gid,0]}\t{s}\t{e}\t{bed[gid,3]}\t{bed[gid,4]}\t{bed[gid,5]}\t{bed[gid,6]}\n")
+            panbed[pid,3+hi*4:7+hi*4] = [bed[gid,0], s, e, bed[gid,6]]
         f.close()
-    np.savetxt("pan.tr.mbe.v1.bed", panbed1[vis], delimiter="\t", fmt='%s')
-
-def print_usage():
-    print("Usage: program  KSIZE  FS  TRWINDOW  sampleList  panbed  th1  th2  NPROCESS  [--ignore-case]", file=sys.stderr)
+    np.savetxt("pan.tr.mbe.v1.bed", panbed[vi], delimiter="\t", fmt='%s')
 
 if __name__ == "__main__":
     IGNORE_CASE = False
-    if len(sys.argv) == 10:
-        if sys.argv[9] == "--ignore-case":
+    if len(sys.argv) == 11:
+        if sys.argv[10] == "--ignore-case":
             IGNORE_CASE = True
         else:
-            print(f"unknown option {sys.argv[9]}", file=sys.stderr)
-            print_usage()
-            sys.exit(0)
-    elif len(sys.argv) == 9:
-        pass
-    else:
-        print(f"Invalid number of arguments {len(sys.argv)}: {sys.argv}", file=sys.stderr)
-        print_usage()
-        sys.exit(1)
-
+            print(f"unknown option {sys.argv[10]}", file=sys.stderr)
+            exit
     KSIZE, FS, TRWINDOW = [int(sys.argv[i]) for i in range(1,4)]
     NPROCESS = int(sys.argv[8])
+    INDIR = sys.argv[9]
     print("Loading metadata", flush=True)
-    sampleList = loadSamples(sys.argv[4]) # gn, gi, h, hi, fafn
-    ng = int(sampleList[-1,1]) + 1 # max(gi)+1
-    nh = sampleList.shape[0]
-    print("\tpanbed", flush=True)
-    panbed = np.loadtxt(sys.argv[5], dtype=object, ndmin=2, comments="!")[:,3:]
-    nloci = panbed.shape[0]
+    gs = np.loadtxt(sys.argv[4], usecols=0, dtype=object, ndmin=1)
+    print("\tpanmap", flush=True)
+    panmap = np.loadtxt(sys.argv[5], dtype=object, ndmin=2)[:,3:].astype(int)
+    nloci, nh = panmap.shape
+    ng = nh//2
     bsize = (nloci-1) // NPROCESS + 1
     print("\tbed's", flush=True, end="")
-    beds = loadbeds(panbed)
+    beds = loadbeds(panmap)
     print("\n\tfasta's", flush=True)
     fais, hd2is, locks = load_fais()
     print("Making pickle for each process")
     make_process_pickle()
-    del panbed
+    del panmap
     del beds
 
     print("Running multi-boundary expansion", flush=True)
+    os.system(f"taskset -p 0xffffffff {os.getpid()}")
     stat = Manager().list([0,0,0]) # ncase, nexp, nfail
     idx2exp = {}
     with Pool(NPROCESS) as pool:
         results = []
-        try:
-            for i in range(NPROCESS):
-                results.append(pool.apply_async(gwMBE, args=(i,stat)))
-            ps = set(list(range(NPROCESS)))
-            while ps:
-                done = []
-                for i in ps:
-                    if results[i].ready():
-                        print(f"[multiprocessing.Pool] worker {i} ended", flush=True)
-                        for k, v in results[i].get():
-                            idx2exp[k] = v
-                        done.append(i)
-                for i in done:
-                    ps.remove(i)
-                sleep(5)
-        except Exception:
-            print(f"worker {i} failed")
-            for k, v in results[i].get():
-                idx2exp[k] = v
-            pool.close()
-            pool.terminate()
-            sys.exit(1)
+        for i in range(NPROCESS):
+            results.append(pool.apply_async(gwMBE, args=(i,stat)))
+        ps = set(list(range(NPROCESS)))
+        while ps:
+            done = []
+            for i in ps:
+                if results[i].ready():
+                    print(f"[multiprocessing.Pool] worker {i} ended", flush=True)
+                    for k, v in results[i].get():
+                        idx2exp[k] = v
+                    done.append(i)
+            for i in done:
+                ps.remove(i)
+            sleep(5)
     print("Parallel computing results merged", flush=True)
 
     print("Dumping results", flush=True)
     with open("MBE/idx2exp.mbe.pickle", 'wb') as f:
         pickle.dump(idx2exp, f, protocol=pickle.HIGHEST_PROTOCOL)
+    #with open("MBE/idx2exp.mbe.pickle", 'rb') as f:
+    #    idx2exp = pickle.load(f)
     print("Writing new bed regions", flush=True)
     writeBed_MBE(float(sys.argv[6]), float(sys.argv[7]))
-    print("MBE Done", flush=True)
+    print("Done", flush=True)
 
 
