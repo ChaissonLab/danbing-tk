@@ -1,5 +1,5 @@
 PREFIX ?=.
-TARGETS = bin/danbing-tk bin/fa2kmers bin/genPanKmers bin/ktools bin/danbing-tk-pred bin/baitBuilder
+TARGETS = bin/danbing-tk bin/fa2kmers bin/genPanKmers bin/ktools bin/danbing-tk-pred bin/baitBuilder bin/sim_reads
 TARGETSg = bin/danbing-tk_g bin/fa2kmers_g bin/genPanKmers_g bin/ktools_g bin/danbing-tk-pred_g bin/baitBuilder_g
 #TARGETS = seq2num num2seq rvseq bam2pe
 
@@ -68,6 +68,10 @@ bin/baitBuilder:	src/bait.cpp
 bin/baitBuilder_g:	src/bait.cpp
 	$(dir_guard)
 	$(CXX) $(CPPFLAGS) -g -o bin/baitBuilder_g src/bait.cpp
+
+bin/sim_reads:	src/sim_reads.cpp
+	$(dir_guard)
+	$(CXX) $(CPPFLAGS) -O3 -o bin/sim_reads src/sim_reads.cpp
 
 bin/seq2num:	src/seq2num.cpp
 	$(dir_guard)

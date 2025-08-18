@@ -400,7 +400,7 @@ int main(int argc, char* argv[]) {
 				kcp = &(fppfdb[dst]);
 			}
 
-			for (int i = 0; i < 2; ++i) { read2kcp(rds[i], *kcp); }
+			for (int i = 0; i < 2; ++i) { read2kcp(rds[i], *kcp); } // TODO only if containing TR kmers
 			//if (nread % 1000000 == 0) {
 			//	for (auto& p : *kcp) {
 			//		cerr << p.first << '\t';

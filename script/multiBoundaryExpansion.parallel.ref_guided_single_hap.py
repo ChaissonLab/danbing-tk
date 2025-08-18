@@ -309,6 +309,7 @@ if __name__ == "__main__":
     #fais, hd2is, locks = load_fais()
     print("\tbed", flush=True)
     bed = np.loadtxt(sys.argv[7], dtype=object, ndmin=2, comments=None)
+    print(f"bed shape: {bed.shape}")
     #print("\tpanmap", flush=True)
     #panmap = np.loadtxt(sys.argv[6], dtype=object, ndmin=2)[:,3:].astype(int)
     #nloci = panmap.shape[0]
